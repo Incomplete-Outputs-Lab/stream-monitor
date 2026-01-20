@@ -80,6 +80,7 @@ jobs:
             ${{ runner.os }}-${{ matrix.target }}-cargo-
 
       - name: Install Tauri CLI
+        shell: bash
         run: |
           if ! command -v cargo-tauri &> /dev/null; then
             echo "Installing Tauri CLI..."

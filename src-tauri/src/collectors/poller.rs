@@ -46,7 +46,6 @@ impl ChannelPoller {
             .clone();
 
         let channel_id = channel.id.unwrap();
-        let app_handle = self.app_handle.clone();
         let poll_interval = Duration::from_secs(channel.poll_interval as u64);
         let db_manager = Arc::new(db_manager.inner().clone());
 

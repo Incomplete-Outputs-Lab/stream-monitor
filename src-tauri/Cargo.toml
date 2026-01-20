@@ -1,0 +1,55 @@
+[package]
+name = "stream-stats-collector"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "stream_stats_collector_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json"] }
+duckdb = { version = "1", features = ["bundled"] }
+keyring = "3"
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+axum = { version = "0.7", features = ["http1", "http2"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["fs", "cors"] }
+hyper = { version = "0.14", features = ["full"] }
+url = "2.5"
+base64 = "0.22"
+sha2 = "0.10"
+rand = "0.8"
+urlencoding = "2.1"
+# Twitch API libraries
+twitch_api = { version = "0.7", features = ["helix", "client", "reqwest", "twitch_oauth2"] }
+twitch_oauth2 = { version = "0.16", features = ["reqwest"] }
+# YouTube API library
+google-youtube3 = "6"
+hyper-rustls = { version = "0.26", features = ["native-tokio"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "http2", "tokio"] }
+yup-oauth2 = "9"
+# WebSocket and scraping libraries
+tungstenite = { version = "0.21", features = ["native-tls"] }
+scraper = "0.19"
+# JSON export uses existing serde_json dependency
+# Test dependencies
+[dev-dependencies]
+tempfile = "3"
+

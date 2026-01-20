@@ -36,15 +36,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            libglib2.0-dev \
-            libgobject-2.0-dev \
-            patchelf \
             build-essential \
             curl \
             wget \
             file \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
             cmake \
             pkg-config
 
@@ -80,7 +79,6 @@ jobs:
             ${{ runner.os }}-${{ matrix.target }}-cargo-
 
       - name: Install Tauri CLI
-        shell: bash
         run: |
           if ! command -v cargo-tauri &> /dev/null; then
             echo "Installing Tauri CLI..."

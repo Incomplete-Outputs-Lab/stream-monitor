@@ -1,11 +1,18 @@
 use duckdb::Connection;
 
 pub fn init_database(conn: &Connection) -> Result<(), duckdb::Error> {
+    eprintln!("[Schema] Starting database schema initialization...");
+
+    eprintln!("[Schema] Step 1: Creating channels table...");
+    // Create sequence for channels table
+    conn.execute("CREATE SEQUENCE IF NOT EXISTS channels_id_seq START 1", [])?;
+    eprintln!("[Schema] channels sequence created");
+
     // channels テーブル: 監視対象チャンネル設定
-    conn.execute(
+    match conn.execute(
         r#"
         CREATE TABLE IF NOT EXISTS channels (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id BIGINT PRIMARY KEY DEFAULT nextval('channels_id_seq'),
             platform TEXT NOT NULL CHECK(platform IN ('twitch', 'youtube')),
             channel_id TEXT NOT NULL,
             channel_name TEXT NOT NULL,
@@ -17,93 +24,128 @@ pub fn init_database(conn: &Connection) -> Result<(), duckdb::Error> {
         )
         "#,
         [],
-    )?;
+    ) {
+        Ok(_) => {
+            eprintln!("[Schema] Step 1: channels table created successfully");
+        }
+        Err(e) => {
+            eprintln!("[Schema] Step 1: FAILED to create channels table: {}", e);
+            return Err(e);
+        }
+    }
+
+    eprintln!("[Schema] Step 2: Creating streams table...");
+    // Create sequence for streams table
+    conn.execute("CREATE SEQUENCE IF NOT EXISTS streams_id_seq START 1", [])?;
+    eprintln!("[Schema] streams sequence created");
 
     // streams テーブル: 配信基本情報
     conn.execute(
         r#"
         CREATE TABLE IF NOT EXISTS streams (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            channel_id INTEGER NOT NULL,
+            id BIGINT PRIMARY KEY DEFAULT nextval('streams_id_seq'),
+            channel_id BIGINT NOT NULL,
             stream_id TEXT NOT NULL,
             title TEXT,
             category TEXT,
             started_at TIMESTAMP NOT NULL,
             ended_at TIMESTAMP,
-            FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
+            FOREIGN KEY (channel_id) REFERENCES channels(id),
             UNIQUE(channel_id, stream_id)
         )
         "#,
         [],
     )?;
+    eprintln!("[Schema] Step 2: streams table created");
+
+    eprintln!("[Schema] Step 3: Creating stream_stats table...");
+    // Create sequence for stream_stats table
+    conn.execute("CREATE SEQUENCE IF NOT EXISTS stream_stats_id_seq START 1", [])?;
+    eprintln!("[Schema] stream_stats sequence created");
 
     // stream_stats テーブル: 定期収集統計データ
     conn.execute(
         r#"
         CREATE TABLE IF NOT EXISTS stream_stats (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            stream_id INTEGER NOT NULL,
+            id BIGINT PRIMARY KEY DEFAULT nextval('stream_stats_id_seq'),
+            stream_id BIGINT NOT NULL,
             collected_at TIMESTAMP NOT NULL,
             viewer_count INTEGER,
             chat_rate_1min INTEGER DEFAULT 0,
-            FOREIGN KEY (stream_id) REFERENCES streams(id) ON DELETE CASCADE
+            FOREIGN KEY (stream_id) REFERENCES streams(id)
         )
         "#,
         [],
     )?;
+    eprintln!("[Schema] Step 3: stream_stats table created");
+
+    eprintln!("[Schema] Step 4: Creating chat_messages table...");
+    // Create sequence for chat_messages table
+    conn.execute("CREATE SEQUENCE IF NOT EXISTS chat_messages_id_seq START 1", [])?;
+    eprintln!("[Schema] chat_messages sequence created");
 
     // chat_messages テーブル: チャット全ログ
     conn.execute(
         r#"
         CREATE TABLE IF NOT EXISTS chat_messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            stream_id INTEGER NOT NULL,
+            id BIGINT PRIMARY KEY DEFAULT nextval('chat_messages_id_seq'),
+            stream_id BIGINT NOT NULL,
             timestamp TIMESTAMP NOT NULL,
             platform TEXT NOT NULL,
             user_id TEXT,
             user_name TEXT NOT NULL,
             message TEXT NOT NULL,
             message_type TEXT DEFAULT 'normal',
-            FOREIGN KEY (stream_id) REFERENCES streams(id) ON DELETE CASCADE
+            FOREIGN KEY (stream_id) REFERENCES streams(id)
         )
         "#,
         [],
     )?;
+    eprintln!("[Schema] Step 4: chat_messages table created");
 
     // 既存テーブルにフィールドを追加（マイグレーション）
-    migrate_database_schema(conn)?;
+    // DISABLED: Temporarily disabled due to stack overflow issues
+    // migrate_database_schema(conn)?;
 
+    eprintln!("[Schema] Step 5: Creating indexes...");
     // インデックス作成
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_streams_channel_id ON streams(channel_id)",
         [],
     )?;
+    eprintln!("[Schema] Index 1 created");
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_streams_started_at ON streams(started_at)",
         [],
     )?;
+    eprintln!("[Schema] Index 2 created");
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_stream_stats_stream_id ON stream_stats(stream_id)",
         [],
     )?;
+    eprintln!("[Schema] Index 3 created");
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_stream_stats_collected_at ON stream_stats(collected_at)",
         [],
     )?;
+    eprintln!("[Schema] Index 4 created");
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_chat_messages_stream_id ON chat_messages(stream_id)",
         [],
     )?;
+    eprintln!("[Schema] Index 5 created");
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_chat_messages_timestamp ON chat_messages(timestamp)",
         [],
     )?;
+    eprintln!("[Schema] Index 6 created");
 
+    eprintln!("[Schema] All steps completed successfully");
     Ok(())
 }
 

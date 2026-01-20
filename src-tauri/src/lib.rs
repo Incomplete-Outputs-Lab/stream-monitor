@@ -41,51 +41,72 @@ pub fn run() {
             // Initialize collectors from settings
             let app_handle = app.handle().clone();
             let poller_for_collectors = poller_arc.clone();
-            std::thread::spawn(move || {
-                tauri::async_runtime::block_on(async {
-                    // Load settings
-                    let settings = match SettingsManager::load_settings(&app_handle) {
-                        Ok(settings) => settings,
-                        Err(e) => {
-                            eprintln!("Failed to load settings: {}", e);
-                            return;
-                        }
-                    };
-
-                    let mut poller = poller_for_collectors.lock().await;
-
-                    // Initialize Twitch collector if credentials are available
-                    if let (Some(client_id), Some(client_secret)) = (&settings.twitch.client_id, &settings.twitch.client_secret) {
-                        let collector = TwitchCollector::new(client_id.clone(), client_secret.clone());
-                        poller.register_collector("twitch".to_string(), Arc::new(collector));
-                        println!("Twitch collector initialized successfully");
-                    } else {
-                        println!("Twitch credentials not configured, skipping collector initialization");
-                    }
-
-                    // Initialize YouTube collector if credentials are available
-                    if let (Some(client_id), Some(client_secret)) = (&settings.youtube.client_id, &settings.youtube.client_secret) {
-                        match YouTubeCollector::new(client_id.clone(), client_secret.clone(), "http://localhost:8081/callback".to_string()).await {
-                            Ok(collector) => {
-                                poller.register_collector("youtube".to_string(), Arc::new(collector));
-                                println!("YouTube collector initialized successfully");
-                            }
+            std::thread::Builder::new()
+                .stack_size(512 * 1024 * 1024) // 512MB stack for DuckDB initialization
+                .spawn(move || {
+                    tauri::async_runtime::block_on(async {
+                        // Load settings
+                        let settings = match SettingsManager::load_settings(&app_handle) {
+                            Ok(settings) => settings,
                             Err(e) => {
-                                eprintln!("Failed to initialize YouTube collector: {}", e);
+                                eprintln!("Failed to load settings: {}", e);
+                                return;
                             }
+                        };
+
+                        let mut poller = poller_for_collectors.lock().await;
+
+                        // Initialize Twitch collector if credentials are available
+                        if let (Some(client_id), Some(client_secret)) = (&settings.twitch.client_id, &settings.twitch.client_secret) {
+                            let collector = TwitchCollector::new(client_id.clone(), client_secret.clone());
+                            poller.register_collector("twitch".to_string(), Arc::new(collector));
+                            println!("Twitch collector initialized successfully");
+                        } else {
+                            println!("Twitch credentials not configured, skipping collector initialization");
                         }
-                    } else {
-                        println!("YouTube credentials not configured, skipping collector initialization");
-                    }
-                });
-            });
+
+                        // Initialize YouTube collector if credentials are available
+                        if let (Some(client_id), Some(client_secret)) = (&settings.youtube.client_id, &settings.youtube.client_secret) {
+                            match YouTubeCollector::new(client_id.clone(), client_secret.clone(), "http://localhost:8081/callback".to_string()).await {
+                                Ok(collector) => {
+                                    poller.register_collector("youtube".to_string(), Arc::new(collector));
+                                    println!("YouTube collector initialized successfully");
+                                }
+                                Err(e) => {
+                                    eprintln!("Failed to initialize YouTube collector: {}", e);
+                                }
+                            }
+                        } else {
+                            println!("YouTube credentials not configured, skipping collector initialization");
+                        }
+                    });
+                })
+                .expect("Failed to spawn thread for collector initialization");
 
             // Start polling for existing enabled channels in a separate task
+            // DISABLED: Database initialization moved to lazy initialization
+            // Channels will be loaded when first accessed via Tauri commands
+            /*
             let app_handle = app.handle().clone();
             let poller_clone = poller_arc.clone();
-            std::thread::spawn(move || {
-                tauri::async_runtime::block_on(async {
-                    if let Ok(conn) = get_connection(&app_handle) {
+            std::thread::Builder::new()
+                .stack_size(512 * 1024 * 1024) // 512MB stack for DuckDB operations
+                .spawn(move || {
+                    // Delay to let app fully initialize
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    tauri::async_runtime::block_on(async {
+                        eprintln!("Starting database connection...");
+                        let conn = match get_connection(&app_handle) {
+                            Ok(conn) => {
+                                eprintln!("Database connection successful");
+                                conn
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to get database connection: {}", e);
+                                return;
+                            }
+                        };
+                        
                         // Get all enabled channels
                         let mut stmt = match conn.prepare(
                             "SELECT id, platform, channel_id, channel_name, enabled, poll_interval, created_at, updated_at
@@ -132,11 +153,11 @@ pub fn run() {
                                 // Continue with other channels even if one fails
                             }
                         }
-                    } else {
-                        eprintln!("Failed to get database connection during startup");
-                    }
-                });
-            });
+                    });
+                })
+                .expect("Failed to spawn thread for channel polling");
+            */
+            eprintln!("Database initialization skipped during startup - will be initialized on first access");
 
             Ok(())
         })

@@ -1,34 +1,125 @@
 import { useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
+import { DatabaseErrorDialog } from "./DatabaseErrorDialog";
+import { DbInitStatus } from "../../types";
 
 export function SplashScreen({ onComplete }: { onComplete: () => void }) {
   const [progress, setProgress] = useState(0);
   const [fadeOut, setFadeOut] = useState(false);
+  const [dbInitStatus, setDbInitStatus] = useState<"initializing" | "success" | "error">("initializing");
+  const [dbErrorMessage, setDbErrorMessage] = useState<string>("");
+  const [showErrorDialog, setShowErrorDialog] = useState(false);
 
   useEffect(() => {
+    let progressInterval: number;
+    let fadeTimeout: number;
+    let statusCheckInterval: number;
+
+    // DB初期化状態をチェックする関数
+    const checkDbInitStatus = async () => {
+      try {
+        // バックエンドの初期化状態を確認
+        const status = await invoke<DbInitStatus>("get_database_init_status");
+
+        if (status.initialized && dbInitStatus === "initializing") {
+          console.log("Database initialization status confirmed:", status.message);
+          setDbInitStatus("success");
+          setProgress(100);
+
+          // 成功時は少し待ってから完了
+          fadeTimeout = setTimeout(() => {
+            setFadeOut(true);
+            setTimeout(() => {
+              onComplete();
+            }, 500);
+          }, 1000);
+
+          // ステータスチェックを停止
+          if (statusCheckInterval) {
+            clearInterval(statusCheckInterval);
+          }
+        } else if (!status.initialized) {
+          console.log("Database still initializing:", status.message);
+        }
+      } catch (error) {
+        console.error("Failed to check database init status:", error);
+      }
+    };
+
+    // DB初期化イベントのリスナーを設定
+    const setupEventListeners = async () => {
+      try {
+        // DB初期化成功イベント
+        const successUnlisten = await listen("database-init-success", () => {
+          console.log("Database initialization successful (via event)");
+          setDbInitStatus("success");
+          setProgress(100);
+
+          // 成功時は少し待ってから完了
+          fadeTimeout = setTimeout(() => {
+            setFadeOut(true);
+            setTimeout(() => {
+              onComplete();
+            }, 500);
+          }, 1000);
+
+          // ステータスチェックを停止
+          if (statusCheckInterval) {
+            clearInterval(statusCheckInterval);
+          }
+        });
+
+        // DB初期化エラーイベント
+        const errorUnlisten = await listen("database-init-error", (event: any) => {
+          console.error("Database initialization failed:", event.payload);
+          setDbInitStatus("error");
+          setDbErrorMessage(event.payload);
+          setShowErrorDialog(true);
+          setProgress(100);
+
+          // ステータスチェックを停止
+          if (statusCheckInterval) {
+            clearInterval(statusCheckInterval);
+          }
+        });
+
+        // クリーンアップ関数を返す
+        return () => {
+          successUnlisten();
+          errorUnlisten();
+        };
+      } catch (error) {
+        console.error("Failed to setup event listeners:", error);
+      }
+    };
+
     // プログレスバーのアニメーション
-    const progressInterval = setInterval(() => {
+    progressInterval = setInterval(() => {
       setProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(progressInterval);
-          return 100;
+        if (prev >= 90) { // DB初期化が終わるまで90%まで
+          return 90;
         }
         // 最初は速く、後半は遅く
-        const increment = prev < 70 ? 2 + Math.random() * 3 : 0.5 + Math.random() * 1;
-        return Math.min(prev + increment, 100);
+        const increment = prev < 50 ? 2 + Math.random() * 3 : 0.5 + Math.random() * 1;
+        return Math.min(prev + increment, 90);
       });
     }, 50);
 
-    // フェードアウトと完了
-    const fadeTimeout = setTimeout(() => {
-      setFadeOut(true);
-      setTimeout(() => {
-        onComplete();
-      }, 500);
-    }, 2500); // 2.5秒後にフェードアウト開始
+    // イベントリスナーを設定
+    let cleanup: (() => void) | undefined;
+    setupEventListeners().then((cleanupFn) => {
+      cleanup = cleanupFn;
+    });
+
+    // 定期的にDB初期化状態を確認（フォールバック）
+    statusCheckInterval = setInterval(checkDbInitStatus, 1000); // 1秒ごとにチェック
 
     return () => {
-      clearInterval(progressInterval);
-      clearTimeout(fadeTimeout);
+      if (progressInterval) clearInterval(progressInterval);
+      if (fadeTimeout) clearTimeout(fadeTimeout);
+      if (statusCheckInterval) clearInterval(statusCheckInterval);
+      if (cleanup) cleanup();
     };
   }, [onComplete]);
 
@@ -74,6 +165,25 @@ export function SplashScreen({ onComplete }: { onComplete: () => void }) {
           </p>
         </div>
 
+        {/* DB初期化状態表示 */}
+        <div className="text-center space-y-2">
+          {dbInitStatus === "initializing" && (
+            <p className="text-sm text-white/80 animate-fade-in-delay">
+              データベースを初期化しています...
+            </p>
+          )}
+          {dbInitStatus === "success" && (
+            <p className="text-sm text-green-300 animate-fade-in-delay">
+              データベース初期化完了 ✓
+            </p>
+          )}
+          {dbInitStatus === "error" && (
+            <p className="text-sm text-red-300 animate-fade-in-delay">
+              データベース初期化エラー ✗
+            </p>
+          )}
+        </div>
+
         {/* プログレスバー */}
         <div className="w-64 mx-auto space-y-2">
           <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
@@ -99,6 +209,24 @@ export function SplashScreen({ onComplete }: { onComplete: () => void }) {
           ))}
         </div>
       </div>
+
+      {/* Database Error Dialog */}
+      <DatabaseErrorDialog
+        isOpen={showErrorDialog}
+        errorMessage={dbErrorMessage}
+        onClose={() => {
+          // キャンセル時はアプリを終了
+          window.close();
+        }}
+        onSuccess={() => {
+          // 成功時はスプラッシュ画面を完了
+          setShowErrorDialog(false);
+          setFadeOut(true);
+          setTimeout(() => {
+            onComplete();
+          }, 500);
+        }}
+      />
     </div>
   );
 }

@@ -125,3 +125,8 @@ export interface AggregatedChatStats {
 export interface ChartDataPoint {
   [key: string]: string | number | undefined;
 }
+
+export interface DbInitStatus {
+  initialized: boolean;
+  message: string;
+}

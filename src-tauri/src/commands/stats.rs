@@ -1,6 +1,6 @@
-use crate::database::{get_connection, models::StreamStats, utils};
+use crate::database::{models::StreamStats, utils, DatabaseManager};
 use serde::{Deserialize, Serialize};
-use tauri::AppHandle;
+use tauri::{AppHandle, State};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StreamStatsQuery {
@@ -13,9 +13,10 @@ pub struct StreamStatsQuery {
 #[tauri::command]
 pub async fn get_stream_stats(
     app_handle: AppHandle,
+    db_manager: State<'_, DatabaseManager>,
     query: StreamStatsQuery,
 ) -> Result<Vec<StreamStats>, String> {
-    let conn = get_connection(&app_handle)
+    let conn = db_manager.get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     let mut sql = String::from(
@@ -72,8 +73,9 @@ pub async fn get_stream_stats(
 #[tauri::command]
 pub async fn get_live_channels(
     app_handle: AppHandle,
+    db_manager: State<'_, DatabaseManager>,
 ) -> Result<Vec<crate::database::models::ChannelWithStats>, String> {
-    let conn = get_connection(&app_handle)
+    let conn = db_manager.get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     let sql = r#"
@@ -123,10 +125,12 @@ pub async fn get_live_channels(
 #[tauri::command]
 pub async fn get_channel_stats(
     app_handle: AppHandle,
+    db_manager: State<'_, DatabaseManager>,
     channel_id: i64,
 ) -> Result<Vec<StreamStats>, String> {
     get_stream_stats(
         app_handle,
+        db_manager,
         StreamStatsQuery {
             stream_id: None,
             channel_id: Some(channel_id),

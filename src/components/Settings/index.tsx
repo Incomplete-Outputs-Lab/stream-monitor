@@ -1,8 +1,17 @@
 import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { invoke } from '@tauri-apps/api/core';
 import { OAuthLogin } from './OAuthLogin';
 import { TokenForm } from './TokenForm';
 import { useConfigStore } from '../../stores/configStore';
 import { useThemeStore } from '../../stores/themeStore';
+
+interface BuildInfo {
+  version: string;
+  commit_hash?: string;
+  build_date?: string;
+  developer: string;
+}
 
 export function Settings() {
   const [twitchAuthMethod, setTwitchAuthMethod] = useState<'token' | 'oauth' | null>(null);
@@ -10,6 +19,14 @@ export function Settings() {
 
   const { hasTwitchToken, hasYouTubeToken, checkTokens } = useConfigStore();
   const { theme, setTheme } = useThemeStore();
+
+  // ビルド情報取得
+  const { data: buildInfo } = useQuery({
+    queryKey: ["build-info"],
+    queryFn: async () => {
+      return await invoke<BuildInfo>("get_build_info");
+    },
+  });
 
   useEffect(() => {
     checkTokens();
@@ -164,6 +181,37 @@ export function Settings() {
           />
         )}
       </section>
+
+      {/* ビルド情報 */}
+      {buildInfo && (
+        <section className="card p-6 space-y-4">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">ビルド情報</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div>
+              <span className="font-medium text-gray-600 dark:text-gray-400">バージョン:</span>
+              <span className="ml-2 text-gray-900 dark:text-gray-100">{buildInfo.version}</span>
+            </div>
+            {buildInfo.commit_hash && (
+              <div>
+                <span className="font-medium text-gray-600 dark:text-gray-400">コミット:</span>
+                <span className="ml-2 text-gray-900 dark:text-gray-100 font-mono">
+                  {buildInfo.commit_hash.substring(0, 8)}
+                </span>
+              </div>
+            )}
+            {buildInfo.build_date && (
+              <div>
+                <span className="font-medium text-gray-600 dark:text-gray-400">ビルド日時:</span>
+                <span className="ml-2 text-gray-900 dark:text-gray-100">{buildInfo.build_date}</span>
+              </div>
+            )}
+            <div>
+              <span className="font-medium text-gray-600 dark:text-gray-400">開発元:</span>
+              <span className="ml-2 text-gray-900 dark:text-gray-100">{buildInfo.developer}</span>
+            </div>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

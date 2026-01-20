@@ -1,13 +1,13 @@
 use crate::database::{
     aggregation::DataAggregator,
-    get_connection,
     models::{ChatMessage, StreamStats},
     utils,
+    DatabaseManager,
 };
 use duckdb::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use tauri::AppHandle;
+use tauri::{AppHandle, State};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ExportQuery {
@@ -21,10 +21,11 @@ pub struct ExportQuery {
 #[tauri::command]
 pub async fn export_to_csv(
     app_handle: AppHandle,
+    db_manager: State<'_, DatabaseManager>,
     query: ExportQuery,
     file_path: String,
 ) -> Result<String, String> {
-    let conn = get_connection(&app_handle)
+    let conn = db_manager.get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     let stats = get_stream_stats_internal(&conn, &query)
@@ -55,10 +56,11 @@ pub async fn export_to_csv(
 #[tauri::command]
 pub async fn export_to_json(
     app_handle: AppHandle,
+    db_manager: State<'_, DatabaseManager>,
     query: ExportQuery,
     file_path: String,
 ) -> Result<String, String> {
-    let conn = get_connection(&app_handle)
+    let conn = db_manager.get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     // ストリーム統計データを取得

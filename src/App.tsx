@@ -5,6 +5,7 @@ import { Dashboard } from "./components/Dashboard";
 import { ChannelList } from "./components/ChannelList";
 import { Statistics } from "./components/Statistics";
 import { Export } from "./components/Export";
+import { Logs } from "./components/Logs";
 import { ErrorBoundary } from "./components/common/ErrorBoundary";
 import { SplashScreen } from "./components/common/SplashScreen";
 import { useThemeStore } from "./stores/themeStore";
@@ -12,7 +13,7 @@ import "./App.css";
 
 const queryClient = new QueryClient();
 
-type Tab = "dashboard" | "channels" | "statistics" | "export" | "settings";
+type Tab = "dashboard" | "channels" | "statistics" | "export" | "logs" | "settings";
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
@@ -53,6 +54,11 @@ function App() {
       id: "export",
       label: "エクスポート",
       component: <Export />
+    },
+    {
+      id: "logs",
+      label: "ログ",
+      component: <Logs />
     },
     {
       id: "settings",

@@ -1,6 +1,6 @@
 use crate::collectors::collector_trait::Collector;
 use crate::database::{
-    get_connection,
+    DatabaseManager,
     models::{Channel, Stream, StreamStats},
     writer::DatabaseWriter,
 };
@@ -8,7 +8,7 @@ use chrono::Utc;
 use duckdb::Connection;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tauri::AppHandle;
+use tauri::{AppHandle, State};
 use tokio::time::{interval, Duration, MissedTickBehavior};
 
 pub struct ChannelPoller {
@@ -34,7 +34,7 @@ impl ChannelPoller {
         self.collectors.insert(platform, collector);
     }
 
-    pub fn start_polling(&mut self, channel: Channel) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn start_polling(&mut self, channel: Channel, db_manager: &State<'_, DatabaseManager>) -> Result<(), Box<dyn std::error::Error>> {
         if !channel.enabled {
             return Ok(());
         }
@@ -48,6 +48,7 @@ impl ChannelPoller {
         let channel_id = channel.id.unwrap();
         let app_handle = self.app_handle.clone();
         let poll_interval = Duration::from_secs(channel.poll_interval as u64);
+        let db_manager = Arc::new(db_manager.inner().clone());
 
         let task = tokio::spawn(async move {
             let mut interval = interval(poll_interval);
@@ -66,7 +67,7 @@ impl ChannelPoller {
                 interval.tick().await;
 
                 // チャンネル情報を再取得（更新されている可能性があるため）
-                let conn = match get_connection(&app_handle) {
+                let conn = match db_manager.get_connection() {
                     Ok(conn) => conn,
                     Err(e) => {
                         eprintln!("Failed to get database connection: {}", e);

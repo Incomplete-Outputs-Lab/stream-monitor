@@ -1,10 +1,9 @@
 use crate::database::models::ChatMessage;
-use crate::database::writer::DatabaseWriter;
 use google_youtube3::api::LiveChatMessage;
 use google_youtube3::{hyper_rustls, hyper_util, YouTube};
 use hyper_util::client::legacy::connect::HttpConnector;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 use tokio::time::{interval, Duration, MissedTickBehavior};
 
 /// YouTube Live Chat APIクライアント
@@ -142,10 +141,10 @@ impl YouTubeLiveChatClient {
         }
     }
 
-    /// 定期的にチャットメッセージを収集してデータベースに保存
+    /// 定期的にチャットメッセージを収集してチャンネルに送信
     pub async fn start_collection(
         &mut self,
-        db_conn: Arc<Mutex<duckdb::Connection>>,
+        message_tx: tokio::sync::mpsc::UnboundedSender<crate::database::models::ChatMessage>,
         poll_interval_secs: u64,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mut interval = interval(Duration::from_secs(poll_interval_secs));
@@ -161,14 +160,15 @@ impl YouTubeLiveChatClient {
 
             match self.fetch_chat_messages().await {
                 Ok(messages) => {
-                    if !messages.is_empty() {
-                        let conn = db_conn.lock().await;
-                        if let Err(e) = DatabaseWriter::insert_chat_messages_batch(&conn, &messages)
-                        {
-                            eprintln!("Failed to save YouTube chat messages: {}", e);
-                        } else {
-                            println!("Saved {} YouTube chat messages", messages.len());
+                    let message_count = messages.len();
+                    if message_count > 0 {
+                        for message in messages {
+                            if let Err(e) = message_tx.send(message) {
+                                eprintln!("Failed to send YouTube chat message: {}", e);
+                                // エラーが発生しても継続
+                            }
                         }
+                        println!("Sent {} YouTube chat messages to channel", message_count);
                     }
                 }
                 Err(e) => {
@@ -184,8 +184,8 @@ impl YouTubeLiveChatClient {
 #[allow(dead_code)]
 pub struct YouTubeLiveChatCollector {
     client: Arc<Mutex<YouTubeLiveChatClient>>,
-    db_conn: Arc<Mutex<duckdb::Connection>>,
-    collection_task: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    message_tx: mpsc::UnboundedSender<ChatMessage>,
+    db_handler_task: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 #[allow(dead_code)]
@@ -195,11 +195,19 @@ impl YouTubeLiveChatCollector {
         db_conn: Arc<Mutex<duckdb::Connection>>,
         stream_id: i64,
     ) -> Self {
+        let (message_tx, message_rx) = mpsc::unbounded_channel();
+
+        // データベース書き込みハンドラーを起動
+        let db_conn_clone = Arc::clone(&db_conn);
+        let db_handler_task = tokio::spawn(async move {
+            Self::start_db_handler(db_conn_clone, message_rx).await;
+        });
+
         let client = YouTubeLiveChatClient::new(Arc::clone(&hub), stream_id);
         Self {
             client: Arc::new(Mutex::new(client)),
-            db_conn,
-            collection_task: Arc::new(Mutex::new(None)),
+            message_tx,
+            db_handler_task: Arc::new(Mutex::new(Some(db_handler_task))),
         }
     }
 
@@ -207,7 +215,7 @@ impl YouTubeLiveChatCollector {
     pub async fn start_with_video_id(
         &self,
         video_id: &str,
-        _poll_interval_secs: u64,
+        poll_interval_secs: u64,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mut client = self.client.lock().await;
 
@@ -219,19 +227,20 @@ impl YouTubeLiveChatCollector {
                 live_chat_id, video_id
             );
 
-            // コレクションタスクを開始
-            let video_id_for_task = video_id.to_string();
-            let task = tokio::task::spawn_blocking(move || {
-                // TODO: 非同期タスクを同期的に実行
-                // 現時点ではタスクを開始せずに終了
-                println!(
-                    "YouTube live chat collection task started for video: {}",
-                    video_id_for_task
-                );
+            // コレクションを開始 - clientを独立したインスタンスとして作成
+            let message_tx_clone = self.message_tx.clone();
+            let mut client_for_task = YouTubeLiveChatClient::new(Arc::clone(&self.client.lock().await.hub), self.client.lock().await.stream_id);
+            let collection_task = tokio::spawn(async move {
+                if let Err(e) = client_for_task.start_collection(message_tx_clone, poll_interval_secs).await {
+                    eprintln!(
+                        "YouTube live chat collection failed for video {}: {}",
+                        video_id_clone, e
+                    );
+                }
             });
 
-            let mut collection_task = self.collection_task.lock().await;
-            *collection_task = Some(task);
+            let mut db_handler_task = self.db_handler_task.lock().await;
+            *db_handler_task = Some(collection_task);
 
             Ok(())
         } else {
@@ -241,9 +250,66 @@ impl YouTubeLiveChatCollector {
 
     /// コレクションを停止
     pub async fn stop_collection(&self) {
-        let mut task = self.collection_task.lock().await;
+        let mut task = self.db_handler_task.lock().await;
         if let Some(task_handle) = task.take() {
             task_handle.abort();
+        }
+    }
+
+    /// データベース書き込みハンドラーを起動
+    async fn start_db_handler(
+        db_conn: Arc<Mutex<duckdb::Connection>>,
+        mut message_rx: mpsc::UnboundedReceiver<ChatMessage>,
+    ) {
+        let mut batch = Vec::new();
+        let mut interval = tokio::time::interval(Duration::from_secs(5));
+
+        loop {
+            tokio::select! {
+                msg = message_rx.recv() => {
+                    match msg {
+                        Some(chat_message) => {
+                            batch.push(chat_message);
+                            // バッチサイズに達したら即座に書き込み
+                            if batch.len() >= 100 {
+                                Self::flush_batch(&db_conn, &mut batch).await;
+                            }
+                        }
+                        None => break, // チャンネルが閉じられた
+                    }
+                }
+                _ = interval.tick() => {
+                    // 定期的にバッチをフラッシュ
+                    Self::flush_batch(&db_conn, &mut batch).await;
+                }
+            }
+        }
+
+        // ループ終了時に残りのメッセージを書き込み
+        if !batch.is_empty() {
+            Self::flush_batch(&db_conn, &mut batch).await;
+        }
+    }
+
+    /// バッチメッセージをデータベースに書き込み
+    async fn flush_batch(
+        db_conn: &Arc<Mutex<duckdb::Connection>>,
+        batch: &mut Vec<ChatMessage>,
+    ) {
+        if batch.is_empty() {
+            return;
+        }
+
+        let conn = db_conn.lock().await;
+        match crate::database::writer::DatabaseWriter::insert_chat_messages_batch(&conn, batch) {
+            Ok(_) => {
+                println!("Saved {} YouTube chat messages to database", batch.len());
+                batch.clear();
+            }
+            Err(e) => {
+                eprintln!("Failed to save YouTube chat messages batch: {}", e);
+                // エラーが発生してもバッチはクリアせず、次回再試行
+            }
         }
     }
 }

@@ -143,24 +143,28 @@ export function Export() {
           <div className="text-xs text-yellow-600 dark:text-yellow-400 font-medium">🔄 開発中</div>
         </div>
 
+        <div className="card p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">詳細仕様</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            詳細な型情報とフォーマット仕様については、GitHubレポジトリを参照してください。
+          </p>
+          <button
+            onClick={() => window.open('https://github.com/your-repo/stream-monitor', '_blank')}
+            className="text-xs bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-md font-medium transition-colors"
+          >
+            GitHubで開く
+          </button>
+        </div>
       </div>
 
       {/* 集計オプションの説明 */}
       <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6">
         <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100 mb-4">集計オプションについて</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-          <div>
-            <h4 className="font-medium text-blue-800 dark:text-blue-200 mb-2">生データ (Raw)</h4>
-            <p className="text-blue-700 dark:text-blue-300">
-              収集した全てのデータをそのままエクスポートします。詳細な分析に適しています。
-            </p>
-          </div>
-          <div>
-            <h4 className="font-medium text-blue-800 dark:text-blue-200 mb-2">1分/5分/1時間集計</h4>
-            <p className="text-blue-700 dark:text-blue-300">
-              指定した時間間隔でデータを集計します。トレンド分析やレポート作成に適しています。
-            </p>
-          </div>
+        <div className="text-sm">
+          <h4 className="font-medium text-blue-800 dark:text-blue-200 mb-2">1分/5分/1時間集計</h4>
+          <p className="text-blue-700 dark:text-blue-300">
+            指定した時間間隔でデータを集計します。トレンド分析やレポート作成に適しています。
+          </p>
         </div>
       </div>
 

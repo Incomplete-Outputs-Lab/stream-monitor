@@ -3,8 +3,8 @@ use chrono::Utc;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
-use tokio::time::Duration;
 use tokio::task::JoinHandle;
+use tokio::time::Duration;
 use tungstenite::connect;
 use tungstenite::protocol::Message;
 use url::Url;
@@ -305,10 +305,7 @@ impl TwitchIrcManager {
     }
 
     /// バッチメッセージをデータベースに書き込み
-    async fn flush_batch(
-        db_conn: &Arc<Mutex<duckdb::Connection>>,
-        batch: &mut Vec<ChatMessage>,
-    ) {
+    async fn flush_batch(db_conn: &Arc<Mutex<duckdb::Connection>>, batch: &mut Vec<ChatMessage>) {
         if batch.is_empty() {
             return;
         }

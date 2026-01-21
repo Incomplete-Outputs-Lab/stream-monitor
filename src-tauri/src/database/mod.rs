@@ -50,7 +50,9 @@ impl DatabaseManager {
             // 接続が有効か確認（簡単なクエリを実行）
             match conn.execute("SELECT 1", []) {
                 Ok(_) => {
-                    return Ok((*conn).try_clone().map_err(|e| format!("Failed to clone connection: {}", e))?);
+                    return Ok((*conn)
+                        .try_clone()
+                        .map_err(|e| format!("Failed to clone connection: {}", e))?);
                 }
                 Err(_) => {
                     eprintln!("Database connection is invalid, recreating...");
@@ -60,9 +62,15 @@ impl DatabaseManager {
         }
 
         // 新しい接続を作成
-        eprintln!("Creating new database connection at: {}", self.db_path.display());
+        eprintln!(
+            "Creating new database connection at: {}",
+            self.db_path.display()
+        );
         let conn = self.create_connection()?;
-        *conn_guard = Some(conn.try_clone().map_err(|e| format!("Failed to clone connection: {}", e))?);
+        *conn_guard = Some(
+            conn.try_clone()
+                .map_err(|e| format!("Failed to clone connection: {}", e))?,
+        );
 
         Ok(conn)
     }
@@ -112,7 +120,12 @@ impl DatabaseManager {
                 c
             }
             Ok(Err(e)) => {
-                return Err(format!("Failed to open database at {}: {}", self.db_path.display(), e).into());
+                return Err(format!(
+                    "Failed to open database at {}: {}",
+                    self.db_path.display(),
+                    e
+                )
+                .into());
             }
             Err(_) => {
                 return Err("Thread panicked while opening database".into());
@@ -133,7 +146,6 @@ impl DatabaseManager {
         Ok(conn)
     }
 }
-
 
 // 後方互換性のための関数（DatabaseManagerを使用）
 pub fn get_connection(app_handle: &AppHandle) -> Result<Connection, Box<dyn std::error::Error>> {

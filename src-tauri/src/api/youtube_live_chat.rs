@@ -229,9 +229,15 @@ impl YouTubeLiveChatCollector {
 
             // コレクションを開始 - clientを独立したインスタンスとして作成
             let message_tx_clone = self.message_tx.clone();
-            let mut client_for_task = YouTubeLiveChatClient::new(Arc::clone(&self.client.lock().await.hub), self.client.lock().await.stream_id);
+            let mut client_for_task = YouTubeLiveChatClient::new(
+                Arc::clone(&self.client.lock().await.hub),
+                self.client.lock().await.stream_id,
+            );
             let collection_task = tokio::spawn(async move {
-                if let Err(e) = client_for_task.start_collection(message_tx_clone, poll_interval_secs).await {
+                if let Err(e) = client_for_task
+                    .start_collection(message_tx_clone, poll_interval_secs)
+                    .await
+                {
                     eprintln!(
                         "YouTube live chat collection failed for video {}: {}",
                         video_id_clone, e
@@ -292,10 +298,7 @@ impl YouTubeLiveChatCollector {
     }
 
     /// バッチメッセージをデータベースに書き込み
-    async fn flush_batch(
-        db_conn: &Arc<Mutex<duckdb::Connection>>,
-        batch: &mut Vec<ChatMessage>,
-    ) {
+    async fn flush_batch(db_conn: &Arc<Mutex<duckdb::Connection>>, batch: &mut Vec<ChatMessage>) {
         if batch.is_empty() {
             return;
         }

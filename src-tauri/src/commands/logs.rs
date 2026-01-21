@@ -18,10 +18,7 @@ pub struct GetLogsQuery {
 }
 
 #[command]
-pub async fn get_logs(
-    app_handle: AppHandle,
-    query: GetLogsQuery,
-) -> Result<Vec<LogEntry>, String> {
+pub async fn get_logs(app_handle: AppHandle, query: GetLogsQuery) -> Result<Vec<LogEntry>, String> {
     // ログファイルのパスを取得（データベースと同じディレクトリにlogs.txtとして保存）
     let log_path = if let Ok(app_data_dir) = app_handle.path().app_data_dir() {
         app_data_dir.join("logs.txt")
@@ -42,10 +39,7 @@ pub async fn get_logs(
         .map_err(|e| format!("ログファイルの読み込みに失敗しました: {}", e))?;
 
     // ログをパースしてフィルタリング
-    let mut logs: Vec<LogEntry> = content
-        .lines()
-        .filter_map(parse_log_line)
-        .collect();
+    let mut logs: Vec<LogEntry> = content.lines().filter_map(parse_log_line).collect();
 
     // レベルフィルタリング
     if let Some(ref level) = query.level {

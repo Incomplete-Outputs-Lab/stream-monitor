@@ -16,7 +16,8 @@ pub async fn get_stream_stats(
     db_manager: State<'_, DatabaseManager>,
     query: StreamStatsQuery,
 ) -> Result<Vec<StreamStats>, String> {
-    let conn = db_manager.get_connection()
+    let conn = db_manager
+        .get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     let mut sql = String::from(
@@ -75,7 +76,8 @@ pub async fn get_live_channels(
     _app_handle: AppHandle,
     db_manager: State<'_, DatabaseManager>,
 ) -> Result<Vec<crate::database::models::ChannelWithStats>, String> {
-    let conn = db_manager.get_connection()
+    let conn = db_manager
+        .get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     let sql = r#"

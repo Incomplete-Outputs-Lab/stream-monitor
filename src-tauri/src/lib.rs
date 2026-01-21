@@ -14,7 +14,10 @@ use collectors::{poller::ChannelPoller, twitch::TwitchCollector, youtube::YouTub
 use commands::{
     channels::{add_channel, list_channels, remove_channel, toggle_channel, update_channel},
     chat::{get_chat_messages, get_chat_rate, get_chat_stats},
-    config::{delete_token, get_build_info, get_database_init_status, get_token, has_token, initialize_database, recreate_database, save_token, verify_token},
+    config::{
+        delete_token, get_build_info, get_database_init_status, get_token, has_token,
+        initialize_database, recreate_database, save_token, verify_token,
+    },
     export::{export_to_csv, export_to_json},
     logs::get_logs,
     oauth::{login_with_twitch, login_with_youtube},
@@ -81,7 +84,7 @@ pub fn run() {
                     eprintln!("Initializing application daemons...");
 
                     // Initialize ChannelPoller and manage it as app state
-                    let poller = ChannelPoller::new(app_handle.clone());
+                    let poller = ChannelPoller::new();
                     let poller_arc = Arc::new(Mutex::new(poller));
                     // Note: app.manage() cannot be called from a spawned thread, so we handle this differently
                     // The poller will be managed per command invocation instead

@@ -70,7 +70,8 @@ pub async fn get_chat_messages(
     db_manager: State<'_, DatabaseManager>,
     query: ChatMessagesQuery,
 ) -> Result<Vec<ChatMessage>, String> {
-    let conn = db_manager.get_connection()
+    let conn = db_manager
+        .get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     let mut sql = String::from(
@@ -128,7 +129,8 @@ pub async fn get_chat_stats(
     db_manager: State<'_, DatabaseManager>,
     query: ChatStatsQuery,
 ) -> Result<ChatStats, String> {
-    let conn = db_manager.get_connection()
+    let conn = db_manager
+        .get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     // 基本的なWHERE条件を構築
@@ -341,7 +343,8 @@ pub async fn get_chat_rate(
     db_manager: State<'_, DatabaseManager>,
     query: ChatRateQuery,
 ) -> Result<Vec<ChatRateData>, String> {
-    let conn = db_manager.get_connection()
+    let conn = db_manager
+        .get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     let interval_minutes = query.interval_minutes.unwrap_or(1);

@@ -20,7 +20,8 @@ pub async fn add_channel(
     db_manager: State<'_, DatabaseManager>,
     request: AddChannelRequest,
 ) -> Result<Channel, String> {
-    let conn = db_manager.get_connection()
+    let conn = db_manager
+        .get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     let poll_interval = request.poll_interval.unwrap_or(60);
@@ -67,7 +68,7 @@ pub async fn add_channel(
 pub async fn remove_channel(
     app_handle: AppHandle,
     db_manager: State<'_, DatabaseManager>,
-    id: i64
+    id: i64,
 ) -> Result<(), String> {
     // 削除前にポーリングを停止
     if let Some(poller) = app_handle.try_state::<Arc<Mutex<ChannelPoller>>>() {
@@ -75,7 +76,8 @@ pub async fn remove_channel(
         poller.stop_polling(id);
     }
 
-    let conn = db_manager.get_connection()
+    let conn = db_manager
+        .get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     let id_str = id.to_string();
@@ -94,7 +96,8 @@ pub async fn update_channel(
     poll_interval: Option<i32>,
     enabled: Option<bool>,
 ) -> Result<Channel, String> {
-    let conn = db_manager.get_connection()
+    let conn = db_manager
+        .get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     // 更新前の状態を取得（有効状態の変更を検知するため）
@@ -156,9 +159,10 @@ pub async fn update_channel(
 #[tauri::command]
 pub async fn list_channels(
     _app_handle: AppHandle,
-    db_manager: State<'_, DatabaseManager>
+    db_manager: State<'_, DatabaseManager>,
 ) -> Result<Vec<Channel>, String> {
-    let conn = db_manager.get_connection()
+    let conn = db_manager
+        .get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     let mut stmt = conn
@@ -189,9 +193,10 @@ pub async fn list_channels(
 pub async fn toggle_channel(
     app_handle: AppHandle,
     db_manager: State<'_, DatabaseManager>,
-    id: i64
+    id: i64,
 ) -> Result<Channel, String> {
-    let conn = db_manager.get_connection()
+    let conn = db_manager
+        .get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     // 現在の状態を取得

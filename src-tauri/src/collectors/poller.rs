@@ -1,26 +1,24 @@
 use crate::collectors::collector_trait::Collector;
 use crate::database::{
-    DatabaseManager,
     models::{Channel, Stream, StreamStats},
     writer::DatabaseWriter,
+    DatabaseManager,
 };
 use chrono::Utc;
 use duckdb::Connection;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tauri::{AppHandle, State};
+use tauri::State;
 use tokio::time::{interval, Duration, MissedTickBehavior};
 
 pub struct ChannelPoller {
-    app_handle: AppHandle,
     collectors: HashMap<String, Arc<dyn Collector + Send + Sync>>,
     tasks: HashMap<i64, tokio::task::JoinHandle<()>>,
 }
 
 impl ChannelPoller {
-    pub fn new(app_handle: AppHandle) -> Self {
+    pub fn new() -> Self {
         Self {
-            app_handle,
             collectors: HashMap::new(),
             tasks: HashMap::new(),
         }
@@ -34,7 +32,11 @@ impl ChannelPoller {
         self.collectors.insert(platform, collector);
     }
 
-    pub fn start_polling(&mut self, channel: Channel, db_manager: &State<'_, DatabaseManager>) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn start_polling(
+        &mut self,
+        channel: Channel,
+        db_manager: &State<'_, DatabaseManager>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if !channel.enabled {
             return Ok(());
         }

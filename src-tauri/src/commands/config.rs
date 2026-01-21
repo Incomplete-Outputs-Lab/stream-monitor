@@ -98,7 +98,10 @@ pub async fn initialize_database(app_handle: AppHandle) -> Result<DatabaseInitRe
                     })
                 }
                 Err(schema_err) => {
-                    eprintln!("[Database Init] Schema initialization failed: {}", schema_err);
+                    eprintln!(
+                        "[Database Init] Schema initialization failed: {}",
+                        schema_err
+                    );
                     Ok(DatabaseInitResult {
                         success: false,
                         message: format!("Schema initialization failed: {}", schema_err),
@@ -112,7 +115,10 @@ pub async fn initialize_database(app_handle: AppHandle) -> Result<DatabaseInitRe
             eprintln!("[Database Init] Database initialization failed: {}", e);
 
             // エラーの種類を判定
-            let error_type = if e.to_string().contains("Failed to initialize database schema") {
+            let error_type = if e
+                .to_string()
+                .contains("Failed to initialize database schema")
+            {
                 "schema_error"
             } else if e.to_string().contains("Failed to open database") {
                 "connection_error"
@@ -175,7 +181,10 @@ pub async fn recreate_database(app_handle: AppHandle) -> Result<DatabaseInitResu
                     })
                 }
                 Err(schema_err) => {
-                    eprintln!("[Database Recreate] Schema initialization failed: {}", schema_err);
+                    eprintln!(
+                        "[Database Recreate] Schema initialization failed: {}",
+                        schema_err
+                    );
                     Ok(DatabaseInitResult {
                         success: false,
                         message: format!("Schema initialization failed: {}", schema_err),
@@ -200,7 +209,7 @@ pub async fn recreate_database(app_handle: AppHandle) -> Result<DatabaseInitResu
 #[command]
 pub async fn get_database_init_status(
     _app_handle: AppHandle,
-    db_manager: State<'_, DatabaseManager>
+    db_manager: State<'_, DatabaseManager>,
 ) -> Result<DbInitStatus, String> {
     // データベース接続を試行して初期化状態を確認
     match db_manager.get_connection() {

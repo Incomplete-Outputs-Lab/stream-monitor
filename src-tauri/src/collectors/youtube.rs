@@ -12,6 +12,7 @@ use tokio::sync::Mutex;
 pub struct YouTubeCollector {
     api_client: Arc<Mutex<YouTubeApiClient>>,
     chat_collectors: Arc<Mutex<HashMap<String, YouTubeLiveChatCollector>>>,
+    db_conn: Arc<Mutex<duckdb::Connection>>,
 }
 
 #[allow(dead_code)]
@@ -20,11 +21,13 @@ impl YouTubeCollector {
         client_id: String,
         client_secret: String,
         redirect_uri: String,
+        db_conn: Arc<Mutex<duckdb::Connection>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let api_client = YouTubeApiClient::new(client_id, client_secret, redirect_uri).await?;
         Ok(Self {
             api_client: Arc::new(Mutex::new(api_client)),
             chat_collectors: Arc::new(Mutex::new(HashMap::new())),
+            db_conn,
         })
     }
 }
@@ -82,8 +85,11 @@ impl YouTubeCollector {
         // チャット機能は現在無効化中
         // let mut client = self.api_client.lock().await;
         // let hub = client.get_hub().clone();
+        // let db_conn = Arc::clone(&self.db_conn);
         // let chat_collector = YouTubeLiveChatCollector::new(hub, db_conn, stream_id);
         // chat_collector.start_with_video_id(video_id, poll_interval_secs).await?;
+        // let mut chat_collectors = self.chat_collectors.lock().await;
+        // chat_collectors.insert(video_id.to_string(), chat_collector);
         Ok(())
     }
 

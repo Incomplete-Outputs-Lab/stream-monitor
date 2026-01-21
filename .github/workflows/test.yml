@@ -67,7 +67,7 @@ jobs:
         run: npm ci
 
       - name: Run TypeScript type check
-        run: npm run build -- --mode test || npx tsc --noEmit
+        run: npm run build
 
       - name: Check formatting (if configured)
         run: echo "Frontend formatting check placeholder"

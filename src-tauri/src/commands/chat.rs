@@ -1,6 +1,6 @@
-use crate::database::{get_connection, models::ChatMessage, utils};
+use crate::database::{models::ChatMessage, utils, DatabaseManager};
 use serde::{Deserialize, Serialize};
-use tauri::AppHandle;
+use tauri::{AppHandle, State};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChatMessagesQuery {
@@ -66,10 +66,12 @@ pub struct ChatRateData {
 
 #[tauri::command]
 pub async fn get_chat_messages(
-    app_handle: AppHandle,
+    _app_handle: AppHandle,
+    db_manager: State<'_, DatabaseManager>,
     query: ChatMessagesQuery,
 ) -> Result<Vec<ChatMessage>, String> {
-    let conn = get_connection(&app_handle)
+    let conn = db_manager
+        .get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     let mut sql = String::from(
@@ -123,10 +125,12 @@ pub async fn get_chat_messages(
 
 #[tauri::command]
 pub async fn get_chat_stats(
-    app_handle: AppHandle,
+    _app_handle: AppHandle,
+    db_manager: State<'_, DatabaseManager>,
     query: ChatStatsQuery,
 ) -> Result<ChatStats, String> {
-    let conn = get_connection(&app_handle)
+    let conn = db_manager
+        .get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     // 基本的なWHERE条件を構築
@@ -335,10 +339,12 @@ pub async fn get_chat_stats(
 
 #[tauri::command]
 pub async fn get_chat_rate(
-    app_handle: AppHandle,
+    _app_handle: AppHandle,
+    db_manager: State<'_, DatabaseManager>,
     query: ChatRateQuery,
 ) -> Result<Vec<ChatRateData>, String> {
-    let conn = get_connection(&app_handle)
+    let conn = db_manager
+        .get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     let interval_minutes = query.interval_minutes.unwrap_or(1);

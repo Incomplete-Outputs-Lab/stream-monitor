@@ -12,34 +12,24 @@
     -webkit-text-size-adjust: 100%;
   }
 
-  /* Tauri風のスクロールバー */
+  /* ネイティブアプリ風にカーソルをデフォルトに設定 */
+  body {
+    cursor: default;
+  }
+
+  /* インタラクティブ要素には適切なカーソルを設定 */
+  input, textarea, select, button {
+    cursor: auto;
+  }
+
+  /* クリック可能な要素 */
+  a, [role="button"], [tabindex]:not([tabindex="-1"]) {
+    cursor: pointer;
+  }
+
+  /* Tauri風のスクロールバー - ネイティブアプリ風に非表示 */
   ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    background: rgba(148, 163, 184, 0.5);
-    border-radius: 4px;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    background: rgba(148, 163, 184, 0.7);
-  }
-
-  /* ダークモード対応のスクロールバー */
-  @media (prefers-color-scheme: dark) {
-    ::-webkit-scrollbar-thumb {
-      background: rgba(71, 85, 105, 0.5);
-    }
-
-    ::-webkit-scrollbar-thumb:hover {
-      background: rgba(71, 85, 105, 0.7);
-    }
+    display: none;
   }
 
   /* 選択テキストのスタイル */

@@ -5,6 +5,8 @@ import { Dashboard } from "./components/Dashboard";
 import { ChannelList } from "./components/ChannelList";
 import { Statistics } from "./components/Statistics";
 import { Export } from "./components/Export";
+import { Logs } from "./components/Logs";
+import { MultiView } from "./components/MultiView";
 import { ErrorBoundary } from "./components/common/ErrorBoundary";
 import { SplashScreen } from "./components/common/SplashScreen";
 import { useThemeStore } from "./stores/themeStore";
@@ -12,7 +14,7 @@ import "./App.css";
 
 const queryClient = new QueryClient();
 
-type Tab = "dashboard" | "channels" | "statistics" | "export" | "settings";
+type Tab = "dashboard" | "channels" | "statistics" | "export" | "logs" | "settings" | "multiview";
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
@@ -53,6 +55,16 @@ function App() {
       id: "export",
       label: "エクスポート",
       component: <Export />
+    },
+    {
+      id: "logs",
+      label: "ログ",
+      component: <Logs />
+    },
+    {
+      id: "multiview",
+      label: "マルチビュー",
+      component: <MultiView />
     },
     {
       id: "settings",
@@ -99,7 +111,7 @@ function App() {
                     <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
                       Stream Monitor
                     </h1>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">ストリーム統計収集ツール</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Real time stream analysis system</p>
                   </div>
                 </div>
               </div>

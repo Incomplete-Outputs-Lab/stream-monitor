@@ -76,6 +76,7 @@ impl DatabaseWriter {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn insert_chat_message(
         conn: &Connection,
         message: &ChatMessage,

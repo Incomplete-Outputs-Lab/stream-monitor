@@ -45,7 +45,6 @@ export function ExportForm({ config, onConfigChange, channels }: ExportFormProps
   ];
 
   const aggregationOptions = [
-    { value: 'raw' as const, label: '生データ', description: '全ての収集データをそのまま' },
     { value: '1min' as const, label: '1分集計', description: '1分単位で平均化' },
     { value: '5min' as const, label: '5分集計', description: '5分単位で平均化' },
     { value: '1hour' as const, label: '1時間集計', description: '1時間単位で平均化' },

@@ -1,9 +1,10 @@
 use crate::database::models::ChatMessage;
-use crate::database::writer::DatabaseWriter;
 use chrono::Utc;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
+use tokio::time::Duration;
 use tungstenite::connect;
 use tungstenite::protocol::Message;
 use url::Url;
@@ -31,7 +32,7 @@ impl TwitchIrcClient {
     /// Twitch IRCに接続し、チャットメッセージを収集する
     pub async fn connect_and_collect(
         &mut self,
-        db_conn: Arc<Mutex<duckdb::Connection>>,
+        message_tx: mpsc::UnboundedSender<ChatMessage>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let (shutdown_tx, mut shutdown_rx) = mpsc::unbounded_channel();
         self.shutdown_tx = Some(shutdown_tx);
@@ -97,15 +98,9 @@ impl TwitchIrcClient {
                             };
 
                             if let Some(chat_message) = chat_message_opt {
-                                let conn = db_conn.lock().await;
-                                match DatabaseWriter::insert_chat_message(&conn, &chat_message) {
-                                    Ok(_) => {
-                                        // 正常に保存された場合は何もしない
-                                    }
-                                    Err(e) => {
-                                        eprintln!("Failed to save chat message for channel {}: {}", channel_name, e);
-                                        // エラーが発生しても接続を継続
-                                    }
+                                if let Err(e) = message_tx.send(chat_message) {
+                                    eprintln!("Failed to send chat message for channel {}: {}", channel_name, e);
+                                    // エラーが発生しても接続を継続
                                 }
                             }
 
@@ -189,15 +184,25 @@ impl TwitchIrcClient {
 #[allow(dead_code)]
 pub struct TwitchIrcManager {
     connections: Arc<Mutex<std::collections::HashMap<String, TwitchIrcClient>>>,
-    db_conn: Arc<Mutex<duckdb::Connection>>,
+    message_tx: mpsc::UnboundedSender<ChatMessage>,
+    db_handler_task: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
 
 #[allow(dead_code)]
 impl TwitchIrcManager {
     pub fn new(db_conn: Arc<Mutex<duckdb::Connection>>) -> Self {
+        let (message_tx, message_rx) = mpsc::unbounded_channel();
+
+        // データベース書き込みハンドラーを起動
+        let db_conn_clone = Arc::clone(&db_conn);
+        let db_handler_task = tokio::spawn(async move {
+            Self::start_db_handler(db_conn_clone, message_rx).await;
+        });
+
         Self {
             connections: Arc::new(Mutex::new(std::collections::HashMap::new())),
-            db_conn,
+            message_tx,
+            db_handler_task: Arc::new(Mutex::new(Some(db_handler_task))),
         }
     }
 
@@ -220,7 +225,7 @@ impl TwitchIrcManager {
             access_token.to_string(),
         );
 
-        let db_conn_clone = Arc::clone(&self.db_conn);
+        let message_tx_clone = self.message_tx.clone();
         let channel_name_clone = channel_name.to_string();
         let mut client_for_task = TwitchIrcClient::new(
             stream_id,
@@ -229,7 +234,7 @@ impl TwitchIrcManager {
         );
 
         tokio::spawn(async move {
-            if let Err(e) = client_for_task.connect_and_collect(db_conn_clone).await {
+            if let Err(e) = client_for_task.connect_and_collect(message_tx_clone).await {
                 eprintln!(
                     "Twitch IRC collection failed for {}: {}",
                     channel_name_clone, e
@@ -256,5 +261,65 @@ impl TwitchIrcManager {
             client.shutdown();
         }
         connections.clear();
+
+        // データベースハンドラータスクを停止
+        let mut task = self.db_handler_task.lock().await;
+        if let Some(task_handle) = task.take() {
+            task_handle.abort();
+        }
+    }
+
+    /// データベース書き込みハンドラーを起動
+    async fn start_db_handler(
+        db_conn: Arc<Mutex<duckdb::Connection>>,
+        mut message_rx: mpsc::UnboundedReceiver<ChatMessage>,
+    ) {
+        let mut batch = Vec::new();
+        let mut interval = tokio::time::interval(Duration::from_secs(5));
+
+        loop {
+            tokio::select! {
+                msg = message_rx.recv() => {
+                    match msg {
+                        Some(chat_message) => {
+                            batch.push(chat_message);
+                            // バッチサイズに達したら即座に書き込み
+                            if batch.len() >= 100 {
+                                Self::flush_batch(&db_conn, &mut batch).await;
+                            }
+                        }
+                        None => break, // チャンネルが閉じられた
+                    }
+                }
+                _ = interval.tick() => {
+                    // 定期的にバッチをフラッシュ
+                    Self::flush_batch(&db_conn, &mut batch).await;
+                }
+            }
+        }
+
+        // ループ終了時に残りのメッセージを書き込み
+        if !batch.is_empty() {
+            Self::flush_batch(&db_conn, &mut batch).await;
+        }
+    }
+
+    /// バッチメッセージをデータベースに書き込み
+    async fn flush_batch(db_conn: &Arc<Mutex<duckdb::Connection>>, batch: &mut Vec<ChatMessage>) {
+        if batch.is_empty() {
+            return;
+        }
+
+        let conn = db_conn.lock().await;
+        match crate::database::writer::DatabaseWriter::insert_chat_messages_batch(&conn, batch) {
+            Ok(_) => {
+                println!("Saved {} chat messages to database", batch.len());
+                batch.clear();
+            }
+            Err(e) => {
+                eprintln!("Failed to save chat messages batch: {}", e);
+                // エラーが発生してもバッチはクリアせず、次回再試行
+            }
+        }
     }
 }

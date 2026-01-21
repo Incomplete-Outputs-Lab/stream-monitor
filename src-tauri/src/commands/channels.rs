@@ -1,9 +1,9 @@
 use crate::collectors::poller::ChannelPoller;
-use crate::database::{get_connection, models::Channel, utils};
+use crate::database::{models::Channel, utils, DatabaseManager};
 use duckdb::Connection;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, State};
 use tokio::sync::Mutex;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -17,9 +17,11 @@ pub struct AddChannelRequest {
 #[tauri::command]
 pub async fn add_channel(
     app_handle: AppHandle,
+    db_manager: State<'_, DatabaseManager>,
     request: AddChannelRequest,
 ) -> Result<Channel, String> {
-    let conn = get_connection(&app_handle)
+    let conn = db_manager
+        .get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     let poll_interval = request.poll_interval.unwrap_or(60);
@@ -49,7 +51,7 @@ pub async fn add_channel(
     if channel.enabled {
         if let Some(poller) = app_handle.try_state::<Arc<Mutex<ChannelPoller>>>() {
             let mut poller = poller.lock().await;
-            if let Err(e) = poller.start_polling(channel.clone()) {
+            if let Err(e) = poller.start_polling(channel.clone(), &db_manager) {
                 eprintln!(
                     "Failed to start polling for new channel {}: {}",
                     channel_id, e
@@ -63,14 +65,19 @@ pub async fn add_channel(
 }
 
 #[tauri::command]
-pub async fn remove_channel(app_handle: AppHandle, id: i64) -> Result<(), String> {
+pub async fn remove_channel(
+    app_handle: AppHandle,
+    db_manager: State<'_, DatabaseManager>,
+    id: i64,
+) -> Result<(), String> {
     // 削除前にポーリングを停止
     if let Some(poller) = app_handle.try_state::<Arc<Mutex<ChannelPoller>>>() {
         let mut poller = poller.lock().await;
         poller.stop_polling(id);
     }
 
-    let conn = get_connection(&app_handle)
+    let conn = db_manager
+        .get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     let id_str = id.to_string();
@@ -83,12 +90,14 @@ pub async fn remove_channel(app_handle: AppHandle, id: i64) -> Result<(), String
 #[tauri::command]
 pub async fn update_channel(
     app_handle: AppHandle,
+    db_manager: State<'_, DatabaseManager>,
     id: i64,
     channel_name: Option<String>,
     poll_interval: Option<i32>,
     enabled: Option<bool>,
 ) -> Result<Channel, String> {
-    let conn = get_connection(&app_handle)
+    let conn = db_manager
+        .get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     // 更新前の状態を取得（有効状態の変更を検知するため）
@@ -134,7 +143,7 @@ pub async fn update_channel(
             let mut poller = poller.lock().await;
             if enabled && !old_channel.enabled {
                 // 無効→有効になった場合、ポーリングを開始
-                if let Err(e) = poller.start_polling(updated_channel.clone()) {
+                if let Err(e) = poller.start_polling(updated_channel.clone(), &db_manager) {
                     eprintln!("Failed to start polling for updated channel {}: {}", id, e);
                 }
             } else if !enabled && old_channel.enabled {
@@ -148,8 +157,12 @@ pub async fn update_channel(
 }
 
 #[tauri::command]
-pub async fn list_channels(app_handle: AppHandle) -> Result<Vec<Channel>, String> {
-    let conn = get_connection(&app_handle)
+pub async fn list_channels(
+    _app_handle: AppHandle,
+    db_manager: State<'_, DatabaseManager>,
+) -> Result<Vec<Channel>, String> {
+    let conn = db_manager
+        .get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     let mut stmt = conn
@@ -177,8 +190,13 @@ pub async fn list_channels(app_handle: AppHandle) -> Result<Vec<Channel>, String
 }
 
 #[tauri::command]
-pub async fn toggle_channel(app_handle: AppHandle, id: i64) -> Result<Channel, String> {
-    let conn = get_connection(&app_handle)
+pub async fn toggle_channel(
+    app_handle: AppHandle,
+    db_manager: State<'_, DatabaseManager>,
+    id: i64,
+) -> Result<Channel, String> {
+    let conn = db_manager
+        .get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     // 現在の状態を取得
@@ -202,7 +220,7 @@ pub async fn toggle_channel(app_handle: AppHandle, id: i64) -> Result<Channel, S
         let mut poller = poller.lock().await;
         if new_enabled {
             // 有効化された場合、ポーリングを開始
-            if let Err(e) = poller.start_polling(updated_channel.clone()) {
+            if let Err(e) = poller.start_polling(updated_channel.clone(), &db_manager) {
                 eprintln!("Failed to start polling for channel {}: {}", id, e);
             }
         } else {

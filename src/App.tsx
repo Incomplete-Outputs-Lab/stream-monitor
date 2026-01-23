@@ -11,10 +11,11 @@ import { ErrorBoundary } from "./components/common/ErrorBoundary";
 import { SplashScreen } from "./components/common/SplashScreen";
 import { useThemeStore } from "./stores/themeStore";
 import "./App.css";
+import { SQLViewer } from "./components/SQL";
 
 const queryClient = new QueryClient();
 
-type Tab = "dashboard" | "channels" | "statistics" | "export" | "logs" | "settings" | "multiview";
+type Tab = "dashboard" | "channels" | "statistics" | "export" | "logs" | "settings" | "multiview" | "sqlviewer";
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
@@ -67,6 +68,11 @@ function App() {
       component: <MultiView />
     },
     {
+      id: "sqlviewer",
+      label: "SQLビューア",
+      component: <SQLViewer />
+    },
+    {
       id: "settings",
       label: "設定",
       component: <Settings />
@@ -111,7 +117,7 @@ function App() {
                     <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
                       Stream Monitor
                     </h1>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">Real time stream analysis system</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Real Time Stream Analysis System</p>
                   </div>
                 </div>
               </div>

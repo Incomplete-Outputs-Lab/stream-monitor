@@ -1,100 +1,115 @@
 use crate::config::credentials::CredentialManager;
-use crate::oauth::server::OAuthServer;
 use reqwest::Client;
-use twitch_oauth2::{Scope, UserTokenBuilder};
-use url::Url;
+use twitch_oauth2::Scope;
+use twitch_oauth2::ClientId;
+
+// TODO: 環境変数から取得するように変更予定
+const TWITCH_CLIENT_ID: &str = "YOUR_CLIENT_ID_HERE"; // ビルド時に env!("TWITCH_CLIENT_ID") から取得
 
 pub struct TwitchOAuth {
-    client_id: String,
-    client_secret: String,
-    redirect_uri: String,
+    client_id: ClientId,
 }
 
 impl TwitchOAuth {
-    pub fn new(client_id: String, client_secret: String, redirect_uri: String) -> Self {
+    pub fn new() -> Self {
         Self {
-            client_id,
-            client_secret,
-            redirect_uri,
+            client_id: ClientId::new(TWITCH_CLIENT_ID.to_string()),
         }
     }
 
-    pub async fn authenticate(
+    /// Device Code Flowで認証
+    /// 戻り値: (user_code, verification_uri, device_code)
+    pub async fn start_device_flow(
         &self,
-        server: OAuthServer,
-    ) -> Result<String, Box<dyn std::error::Error>> {
-        let redirect_url = Url::parse(&self.redirect_uri)?;
-
-        // UserTokenBuilderを作成
-        let mut builder = UserTokenBuilder::new(
-            self.client_id.clone(),
-            self.client_secret.clone(),
-            redirect_url.clone(),
-        );
-
-        // 必要なスコープを設定
-        builder = builder.set_scopes(vec![Scope::UserReadEmail, Scope::ChannelReadStreamKey]);
-
-        // 認証URLとCSRFステートを生成
-        let (auth_url, csrf_state) = builder.generate_url();
-
-        // ブラウザで認証URLを開く
-        #[cfg(target_os = "windows")]
-        {
-            std::process::Command::new("cmd")
-                .args(["/C", "start", "", auth_url.as_str()])
-                .spawn()?;
-        }
-        #[cfg(target_os = "macos")]
-        {
-            std::process::Command::new("open")
-                .arg(auth_url.as_str())
-                .spawn()?;
-        }
-        #[cfg(target_os = "linux")]
-        {
-            std::process::Command::new("xdg-open")
-                .arg(auth_url.as_str())
-                .spawn()?;
-        }
-
-        // コールバックを待つ
-        let callback = server.start_and_wait_for_callback().await?;
-
-        // エラーチェック
-        if let Some(error) = callback.error {
-            return Err(format!("OAuth error: {}", error).into());
-        }
-
-        // ステート検証
-        if let Some(returned_state) = callback.state {
-            if returned_state != csrf_state.secret() {
-                return Err("State mismatch".into());
-            }
-        } else {
-            return Err("No state in callback".into());
-        }
-
-        // 認証コードを取得
-        let code = callback.code.ok_or("No authorization code received")?;
-
-        // アクセストークンに交換
+    ) -> Result<(String, String, String), Box<dyn std::error::Error>> {
         let http_client = Client::new();
-        let token = builder
-            .get_user_token(&http_client, csrf_state.secret(), &code)
+
+        // スコープを設定
+        let scopes = vec![Scope::UserReadEmail, Scope::ChannelReadStreamKey];
+
+        // デバイスコードリクエストを送信
+        let response = http_client
+            .post("https://id.twitch.tv/oauth2/device")
+            .form(&[
+                ("client_id", self.client_id.as_str()),
+                ("scopes", &scopes.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(" ")),
+            ])
+            .send()
             .await?;
 
-        let access_token = token.access_token.secret().to_string();
-
-        // アクセストークンを保存
-        CredentialManager::save_token("twitch", &access_token)?;
-
-        // リフレッシュトークンがある場合は保存（将来的に使用可能）
-        if let Some(refresh_token) = &token.refresh_token {
-            // リフレッシュトークンも保存（別のキーで）
-            let _ = CredentialManager::save_token("twitch_refresh", refresh_token.secret());
+        if !response.status().is_success() {
+            return Err(format!("Failed to get device code: {}", response.status()).into());
         }
 
-        Ok(access_token)
+        let data: serde_json::Value = response.json().await?;
+
+        let user_code = data["user_code"]
+            .as_str()
+            .ok_or("Missing user_code")?
+            .to_string();
+        let verification_uri = data["verification_uri"]
+            .as_str()
+            .ok_or("Missing verification_uri")?
+            .to_string();
+        let device_code = data["device_code"]
+            .as_str()
+            .ok_or("Missing device_code")?
+            .to_string();
+
+        Ok((user_code, verification_uri, device_code))
+    }
+
+    /// デバイスコードをポーリングしてトークンを取得
+    pub async fn poll_for_token(
+        &self,
+        device_code: &str,
+    ) -> Result<String, Box<dyn std::error::Error>> {
+        let http_client = Client::new();
+        let interval = std::time::Duration::from_secs(5);
+        let max_attempts = 60; // 5分間ポーリング
+
+        for _ in 0..max_attempts {
+            tokio::time::sleep(interval).await;
+
+            let response = http_client
+                .post("https://id.twitch.tv/oauth2/token")
+                .form(&[
+                    ("client_id", self.client_id.as_str()),
+                    ("device_code", device_code),
+                    ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+                ])
+                .send()
+                .await?;
+
+            let data: serde_json::Value = response.json().await?;
+
+            // エラーチェック
+            if let Some(error) = data["error"].as_str() {
+                match error {
+                    "authorization_pending" => continue, // まだ承認待ち
+                    "slow_down" => {
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        continue;
+                    }
+                    "expired_token" => return Err("Device code expired".into()),
+                    _ => return Err(format!("OAuth error: {}", error).into()),
+                }
+            }
+
+            // トークン取得成功
+            if let Some(access_token) = data["access_token"].as_str() {
+                // アクセストークンを保存
+                CredentialManager::save_token("twitch", access_token)?;
+
+                // リフレッシュトークンがある場合は保存
+                if let Some(refresh_token) = data["refresh_token"].as_str() {
+                    let _ = CredentialManager::save_token("twitch_refresh", refresh_token);
+                }
+
+                return Ok(access_token.to_string());
+            }
+        }
+
+        Err("Authentication timeout".into())
     }
 }

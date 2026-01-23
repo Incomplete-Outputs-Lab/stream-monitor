@@ -21,7 +21,7 @@ use commands::{
     },
     export::{export_to_csv, export_to_json},
     logs::get_logs,
-    oauth::{login_with_twitch, login_with_youtube},
+    oauth::{start_twitch_device_flow, poll_twitch_token, login_with_youtube},
     stats::{get_channel_stats, get_live_channels, get_stream_stats},
 };
 use config::settings::SettingsManager;
@@ -164,7 +164,8 @@ pub fn run() {
             delete_oauth_config,
             has_oauth_config,
             // OAuth commands
-            login_with_twitch,
+            start_twitch_device_flow,
+            poll_twitch_token,
             login_with_youtube,
             // Stats commands
             get_stream_stats,

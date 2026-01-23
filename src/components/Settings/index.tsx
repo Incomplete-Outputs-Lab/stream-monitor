@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { OAuthLogin } from './OAuthLogin';
 import { OAuthConfigForm } from './OAuthConfigForm';
 import { TokenForm } from './TokenForm';
+import { TwitchAuthPanel } from './TwitchAuthPanel';
 import { useConfigStore } from '../../stores/configStore';
 import { useThemeStore } from '../../stores/themeStore';
 
@@ -15,10 +16,10 @@ interface BuildInfo {
 }
 
 export function Settings() {
-  const [twitchAuthMethod, setTwitchAuthMethod] = useState<'token' | 'oauth' | 'config' | null>(null);
+  const [twitchAuthOpen, setTwitchAuthOpen] = useState(false);
   const [youtubeAuthMethod, setYoutubeAuthMethod] = useState<'token' | 'oauth' | 'config' | null>(null);
 
-  const { hasTwitchToken, hasYouTubeToken, hasTwitchOAuth, hasYouTubeOAuth, checkTokens } = useConfigStore();
+  const { hasTwitchToken, hasYouTubeToken, hasYouTubeOAuth, checkTokens } = useConfigStore();
   const { theme, setTheme } = useThemeStore();
 
   // ビルド情報取得
@@ -94,75 +95,22 @@ export function Settings() {
           </div>
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => setTwitchAuthMethod(twitchAuthMethod === 'token' ? null : 'token')}
-              className={`px-3 py-1.5 rounded text-xs font-medium transition-all duration-200 ${
-                twitchAuthMethod === 'token'
-                  ? 'bg-blue-600 text-white shadow-sm'
+              onClick={() => setTwitchAuthOpen(!twitchAuthOpen)}
+              className={`px-4 py-2 rounded text-sm font-medium transition-all duration-200 ${
+                twitchAuthOpen
+                  ? 'bg-purple-600 text-white shadow-sm'
                   : 'bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 border border-gray-200 dark:border-slate-600'
               }`}
             >
-              トークン
-            </button>
-            {hasTwitchOAuth ? (
-              <button
-                onClick={() => {
-                  // OAuthログインを実行
-                  const performLogin = async () => {
-                    try {
-                      await invoke('login_with_twitch');
-                      // トークンの確認を更新
-                      await checkTokens();
-                    } catch (error) {
-                      console.error('Twitch login failed:', error);
-                      alert(`Twitchログインに失敗しました: ${error}`);
-                    }
-                  };
-                  performLogin();
-                }}
-                className="px-3 py-1.5 rounded text-xs font-medium transition-all duration-200 bg-green-600 hover:bg-green-700 text-white shadow-sm"
-              >
-                Twitchにログイン
-              </button>
-            ) : (
-              <button
-                onClick={() => setTwitchAuthMethod(twitchAuthMethod === 'config' ? null : 'config')}
-                className={`px-3 py-1.5 rounded text-xs font-medium transition-all duration-200 ${
-                  twitchAuthMethod === 'config'
-                    ? 'bg-purple-600 text-white shadow-sm'
-                    : 'bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 border border-gray-200 dark:border-slate-600'
-                }`}
-              >
-                OAuth設定
-              </button>
-            )}
-            <button
-              onClick={() => setTwitchAuthMethod(twitchAuthMethod === 'oauth' ? null : 'oauth')}
-              className={`px-3 py-1.5 rounded text-xs font-medium transition-all duration-200 ${
-                twitchAuthMethod === 'oauth'
-                  ? 'bg-orange-600 text-white shadow-sm'
-                  : 'bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 border border-gray-200 dark:border-slate-600'
-              }`}
-            >
-              OAuth詳細
+              🔐 認証
             </button>
           </div>
-          {twitchAuthMethod === 'token' && (
-            <TokenForm
-              platform="twitch"
-              onClose={() => setTwitchAuthMethod(null)}
-            />
-          )}
-          {twitchAuthMethod === 'config' && (
-            <OAuthConfigForm
-              platform="twitch"
-              onClose={() => setTwitchAuthMethod(null)}
-            />
-          )}
-          {twitchAuthMethod === 'oauth' && (
-            <OAuthLogin
-              platform="twitch"
-              onClose={() => setTwitchAuthMethod(null)}
-            />
+          {twitchAuthOpen && (
+            <div className="mt-4">
+              <TwitchAuthPanel
+                onClose={() => setTwitchAuthOpen(false)}
+              />
+            </div>
           )}
         </section>
 

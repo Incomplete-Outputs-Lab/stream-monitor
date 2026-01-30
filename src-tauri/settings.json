@@ -1,0 +1,10 @@
+{
+  "twitch": {
+    "client_id": "rxyno75ir81wkq3xck0bfeen1a0klh"
+  },
+  "youtube": {
+    "client_id": null,
+    "client_secret": null
+  },
+  "youtube_scraping": null
+}

@@ -17,7 +17,7 @@ pub struct TwitchCollector {
 impl TwitchCollector {
     /// Create a new TwitchCollector
     ///
-    /// For Device Code Flow (user authentication), client_secret can be None.
+    /// For PKCE authentication (user authentication), client_secret can be None.
     /// For App Access Token (client credentials flow), client_secret is required.
     pub fn new(client_id: String, client_secret: Option<String>) -> Self {
         Self {

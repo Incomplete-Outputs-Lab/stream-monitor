@@ -57,7 +57,8 @@ pub async fn save_token(platform: String, token: String) -> Result<TokenResponse
 
 #[tauri::command]
 pub async fn get_token(platform: String) -> Result<String, String> {
-    CredentialManager::get_token(&platform).map_err(|e| format!("Failed to get token: {}", e))
+    CredentialManager::get_token(&platform)
+        .map_err(|e| format!("Failed to get token: {}", e))
 }
 
 #[tauri::command]
@@ -95,7 +96,7 @@ pub async fn get_oauth_config(app_handle: AppHandle, platform: String) -> Result
         _ => return Err(format!("Unsupported platform: {}", platform)),
     };
 
-    // YouTubeの場合のみkeyringからClient Secretを取得（TwitchはDevice Code FlowでClient Secret不要）
+    // YouTubeの場合のみkeyringからClient Secretを取得（TwitchはPKCE認証でClient Secret不要）
     let client_secret = if platform == "youtube" {
         match CredentialManager::get_oauth_secret(&platform) {
             Ok(secret) => Some(secret),
@@ -137,7 +138,7 @@ pub async fn save_oauth_config(
     SettingsManager::save_settings(&app_handle, &settings)
         .map_err(|e| format!("Failed to save settings: {}", e))?;
 
-    // YouTubeの場合のみClient Secretをkeyringに保存（TwitchはDevice Code FlowでClient Secret不要）
+    // YouTubeの場合のみClient Secretをkeyringに保存（TwitchはPKCE認証でClient Secret不要）
     if platform == "youtube" {
         if let Some(secret) = client_secret {
             if !secret.trim().is_empty() {
@@ -174,7 +175,7 @@ pub async fn delete_oauth_config(app_handle: AppHandle, platform: String) -> Res
     SettingsManager::save_settings(&app_handle, &settings)
         .map_err(|e| format!("Failed to save settings: {}", e))?;
 
-    // YouTubeの場合のみClient Secretをkeyringから削除（TwitchはDevice Code FlowでClient Secret不要）
+    // YouTubeの場合のみClient Secretをkeyringから削除（TwitchはPKCE認証でClient Secret不要）
     if platform == "youtube" {
         CredentialManager::delete_oauth_secret(&platform)
             .map_err(|e| format!("Failed to delete OAuth secret: {}", e))?;
@@ -198,7 +199,7 @@ pub async fn has_oauth_config(app_handle: AppHandle, platform: String) -> Result
         _ => return Err(format!("Unsupported platform: {}", platform)),
     };
 
-    // Twitchの場合はDevice Code Flowを使用するため、Client IDのみで十分
+    // TwitchはPKCE認証を使用するため、Client IDのみで十分
     // YouTubeの場合はClient Secretも必要
     match platform.as_str() {
         "twitch" => Ok(has_client_id),

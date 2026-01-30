@@ -1,112 +1,229 @@
 use crate::config::credentials::CredentialManager;
 use reqwest::Client;
-use twitch_oauth2::Scope;
-use twitch_oauth2::ClientId;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+const TWITCH_TOKEN_URL: &str = "https://id.twitch.tv/oauth2/token";
+const TWITCH_DEVICE_URL: &str = "https://id.twitch.tv/oauth2/device";
+
+#[derive(Debug, Serialize, Deserialize)]
+struct TwitchTokenResponse {
+    access_token: String,
+    refresh_token: Option<String>,
+    expires_in: Option<u64>,
+    token_type: String,
+    scope: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct DeviceCodeResponse {
+    device_code: String,
+    expires_in: u64,
+    interval: u64,
+    user_code: String,
+    verification_uri: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DeviceAuthStatus {
+    pub user_code: String,
+    pub verification_uri: String,
+    pub expires_in: u64,
+    pub device_code: String,
+    pub interval: u64,
+}
 
 pub struct TwitchOAuth {
-    client_id: ClientId,
+    client_id: String,
+    http_client: Client,
 }
 
 impl TwitchOAuth {
-    pub fn new(client_id: String) -> Self {
+    pub fn new(client_id: String, _unused_redirect_uri: String) -> Self {
         Self {
-            client_id: ClientId::new(client_id),
+            client_id,
+            http_client: Client::new(),
         }
     }
 
-    /// Device Code Flowで認証
-    /// 戻り値: (user_code, verification_uri, device_code)
-    pub async fn start_device_flow(
+    /// Device Code Grant Flow を開始
+    /// 
+    /// デバイスコードとユーザーコードを取得します。
+    /// ユーザーはブラウザで verification_uri にアクセスして user_code を入力します。
+    pub async fn start_device_flow(&self, scopes: Vec<&str>) -> Result<DeviceAuthStatus, Box<dyn std::error::Error>> {
+        let scope_string = scopes.join(" ");
+        
+        let mut params = HashMap::new();
+        params.insert("client_id", self.client_id.as_str());
+        params.insert("scopes", scope_string.as_str());
+
+        eprintln!("[Twitch Device Flow] Starting device authorization flow");
+        eprintln!("  - Client ID length: {}", self.client_id.len());
+        eprintln!("  - Scopes: {}", scope_string);
+
+        let response = self
+            .http_client
+            .post(TWITCH_DEVICE_URL)
+            .form(&params)
+            .send()
+            .await?;
+
+        let status = response.status();
+        eprintln!("[Twitch Device Flow] Device code request status: {}", status);
+
+        if !status.is_success() {
+            let error_text = response.text().await?;
+            eprintln!("[Twitch Device Flow] Device code error response: {}", error_text);
+            return Err(format!("Device code request failed: {}", error_text).into());
+        }
+
+        let device_response: DeviceCodeResponse = response.json().await?;
+
+        eprintln!("[Twitch Device Flow] Device code obtained successfully");
+        eprintln!("  - User code: {}", device_response.user_code);
+        eprintln!("  - Verification URI: {}", device_response.verification_uri);
+        eprintln!("  - Expires in: {} seconds", device_response.expires_in);
+        eprintln!("  - Polling interval: {} seconds", device_response.interval);
+
+        Ok(DeviceAuthStatus {
+            user_code: device_response.user_code,
+            verification_uri: device_response.verification_uri,
+            expires_in: device_response.expires_in,
+            device_code: device_response.device_code,
+            interval: device_response.interval,
+        })
+    }
+
+    /// Device Code を使用してアクセストークンを取得
+    /// 
+    /// この関数は1回だけ呼び出され、内部でポーリングを行います。
+    /// ユーザーが認証を完了するまで待機します。
+    pub async fn poll_for_device_token(
         &self,
-    ) -> Result<(String, String, String), Box<dyn std::error::Error>> {
-        let http_client = Client::new();
+        device_code: &str,
+        interval_secs: u64,
+    ) -> Result<String, Box<dyn std::error::Error>> {
+        let mut params = HashMap::new();
+        params.insert("client_id", self.client_id.as_str());
+        params.insert("device_code", device_code);
+        params.insert("grant_type", "urn:ietf:params:oauth:grant-type:device_code");
 
-        // スコープを設定
-        let scopes = vec![Scope::UserReadEmail, Scope::ChannelReadStreamKey];
+        eprintln!("[Twitch Device Flow] Starting token polling");
+        eprintln!("  - Polling interval: {} seconds", interval_secs);
 
-        // デバイスコードリクエストを送信
-        let response = http_client
-            .post("https://id.twitch.tv/oauth2/device")
-            .form(&[
-                ("client_id", self.client_id.as_str()),
-                ("scopes", &scopes.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(" ")),
-            ])
+        // ポーリング開始
+        loop {
+            // 指定された間隔で待機
+            tokio::time::sleep(tokio::time::Duration::from_secs(interval_secs)).await;
+
+            let response = self
+                .http_client
+                .post(TWITCH_TOKEN_URL)
+                .form(&params)
+                .send()
+                .await?;
+
+            let status = response.status();
+
+            if status.is_success() {
+                // トークン取得成功
+                let token_response: TwitchTokenResponse = response.json().await?;
+
+                eprintln!("[Twitch Device Flow] Token obtained successfully");
+
+                // アクセストークンを保存
+                CredentialManager::save_token("twitch", &token_response.access_token)?;
+
+                // リフレッシュトークンがある場合は保存
+                if let Some(refresh_token) = &token_response.refresh_token {
+                    CredentialManager::save_token("twitch_refresh", refresh_token)?;
+                    eprintln!("[Twitch Device Flow] Refresh token saved");
+                }
+
+                return Ok(token_response.access_token);
+            } else {
+                // エラーレスポンスをパース
+                let error_text = response.text().await?;
+                eprintln!("[Twitch Device Flow] Polling response: {}", error_text);
+
+                // JSON としてパース
+                if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&error_text) {
+                    if let Some(message) = error_json.get("message").and_then(|m| m.as_str()) {
+                        match message {
+                            "authorization_pending" => {
+                                // ユーザーがまだ認証していない - 継続
+                                eprintln!("[Twitch Device Flow] Authorization pending, continuing to poll...");
+                                continue;
+                            }
+                            "slow_down" => {
+                                // ポーリングが速すぎる - 間隔を延長
+                                eprintln!("[Twitch Device Flow] Slow down requested, increasing interval");
+                                tokio::time::sleep(tokio::time::Duration::from_secs(interval_secs)).await;
+                                continue;
+                            }
+                            "expired_token" | "invalid device code" => {
+                                // デバイスコードが期限切れまたは無効
+                                return Err(format!("Device code error: {}", message).into());
+                            }
+                            "access_denied" => {
+                                // ユーザーが認証を拒否
+                                return Err("User denied authorization".into());
+                            }
+                            _ => {
+                                return Err(format!("Unknown error: {}", message).into());
+                            }
+                        }
+                    }
+                }
+
+                // JSONパースに失敗した場合
+                return Err(format!("Token polling failed: {}", error_text).into());
+            }
+        }
+    }
+
+    /// Device Code Flow用のリフレッシュトークン更新
+    /// 
+    /// Device Code Flow のリフレッシュトークンは1回限り使用で、Client Secret不要
+    pub async fn refresh_device_token(&self) -> Result<String, Box<dyn std::error::Error>> {
+        // リフレッシュトークンを取得
+        let refresh_token = CredentialManager::get_token("twitch_refresh")
+            .map_err(|_| "No refresh token found")?;
+
+        let mut params = HashMap::new();
+        params.insert("client_id", self.client_id.as_str());
+        params.insert("grant_type", "refresh_token");
+        params.insert("refresh_token", refresh_token.as_str());
+        // Device Code Flow では Client Secret は不要
+
+        eprintln!("[Twitch Device Flow] Refreshing access token");
+
+        let response = self
+            .http_client
+            .post(TWITCH_TOKEN_URL)
+            .form(&params)
             .send()
             .await?;
 
         if !response.status().is_success() {
-            return Err(format!("Failed to get device code: {}", response.status()).into());
+            let error_text = response.text().await?;
+            eprintln!("[Twitch Device Flow] Token refresh error: {}", error_text);
+            return Err(format!("Token refresh failed: {}", error_text).into());
         }
 
-        let data: serde_json::Value = response.json().await?;
+        let token_response: TwitchTokenResponse = response.json().await?;
 
-        let user_code = data["user_code"]
-            .as_str()
-            .ok_or("Missing user_code")?
-            .to_string();
-        let verification_uri = data["verification_uri"]
-            .as_str()
-            .ok_or("Missing verification_uri")?
-            .to_string();
-        let device_code = data["device_code"]
-            .as_str()
-            .ok_or("Missing device_code")?
-            .to_string();
+        eprintln!("[Twitch Device Flow] Token refreshed successfully");
 
-        Ok((user_code, verification_uri, device_code))
-    }
+        // 新しいアクセストークンを保存
+        CredentialManager::save_token("twitch", &token_response.access_token)?;
 
-    /// デバイスコードをポーリングしてトークンを取得
-    pub async fn poll_for_token(
-        &self,
-        device_code: &str,
-    ) -> Result<String, Box<dyn std::error::Error>> {
-        let http_client = Client::new();
-        let interval = std::time::Duration::from_secs(5);
-        let max_attempts = 60; // 5分間ポーリング
-
-        for _ in 0..max_attempts {
-            tokio::time::sleep(interval).await;
-
-            let response = http_client
-                .post("https://id.twitch.tv/oauth2/token")
-                .form(&[
-                    ("client_id", self.client_id.as_str()),
-                    ("device_code", device_code),
-                    ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
-                ])
-                .send()
-                .await?;
-
-            let data: serde_json::Value = response.json().await?;
-
-            // エラーチェック
-            if let Some(error) = data["error"].as_str() {
-                match error {
-                    "authorization_pending" => continue, // まだ承認待ち
-                    "slow_down" => {
-                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                        continue;
-                    }
-                    "expired_token" => return Err("Device code expired".into()),
-                    _ => return Err(format!("OAuth error: {}", error).into()),
-                }
-            }
-
-            // トークン取得成功
-            if let Some(access_token) = data["access_token"].as_str() {
-                // アクセストークンを保存
-                CredentialManager::save_token("twitch", access_token)?;
-
-                // リフレッシュトークンがある場合は保存
-                if let Some(refresh_token) = data["refresh_token"].as_str() {
-                    let _ = CredentialManager::save_token("twitch_refresh", refresh_token);
-                }
-
-                return Ok(access_token.to_string());
-            }
+        // 新しいリフレッシュトークンがある場合は保存（1回限り使用）
+        if let Some(new_refresh_token) = &token_response.refresh_token {
+            CredentialManager::save_token("twitch_refresh", new_refresh_token)?;
+            eprintln!("[Twitch Device Flow] New refresh token saved (one-time use)");
         }
 
-        Err("Authentication timeout".into())
+        Ok(token_response.access_token)
     }
 }

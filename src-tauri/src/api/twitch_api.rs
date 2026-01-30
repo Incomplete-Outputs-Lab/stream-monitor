@@ -1,4 +1,5 @@
 use crate::config::credentials::CredentialManager;
+use crate::oauth::twitch::TwitchOAuth;
 use std::sync::Arc;
 use twitch_api::{
     helix::{
@@ -20,7 +21,7 @@ pub struct TwitchApiClient {
 impl TwitchApiClient {
     /// Create a new TwitchApiClient
     ///
-    /// For Device Code Flow (user authentication), client_secret can be None.
+    /// For PKCE authentication (user authentication), client_secret can be None.
     /// For App Access Token (client credentials flow), client_secret is required.
     pub fn new(client_id: String, client_secret: Option<String>) -> Self {
         let client = Arc::new(HelixClient::default());
@@ -33,7 +34,7 @@ impl TwitchApiClient {
     }
 
     async fn get_access_token(&self) -> Result<AccessToken, Box<dyn std::error::Error>> {
-        // OS キーチェーンからトークンを取得を試みる（Device Code Flowで取得したユーザートークン）
+        // keyringからトークンを取得を試みる（PKCE認証で取得したユーザートークン）
         if let Ok(token_str) = CredentialManager::get_token("twitch") {
             return Ok(AccessToken::from(token_str));
         }
@@ -57,7 +58,19 @@ impl TwitchApiClient {
         }
 
         // トークンが見つからず、Client Secretもない場合はエラー
-        Err("No Twitch access token found. Please authenticate using Device Code Flow first.".into())
+        Err("No Twitch access token found. Please authenticate using PKCE flow first.".into())
+    }
+
+    /// トークンをリフレッシュ
+    async fn refresh_token(&self) -> Result<AccessToken, Box<dyn std::error::Error>> {
+        // TwitchOAuthインスタンスを作成してリフレッシュ
+        let oauth = TwitchOAuth::new(
+            self.client_id.clone(),
+            String::new(), // Device Code Flowでは不要
+        );
+
+        let new_token = oauth.refresh_device_token().await?;
+        Ok(AccessToken::from(new_token))
     }
 
     async fn get_user_token(&self) -> Result<TwitchApiUserToken, Box<dyn std::error::Error>> {
@@ -80,13 +93,30 @@ impl TwitchApiClient {
         let login_refs: &[&types::UserNameRef] = &[login.into()];
         let request = GetUsersRequest::logins(login_refs);
 
-        let response = self.client.req_get(request, &token).await?;
-
-        response
-            .data
-            .into_iter()
-            .next()
-            .ok_or_else(|| "User not found".into())
+        match self.client.req_get(request, &token).await {
+            Ok(response) => response
+                .data
+                .into_iter()
+                .next()
+                .ok_or_else(|| "User not found".into()),
+            Err(e) => {
+                // 401エラーの場合、トークンをリフレッシュして再試行
+                if e.to_string().contains("401") || e.to_string().contains("Unauthorized") {
+                    eprintln!("Token expired, attempting refresh...");
+                    let _new_token = self.refresh_token().await?;
+                    let refreshed_token = self.get_user_token().await?;
+                    
+                    let response = self.client.req_get(GetUsersRequest::logins(login_refs), &refreshed_token).await?;
+                    response
+                        .data
+                        .into_iter()
+                        .next()
+                        .ok_or_else(|| "User not found".into())
+                } else {
+                    Err(e.into())
+                }
+            }
+        }
     }
 
     pub async fn get_stream_by_user_id(
@@ -98,8 +128,22 @@ impl TwitchApiClient {
         let user_id_refs: &[&types::UserIdRef] = &[user_id.into()];
         let request = GetStreamsRequest::user_ids(user_id_refs);
 
-        let response = self.client.req_get(request, &token).await?;
-        Ok(response.data.into_iter().next())
+        match self.client.req_get(request, &token).await {
+            Ok(response) => Ok(response.data.into_iter().next()),
+            Err(e) => {
+                // 401エラーの場合、トークンをリフレッシュして再試行
+                if e.to_string().contains("401") || e.to_string().contains("Unauthorized") {
+                    eprintln!("Token expired, attempting refresh...");
+                    let _new_token = self.refresh_token().await?;
+                    let refreshed_token = self.get_user_token().await?;
+                    
+                    let response = self.client.req_get(GetStreamsRequest::user_ids(user_id_refs), &refreshed_token).await?;
+                    Ok(response.data.into_iter().next())
+                } else {
+                    Err(e.into())
+                }
+            }
+        }
     }
 }
 

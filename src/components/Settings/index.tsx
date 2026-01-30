@@ -16,10 +16,10 @@ interface BuildInfo {
 }
 
 export function Settings() {
-  const [twitchAuthOpen, setTwitchAuthOpen] = useState(false);
+  const [twitchAuthMethod, setTwitchAuthMethod] = useState<'auth' | 'config' | null>(null);
   const [youtubeAuthMethod, setYoutubeAuthMethod] = useState<'token' | 'oauth' | 'config' | null>(null);
 
-  const { hasTwitchToken, hasYouTubeToken, hasYouTubeOAuth, checkTokens } = useConfigStore();
+  const { hasTwitchToken, hasYouTubeToken, hasYouTubeOAuth, hasTwitchOAuth, checkTokens } = useConfigStore();
   const { theme, setTheme } = useThemeStore();
 
   // ビルド情報取得
@@ -33,6 +33,14 @@ export function Settings() {
   useEffect(() => {
     checkTokens();
   }, [checkTokens]);
+
+  // 認証パネルが閉じられたときにトークン状態を再確認
+  useEffect(() => {
+    if (twitchAuthMethod === null) {
+      // Twitchの認証パネルが閉じられた後、トークン状態を再確認
+      checkTokens();
+    }
+  }, [twitchAuthMethod, checkTokens]);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -95,20 +103,42 @@ export function Settings() {
           </div>
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => setTwitchAuthOpen(!twitchAuthOpen)}
-              className={`px-4 py-2 rounded text-sm font-medium transition-all duration-200 ${
-                twitchAuthOpen
+              onClick={() => setTwitchAuthMethod(twitchAuthMethod === 'config' ? null : 'config')}
+              className={`px-3 py-1.5 rounded text-xs font-medium transition-all duration-200 ${
+                twitchAuthMethod === 'config'
                   ? 'bg-purple-600 text-white shadow-sm'
                   : 'bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 border border-gray-200 dark:border-slate-600'
               }`}
             >
-              🔐 認証
+              OAuth設定
             </button>
+            {hasTwitchOAuth && (
+              <button
+                onClick={() => setTwitchAuthMethod(twitchAuthMethod === 'auth' ? null : 'auth')}
+                className={`px-3 py-1.5 rounded text-xs font-medium transition-all duration-200 ${
+                  twitchAuthMethod === 'auth'
+                    ? 'bg-purple-600 text-white shadow-sm'
+                    : 'bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 border border-gray-200 dark:border-slate-600'
+                }`}
+              >
+                🔐 認証
+              </button>
+            )}
           </div>
-          {twitchAuthOpen && (
+          {twitchAuthMethod === 'config' && (
+            <OAuthConfigForm
+              platform="twitch"
+              onClose={() => setTwitchAuthMethod(null)}
+            />
+          )}
+          {twitchAuthMethod === 'auth' && (
             <div className="mt-4">
               <TwitchAuthPanel
-                onClose={() => setTwitchAuthOpen(false)}
+                onClose={() => setTwitchAuthMethod(null)}
+                onSuccess={() => {
+                  // 認証成功時にトークン状態を更新
+                  checkTokens();
+                }}
               />
             </div>
           )}

@@ -21,7 +21,7 @@ use commands::{
     },
     export::{export_to_csv, export_to_json},
     logs::get_logs,
-    oauth::{start_twitch_device_flow, poll_twitch_token, login_with_youtube},
+    oauth::{login_with_youtube, start_twitch_device_auth, poll_twitch_device_token},
     stats::{get_channel_stats, get_live_channels, get_stream_stats},
 };
 use config::settings::SettingsManager;
@@ -105,7 +105,7 @@ pub fn run() {
                         let mut poller = poller_for_collectors.lock().await;
 
                         // Initialize Twitch collector if credentials are available
-                        // Device Code Flow uses only client_id (no client_secret required)
+                        // PKCE authentication uses only client_id (no client_secret required)
                         if let Some(client_id) = &settings.twitch.client_id {
                             let collector = TwitchCollector::new(client_id.clone(), None);
                             poller.register_collector("twitch".to_string(), Arc::new(collector));
@@ -165,9 +165,9 @@ pub fn run() {
             delete_oauth_config,
             has_oauth_config,
             // OAuth commands
-            start_twitch_device_flow,
-            poll_twitch_token,
             login_with_youtube,
+            start_twitch_device_auth,
+            poll_twitch_device_token,
             // Stats commands
             get_stream_stats,
             get_live_channels,

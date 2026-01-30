@@ -44,7 +44,6 @@ export function OAuthConfigForm({ platform, onClose }: OAuthConfigFormProps) {
       return;
     }
 
-    // Twitchの場合、Device Code FlowではClient Secretは不要
     // YouTubeの場合、Client Secretは必須
     if (platform === 'youtube' && !clientSecret.trim()) {
       setError('YouTube OAuth では Client ID と Client Secret の両方が必要です');
@@ -122,14 +121,27 @@ export function OAuthConfigForm({ platform, onClose }: OAuthConfigFormProps) {
         )}
       </div>
 
-      <div className="text-sm text-gray-600 dark:text-gray-400">
+      <div className="text-sm text-gray-600 dark:text-gray-400 space-y-2">
         {platform === 'twitch' ? (
           <>
-            Twitch APIを使用するには、Twitch Developer ConsoleでOAuthアプリケーションを作成し、Client IDを取得してください。
-            <br />
-            <span className="text-xs">
-              💡 Device Code Flowを使用するため、Client Secretは不要です（オプション）。
-            </span>
+            <p>
+              Twitch APIを使用するには、Twitch Developer ConsoleでOAuthアプリケーションを作成し、Client IDを取得してください。
+            </p>
+            <div className="text-xs space-y-2 p-3 bg-blue-50 dark:bg-blue-900/10 rounded border border-blue-200 dark:border-blue-800">
+              <p className="font-semibold text-blue-700 dark:text-blue-400">📝 設定手順：</p>
+              <div className="space-y-1 pl-2">
+                <p>1. <a href="https://dev.twitch.tv/console/apps" target="_blank" rel="noopener noreferrer" className="underline hover:text-blue-600 font-medium">Twitch Developer Console</a> でアプリを作成または編集</p>
+                <p>2. <span className="font-medium">Category</span> を選択（例：Application Integration）</p>
+                <p>3. <span className="font-medium">Client ID</span> をコピーして下記に貼り付け</p>
+              </div>
+            </div>
+            <div className="text-xs space-y-1 p-2 bg-green-50 dark:bg-green-900/10 rounded border border-green-200 dark:border-green-800">
+              <p className="font-semibold text-green-700 dark:text-green-400">✅ Device Code認証について：</p>
+              <p className="text-green-700 dark:text-green-400">
+                TwitchはDevice Code Grant Flowを使用するため、<span className="font-semibold">Client Secretは不要</span>です。
+                Client IDのみ設定すれば、安全に認証できます。
+              </p>
+            </div>
           </>
         ) : (
           `${platformName} APIを使用するには、${platformName} Developer ConsoleでOAuthアプリケーションを作成し、Client IDとClient Secretを取得してください。`
@@ -143,22 +155,31 @@ export function OAuthConfigForm({ platform, onClose }: OAuthConfigFormProps) {
             type="text"
             value={clientId}
             onChange={(e) => setClientId(e.target.value)}
+            onBlur={(e) => setClientId(e.target.value.trim())}
             className="input-field mt-1"
             placeholder={`${platformName} Client IDを入力`}
             disabled={loading}
           />
+          {clientId && (
+            <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              現在の設定: {clientId.substring(0, 8)}... (長さ: {clientId.length}文字)
+            </div>
+          )}
         </label>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-          Client Secret {platform === 'twitch' && <span className="text-xs text-gray-500">(オプション)</span>}
-          <input
-            type="password"
-            value={clientSecret}
-            onChange={(e) => setClientSecret(e.target.value)}
-            className="input-field mt-1"
-            placeholder={platform === 'twitch' ? 'Twitch Client Secret (不要)' : `${platformName} Client Secretを入力`}
-            disabled={loading}
-          />
-        </label>
+        {platform !== 'twitch' && (
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+            Client Secret
+            <input
+              type="password"
+              value={clientSecret}
+              onChange={(e) => setClientSecret(e.target.value)}
+              onBlur={(e) => setClientSecret(e.target.value.trim())}
+              className="input-field mt-1"
+              placeholder={`${platformName} Client Secretを入力`}
+              disabled={loading}
+            />
+          </label>
+        )}
 
         <div className="flex space-x-3">
           <button

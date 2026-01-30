@@ -1,81 +1,129 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { useConfigStore } from '../../stores/configStore';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import type { DeviceAuthStatus } from '../../types';
 
 interface TwitchAuthPanelProps {
   onClose?: () => void;
+  onSuccess?: () => void;
 }
 
-interface DeviceCodeResponse {
-  user_code: string;
-  verification_uri: string;
-  device_code: string;
-}
-
-export function TwitchAuthPanel({ onClose }: TwitchAuthPanelProps) {
+export function TwitchAuthPanel({ onClose, onSuccess }: TwitchAuthPanelProps) {
   const [loading, setLoading] = useState(false);
-  const [deviceCode, setDeviceCode] = useState<DeviceCodeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const { checkTokens } = useConfigStore();
+  const [deviceAuth, setDeviceAuth] = useState<DeviceAuthStatus | null>(null);
+  const [timeRemaining, setTimeRemaining] = useState<number>(0);
+  const [pollingActive, setPollingActive] = useState(false);
+
+  // タイマー管理
+  useEffect(() => {
+    if (timeRemaining > 0) {
+      const timer = setTimeout(() => {
+        setTimeRemaining(timeRemaining - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else if (timeRemaining === 0 && deviceAuth && pollingActive) {
+      // タイムアウト
+      setError('認証がタイムアウトしました。もう一度お試しください。');
+      setPollingActive(false);
+      setDeviceAuth(null);
+    }
+  }, [timeRemaining, deviceAuth, pollingActive]);
 
   const handleStartAuth = async () => {
     setLoading(true);
     setError(null);
     setSuccess(null);
-    setDeviceCode(null);
+    setDeviceAuth(null);
 
     try {
-      // デバイスコードフローを開始
-      const response = await invoke<DeviceCodeResponse>('start_twitch_device_flow');
-      setDeviceCode(response);
+      // Device Code Flow を開始
+      const authStatus = await invoke<DeviceAuthStatus>('start_twitch_device_auth');
+      
+      setDeviceAuth(authStatus);
+      setTimeRemaining(authStatus.expires_in);
+      setLoading(false);
 
-      // ブラウザで認証ページを開く
-      window.open(response.verification_uri, '_blank');
-
-      // バックグラウンドでトークンをポーリング
-      pollForToken(response.device_code);
+      // バックグラウンドでポーリング開始
+      startPolling(authStatus);
     } catch (err) {
       setError(`認証開始エラー: ${String(err)}`);
       setLoading(false);
     }
   };
 
-  const pollForToken = async (device_code: string) => {
+  const startPolling = async (authStatus: DeviceAuthStatus) => {
+    setPollingActive(true);
+
     try {
-      await invoke<string>('poll_twitch_token', { deviceCode: device_code });
+      // ポーリングを開始（バックエンドで処理）
+      await invoke<string>('poll_twitch_device_token', {
+        deviceCode: authStatus.device_code,
+        interval: authStatus.interval,
+        clientId: await getClientId(),
+      });
 
-      // 成功
-      await checkTokens();
+      // トークン取得成功
+      setPollingActive(false);
+      setDeviceAuth(null);
       setSuccess('Twitch認証に成功しました！');
-      setLoading(false);
-      setDeviceCode(null);
 
+      // 親コンポーネントにトークン状態の更新を依頼
+      if (onSuccess) {
+        onSuccess();
+      }
+
+      // 2秒後に画面を閉じる
       if (onClose) {
         setTimeout(() => onClose(), 2000);
       }
     } catch (err) {
+      setPollingActive(false);
+      setDeviceAuth(null);
       setError(`認証エラー: ${String(err)}`);
-      setLoading(false);
-      setDeviceCode(null);
+    }
+  };
+
+  const getClientId = async (): Promise<string> => {
+    // 設定からClient IDを取得
+    const config = await invoke<{ client_id?: string }>('get_oauth_config', {
+      platform: 'twitch',
+    });
+    return config.client_id || '';
+  };
+
+  const handleOpenBrowser = async () => {
+    if (deviceAuth) {
+      try {
+        // Tauri opener pluginを使用してブラウザでURLを開く
+        await openUrl(deviceAuth.verification_uri);
+      } catch (err) {
+        setError(`ブラウザを開けませんでした: ${String(err)}`);
+      }
+    }
+  };
+
+  const handleCopyCode = () => {
+    if (deviceAuth) {
+      navigator.clipboard.writeText(deviceAuth.user_code);
     }
   };
 
   const handleClose = () => {
-    setDeviceCode(null);
     setError(null);
     setSuccess(null);
+    setDeviceAuth(null);
+    setPollingActive(false);
     if (onClose) {
       onClose();
     }
   };
 
-  const handleCopyCode = () => {
-    if (deviceCode) {
-      navigator.clipboard.writeText(deviceCode.user_code);
-      setSuccess('コードをコピーしました');
-      setTimeout(() => setSuccess(null), 2000);
-    }
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   return (
@@ -109,57 +157,63 @@ export function TwitchAuthPanel({ onClose }: TwitchAuthPanelProps) {
       )}
 
       {/* デバイスコード表示 */}
-      {deviceCode && (
-        <div className="p-5 border-2 border-purple-500 dark:border-purple-600 rounded-lg bg-gradient-to-br from-purple-50 to-white dark:from-purple-900/10 dark:to-slate-800">
-          <div className="space-y-4">
-            <div className="flex items-center space-x-2">
-              <div className="text-2xl">🔐</div>
-              <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">
-                認証コード
-              </h3>
+      {deviceAuth && (
+        <div className="p-5 border-2 border-purple-500 dark:border-purple-400 rounded-lg bg-purple-50 dark:bg-purple-900/20 space-y-4">
+          <div className="text-center space-y-3">
+            <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              以下のコードをブラウザで入力してください：
+            </p>
+            
+            <div className="relative">
+              <div className="text-5xl font-bold text-purple-600 dark:text-purple-400 tracking-wider py-4 select-all">
+                {deviceAuth.user_code}
+              </div>
+              <button
+                onClick={handleCopyCode}
+                className="absolute top-2 right-2 px-3 py-1 text-xs bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors"
+              >
+                コピー
+              </button>
             </div>
 
-            <div className="space-y-3">
-              <div className="p-4 bg-white dark:bg-slate-700 rounded border border-gray-300 dark:border-slate-600">
-                <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">コード:</p>
-                <div className="flex items-center justify-between">
-                  <p className="text-2xl font-mono font-bold text-purple-600 dark:text-purple-400">
-                    {deviceCode.user_code}
-                  </p>
-                  <button
-                    onClick={handleCopyCode}
-                    className="px-3 py-1 text-xs bg-gray-200 hover:bg-gray-300 dark:bg-slate-600 dark:hover:bg-slate-500 rounded transition-colors"
-                  >
-                    コピー
-                  </button>
+            <button
+              onClick={handleOpenBrowser}
+              className="w-full px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors text-base font-semibold shadow-md hover:shadow-lg"
+            >
+              🌐 ブラウザで認証ページを開く
+            </button>
+
+            <p className="text-xs text-gray-600 dark:text-gray-400">
+              または、手動で以下のURLにアクセス：<br />
+              <a
+                href={deviceAuth.verification_uri}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-purple-600 dark:text-purple-400 underline break-all"
+              >
+                {deviceAuth.verification_uri}
+              </a>
+            </p>
+
+            {pollingActive && (
+              <div className="flex flex-col items-center space-y-2 py-3">
+                <div className="flex items-center space-x-2">
+                  <span className="animate-spin text-2xl">⏳</span>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    認証を待っています...
+                  </span>
                 </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  残り時間: {formatTime(timeRemaining)}
+                </p>
               </div>
-
-              <div className="text-sm text-gray-600 dark:text-gray-400 space-y-2">
-                <p>1. ブラウザで以下のURLを開きます（自動で開きます）:</p>
-                <a
-                  href={deviceCode.verification_uri}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block text-purple-600 dark:text-purple-400 underline break-all"
-                >
-                  {deviceCode.verification_uri}
-                </a>
-                <p>2. 上記のコードを入力してTwitchでログインしてください</p>
-                <p>3. 認証が完了すると自動的にトークンが保存されます</p>
-              </div>
-
-              <div className="flex items-center space-x-2 text-sm text-gray-500 dark:text-gray-400">
-                <span className="animate-pulse">⏳</span>
-                <span>認証を待っています...</span>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* 認証開始ボタン */}
-      {!deviceCode && (
+      {/* 認証開始ボタン（デバイスコードがない場合） */}
+      {!deviceAuth && (
         <div className="p-5 border border-gray-300 dark:border-slate-600 rounded-lg bg-gray-50 dark:bg-slate-800">
           <div className="space-y-4">
             <div className="flex items-center space-x-2">
@@ -170,8 +224,8 @@ export function TwitchAuthPanel({ onClose }: TwitchAuthPanelProps) {
             </div>
 
             <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
-              ブラウザでTwitchにログインして、安全に認証します。
-              クライアントシークレット不要のデバイスコードフローを使用します。
+              ブラウザでTwitchにログインして認証します。
+              Device Code認証を使用し、Client Secret不要で安全に認証できます。
             </p>
 
             <button
@@ -182,7 +236,7 @@ export function TwitchAuthPanel({ onClose }: TwitchAuthPanelProps) {
               {loading ? (
                 <span className="flex items-center justify-center space-x-2">
                   <span className="animate-spin">⏳</span>
-                  <span>認証開始中...</span>
+                  <span>準備中...</span>
                 </span>
               ) : (
                 'Twitchで認証'
@@ -190,9 +244,10 @@ export function TwitchAuthPanel({ onClose }: TwitchAuthPanelProps) {
             </button>
 
             <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
-              <p>✓ 安全なDevice Code Flow</p>
+              <p>✓ 安全なDevice Code認証</p>
               <p>✓ Client Secret不要</p>
-              <p>✓ リフレッシュトークン対応</p>
+              <p>✓ リフレッシュトークン対応（30日間有効）</p>
+              <p>✓ 自動トークン更新</p>
             </div>
           </div>
         </div>
@@ -200,10 +255,11 @@ export function TwitchAuthPanel({ onClose }: TwitchAuthPanelProps) {
 
       {/* 補足説明 */}
       <div className="text-xs text-gray-500 dark:text-gray-400 p-3 bg-blue-50 dark:bg-blue-900/10 rounded-lg border border-blue-200 dark:border-blue-800">
-        <p className="font-semibold text-blue-700 dark:text-blue-400 mb-1">💡 Device Code Flowについて</p>
+        <p className="font-semibold text-blue-700 dark:text-blue-400 mb-1">💡 Device Code認証について</p>
         <p>
-          デスクトップアプリ向けの安全な認証方式です。
-          クライアントシークレットを埋め込む必要がなく、ブラウザで認証を完結できます。
+          Device Code Grant Flow は、デスクトップアプリケーション向けのTwitch公式推奨認証方式です。
+          Client Secretを埋め込む必要がなく、セキュアに認証できます。
+          ブラウザで認証コードを入力するだけで、アプリケーションが自動的にトークンを取得します。
         </p>
       </div>
     </div>

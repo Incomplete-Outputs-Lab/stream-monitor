@@ -120,24 +120,13 @@ impl YouTubeOAuth {
 
         // 認証URLを生成
         let auth_url = self.build_authorization_url(&state, &code_challenge);
+        
+        // デバッグ用：生成されたURLをログに出力
+        eprintln!("[YouTube OAuth] Generated authorization URL: {}", auth_url);
 
-        // ブラウザで認証URLを開く
-        #[cfg(target_os = "windows")]
-        {
-            std::process::Command::new("cmd")
-                .args(["/C", "start", "", &auth_url])
-                .spawn()?;
-        }
-        #[cfg(target_os = "macos")]
-        {
-            std::process::Command::new("open").arg(&auth_url).spawn()?;
-        }
-        #[cfg(target_os = "linux")]
-        {
-            std::process::Command::new("xdg-open")
-                .arg(&auth_url)
-                .spawn()?;
-        }
+        // ブラウザで認証URLを開く（クロスプラットフォーム対応）
+        open::that(&auth_url)
+            .map_err(|e| format!("Failed to open browser: {}", e))?;
 
         // コールバックを待つ
         let callback = server.start_and_wait_for_callback().await?;

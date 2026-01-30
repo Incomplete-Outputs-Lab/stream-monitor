@@ -4873,6 +4873,7 @@ dependencies = [
  "hyper-rustls 0.26.0",
  "hyper-util",
  "keyring",
+ "open",
  "rand 0.8.5",
  "reqwest",
  "scraper",

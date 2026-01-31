@@ -15,20 +15,31 @@ pub struct TwitchCollector {
 
 #[allow(dead_code)]
 impl TwitchCollector {
-    pub fn new(client_id: String, client_secret: String) -> Self {
+    /// Create a new TwitchCollector
+    ///
+    /// For Device Code Flow (user authentication), client_secret can be None.
+    /// For App Access Token (client credentials flow), client_secret is required.
+    pub fn new(client_id: String, client_secret: Option<String>) -> Self {
         Self {
             api_client: Arc::new(TwitchApiClient::new(client_id, client_secret)),
             irc_manager: Arc::new(Mutex::new(None)),
         }
     }
 
-    async fn get_client_id_and_secret() -> Result<(String, String), Box<dyn std::error::Error>> {
+    /// Create a new TwitchCollector with AppHandle for Stronghold access
+    pub fn new_with_app(client_id: String, client_secret: Option<String>, app_handle: tauri::AppHandle) -> Self {
+        Self {
+            api_client: Arc::new(TwitchApiClient::new(client_id, client_secret).with_app_handle(app_handle)),
+            irc_manager: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    async fn get_client_id_and_secret() -> Result<(String, Option<String>), Box<dyn std::error::Error>> {
         // TODO: 設定から取得する
         // 現時点では環境変数または設定ファイルから取得する必要がある
         let client_id =
             std::env::var("TWITCH_CLIENT_ID").map_err(|_| "TWITCH_CLIENT_ID not set")?;
-        let client_secret =
-            std::env::var("TWITCH_CLIENT_SECRET").map_err(|_| "TWITCH_CLIENT_SECRET not set")?;
+        let client_secret = std::env::var("TWITCH_CLIENT_SECRET").ok();
         Ok((client_id, client_secret))
     }
 

@@ -15,13 +15,15 @@ use commands::{
     channels::{add_channel, list_channels, remove_channel, toggle_channel, update_channel},
     chat::{get_chat_messages, get_chat_rate, get_chat_stats},
     config::{
-        delete_token, get_build_info, get_database_init_status, get_token, has_token,
-        initialize_database, recreate_database, save_token, verify_token,
+        delete_oauth_config, delete_token, get_build_info, get_database_init_status,
+        get_oauth_config, get_token, has_oauth_config, has_token, initialize_database,
+        recreate_database, save_oauth_config, save_token, verify_token,
     },
     export::{export_to_csv, export_to_json},
     logs::get_logs,
-    oauth::{login_with_twitch, login_with_youtube},
+    oauth::{start_twitch_device_auth, poll_twitch_device_token},
     stats::{get_channel_stats, get_live_channels, get_stream_stats},
+    stronghold::{check_vault_initialized, initialize_vault},
 };
 use config::settings::SettingsManager;
 use database::DatabaseManager;
@@ -38,6 +40,16 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let app_handle = app.handle().clone();
+
+            // Initialize Stronghold plugin with argon2 KDF
+            let salt_path = app
+                .path()
+                .app_local_data_dir()
+                .expect("could not resolve app local data path")
+                .join("salt.txt");
+            app.handle()
+                .plugin(tauri_plugin_stronghold::Builder::with_argon2(&salt_path).build())
+                .expect("failed to initialize stronghold plugin");
 
             // DatabaseManagerを初期化して管理
             let db_manager = DatabaseManager::new(&app_handle)
@@ -104,8 +116,9 @@ pub fn run() {
                         let mut poller = poller_for_collectors.lock().await;
 
                         // Initialize Twitch collector if credentials are available
-                        if let (Some(client_id), Some(client_secret)) = (&settings.twitch.client_id, &settings.twitch.client_secret) {
-                            let collector = TwitchCollector::new(client_id.clone(), client_secret.clone());
+                        // Device Code Flow uses only client_id (no client_secret required)
+                        if let Some(client_id) = &settings.twitch.client_id {
+                            let collector = TwitchCollector::new_with_app(client_id.clone(), None, app_handle.clone());
                             poller.register_collector("twitch".to_string(), Arc::new(collector));
                             println!("Twitch collector initialized successfully");
                         } else {
@@ -158,9 +171,16 @@ pub fn run() {
             get_database_init_status,
             initialize_database,
             recreate_database,
+            get_oauth_config,
+            save_oauth_config,
+            delete_oauth_config,
+            has_oauth_config,
             // OAuth commands
-            login_with_twitch,
-            login_with_youtube,
+            start_twitch_device_auth,
+            poll_twitch_device_token,
+            // Stronghold commands
+            check_vault_initialized,
+            initialize_vault,
             // Stats commands
             get_stream_stats,
             get_live_channels,

@@ -14,7 +14,6 @@ pub struct AppSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TwitchSettings {
     pub client_id: Option<String>,
-    pub client_secret: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,7 +46,6 @@ impl Default for AppSettings {
         Self {
             twitch: TwitchSettings {
                 client_id: None,
-                client_secret: None,
             },
             youtube: YouTubeSettings {
                 client_id: None,

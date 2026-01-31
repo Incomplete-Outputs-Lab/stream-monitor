@@ -130,3 +130,11 @@ export interface DbInitStatus {
   initialized: boolean;
   message: string;
 }
+
+export interface DeviceAuthStatus {
+  user_code: string;
+  verification_uri: string;
+  expires_in: number;
+  device_code: string;
+  interval: number;
+}

@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
-import { OAuthLogin } from './OAuthLogin';
+import { OAuthConfigForm } from './OAuthConfigForm';
 import { TokenForm } from './TokenForm';
+import { TwitchAuthPanel } from './TwitchAuthPanel';
 import { useConfigStore } from '../../stores/configStore';
 import { useThemeStore } from '../../stores/themeStore';
 
@@ -14,11 +15,20 @@ interface BuildInfo {
 }
 
 export function Settings() {
-  const [twitchAuthMethod, setTwitchAuthMethod] = useState<'token' | 'oauth' | null>(null);
-  const [youtubeAuthMethod, setYoutubeAuthMethod] = useState<'token' | 'oauth' | null>(null);
+  const [twitchAuthMethod, setTwitchAuthMethod] = useState<'auth' | 'config' | null>(null);
+  const [youtubeAuthMethod, setYoutubeAuthMethod] = useState<'token' | 'config' | null>(null);
 
-  const { hasTwitchToken, hasYouTubeToken, checkTokens } = useConfigStore();
+  const { hasTwitchToken, hasYouTubeToken, hasTwitchOAuth, checkTokens } = useConfigStore();
   const { theme, setTheme } = useThemeStore();
+
+  // デバッグ: 状態変化を監視
+  useEffect(() => {
+    console.log('[Settings] Token state changed:', {
+      hasTwitchToken,
+      hasYouTubeToken,
+      hasTwitchOAuth,
+    });
+  }, [hasTwitchToken, hasYouTubeToken, hasTwitchOAuth]);
 
   // ビルド情報取得
   const { data: buildInfo } = useQuery({
@@ -31,6 +41,14 @@ export function Settings() {
   useEffect(() => {
     checkTokens();
   }, [checkTokens]);
+
+  // 認証パネルが閉じられたときにトークン状態を再確認
+  useEffect(() => {
+    if (twitchAuthMethod === null) {
+      // Twitchの認証パネルが閉じられた後、トークン状態を再確認
+      checkTokens();
+    }
+  }, [twitchAuthMethod, checkTokens]);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -93,37 +111,44 @@ export function Settings() {
           </div>
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => setTwitchAuthMethod(twitchAuthMethod === 'token' ? null : 'token')}
+              onClick={() => setTwitchAuthMethod(twitchAuthMethod === 'config' ? null : 'config')}
               className={`px-3 py-1.5 rounded text-xs font-medium transition-all duration-200 ${
-                twitchAuthMethod === 'token'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 border border-gray-200 dark:border-slate-600'
-              }`}
-            >
-              トークン
-            </button>
-            <button
-              onClick={() => setTwitchAuthMethod(twitchAuthMethod === 'oauth' ? null : 'oauth')}
-              className={`px-3 py-1.5 rounded text-xs font-medium transition-all duration-200 ${
-                twitchAuthMethod === 'oauth'
+                twitchAuthMethod === 'config'
                   ? 'bg-purple-600 text-white shadow-sm'
                   : 'bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 border border-gray-200 dark:border-slate-600'
               }`}
             >
-              OAuth
+              OAuth設定
             </button>
+            {hasTwitchOAuth && (
+              <button
+                onClick={() => setTwitchAuthMethod(twitchAuthMethod === 'auth' ? null : 'auth')}
+                className={`px-3 py-1.5 rounded text-xs font-medium transition-all duration-200 ${
+                  twitchAuthMethod === 'auth'
+                    ? 'bg-purple-600 text-white shadow-sm'
+                    : 'bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 border border-gray-200 dark:border-slate-600'
+                }`}
+              >
+                🔐 認証
+              </button>
+            )}
           </div>
-          {twitchAuthMethod === 'token' && (
-            <TokenForm
+          {twitchAuthMethod === 'config' && (
+            <OAuthConfigForm
               platform="twitch"
               onClose={() => setTwitchAuthMethod(null)}
             />
           )}
-          {twitchAuthMethod === 'oauth' && (
-            <OAuthLogin
-              platform="twitch"
-              onClose={() => setTwitchAuthMethod(null)}
-            />
+          {twitchAuthMethod === 'auth' && (
+            <div className="mt-4">
+              <TwitchAuthPanel
+                onClose={() => setTwitchAuthMethod(null)}
+                onSuccess={() => {
+                  // 認証成功時にトークン状態を更新
+                  checkTokens();
+                }}
+              />
+            </div>
           )}
         </section>
 
@@ -131,7 +156,7 @@ export function Settings() {
         <section className="card p-4 space-y-3">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">YouTube API</h2>
           <div className="flex items-center space-x-2">
-            <div className={`w-2 h-2 rounded-full ${hasYouTubeToken ? 'bg-green-500' : 'bg-red-400'}`}></div>
+            <div className={`w-2 h-2 rounded-full ${hasYouTubeToken ? 'bg-green-500' : 'bg-gray-400'}`}></div>
             <span className="text-xs text-gray-600 dark:text-gray-400">
               {hasYouTubeToken ? '接続済み' : '未接続'}
             </span>
@@ -148,14 +173,14 @@ export function Settings() {
               トークン
             </button>
             <button
-              onClick={() => setYoutubeAuthMethod(youtubeAuthMethod === 'oauth' ? null : 'oauth')}
+              onClick={() => setYoutubeAuthMethod(youtubeAuthMethod === 'config' ? null : 'config')}
               className={`px-3 py-1.5 rounded text-xs font-medium transition-all duration-200 ${
-                youtubeAuthMethod === 'oauth'
+                youtubeAuthMethod === 'config'
                   ? 'bg-purple-600 text-white shadow-sm'
                   : 'bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 border border-gray-200 dark:border-slate-600'
               }`}
             >
-              OAuth
+              OAuth設定
             </button>
           </div>
           {youtubeAuthMethod === 'token' && (
@@ -164,8 +189,8 @@ export function Settings() {
               onClose={() => setYoutubeAuthMethod(null)}
             />
           )}
-          {youtubeAuthMethod === 'oauth' && (
-            <OAuthLogin
+          {youtubeAuthMethod === 'config' && (
+            <OAuthConfigForm
               platform="youtube"
               onClose={() => setYoutubeAuthMethod(null)}
             />

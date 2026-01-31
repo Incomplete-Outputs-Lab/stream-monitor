@@ -1,4 +1,5 @@
-use crate::config::credentials::CredentialManager;
+use crate::config::stronghold_store::StrongholdStore;
+use crate::config::settings::SettingsManager;
 use crate::database::{get_connection, DatabaseManager};
 use serde::{Deserialize, Serialize};
 use tauri::{command, AppHandle, Manager, State};
@@ -31,9 +32,21 @@ pub struct DatabaseInitResult {
     pub error_type: Option<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OAuthConfig {
+    pub client_id: Option<String>,
+    pub client_secret: Option<String>, // 注意: レスポンスではマスキングされる
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OAuthConfigResponse {
+    pub success: bool,
+    pub message: String,
+}
+
 #[tauri::command]
 pub async fn save_token(platform: String, token: String) -> Result<TokenResponse, String> {
-    CredentialManager::save_token(&platform, &token)
+    StrongholdStore::save_token(&platform, &token)
         .map_err(|e| format!("Failed to save token: {}", e))?;
 
     Ok(TokenResponse {
@@ -44,12 +57,13 @@ pub async fn save_token(platform: String, token: String) -> Result<TokenResponse
 
 #[tauri::command]
 pub async fn get_token(platform: String) -> Result<String, String> {
-    CredentialManager::get_token(&platform).map_err(|e| format!("Failed to get token: {}", e))
+    StrongholdStore::get_token(&platform)
+        .map_err(|e| format!("Failed to get token: {}", e))
 }
 
 #[tauri::command]
 pub async fn delete_token(platform: String) -> Result<TokenResponse, String> {
-    CredentialManager::delete_token(&platform)
+    StrongholdStore::delete_token(&platform)
         .map_err(|e| format!("Failed to delete token: {}", e))?;
 
     Ok(TokenResponse {
@@ -60,14 +74,138 @@ pub async fn delete_token(platform: String) -> Result<TokenResponse, String> {
 
 #[tauri::command]
 pub async fn has_token(platform: String) -> Result<bool, String> {
-    Ok(CredentialManager::has_token(&platform))
+    Ok(StrongholdStore::has_token(&platform))
 }
 
 #[tauri::command]
 pub async fn verify_token(platform: String) -> Result<bool, String> {
     // TODO: 実際のAPIを呼び出してトークンを検証する
     // ここでは一旦、トークンが存在するかどうかのみを確認
-    Ok(CredentialManager::has_token(&platform))
+    Ok(StrongholdStore::has_token(&platform))
+}
+
+#[tauri::command]
+pub async fn get_oauth_config(app_handle: AppHandle, platform: String) -> Result<OAuthConfig, String> {
+    // 設定ファイルからClient IDを取得
+    let settings = SettingsManager::load_settings(&app_handle)
+        .map_err(|e| format!("Failed to load settings: {}", e))?;
+
+    let client_id = match platform.as_str() {
+        "twitch" => settings.twitch.client_id,
+        "youtube" => settings.youtube.client_id,
+        _ => return Err(format!("Unsupported platform: {}", platform)),
+    };
+
+    // YouTubeの場合のみStrongholdからClient Secretを取得（TwitchはDevice Code Flowでクライアント Secret不要）
+    let client_secret = if platform == "youtube" {
+        StrongholdStore::get_oauth_secret(&platform).ok()
+    } else {
+        None
+    };
+
+    Ok(OAuthConfig {
+        client_id,
+        client_secret,
+    })
+}
+
+#[tauri::command]
+pub async fn save_oauth_config(
+    app_handle: AppHandle,
+    platform: String,
+    client_id: String,
+    client_secret: Option<String>,
+) -> Result<OAuthConfigResponse, String> {
+    // 現在の設定を読み込み
+    let mut settings = SettingsManager::load_settings(&app_handle)
+        .map_err(|e| format!("Failed to load settings: {}", e))?;
+
+    // Client IDを設定ファイルに保存
+    match platform.as_str() {
+        "twitch" => {
+            settings.twitch.client_id = Some(client_id);
+        }
+        "youtube" => {
+            settings.youtube.client_id = Some(client_id);
+        }
+        _ => return Err(format!("Unsupported platform: {}", platform)),
+    }
+
+    // 設定ファイルを保存
+    SettingsManager::save_settings(&app_handle, &settings)
+        .map_err(|e| format!("Failed to save settings: {}", e))?;
+
+    // YouTubeの場合のみClient SecretをStrongholdに保存（TwitchはDevice Code FlowでClient Secret不要）
+    if platform == "youtube" {
+        if let Some(secret) = client_secret {
+            if !secret.trim().is_empty() {
+                StrongholdStore::save_oauth_secret(&platform, &secret)
+                    .map_err(|e| format!("Failed to save OAuth secret: {}", e))?;
+            }
+        }
+    }
+
+    Ok(OAuthConfigResponse {
+        success: true,
+        message: format!("OAuth configuration saved for {}", platform),
+    })
+}
+
+#[tauri::command]
+pub async fn delete_oauth_config(app_handle: AppHandle, platform: String) -> Result<OAuthConfigResponse, String> {
+    // 現在の設定を読み込み
+    let mut settings = SettingsManager::load_settings(&app_handle)
+        .map_err(|e| format!("Failed to load settings: {}", e))?;
+
+    // Client IDを設定ファイルから削除
+    match platform.as_str() {
+        "twitch" => {
+            settings.twitch.client_id = None;
+        }
+        "youtube" => {
+            settings.youtube.client_id = None;
+        }
+        _ => return Err(format!("Unsupported platform: {}", platform)),
+    }
+
+    // 設定ファイルを保存
+    SettingsManager::save_settings(&app_handle, &settings)
+        .map_err(|e| format!("Failed to save settings: {}", e))?;
+
+    // YouTubeの場合のみClient SecretをStrongholdから削除（TwitchはDevice Code FlowでClient Secret不要）
+    if platform == "youtube" {
+        StrongholdStore::delete_oauth_secret(&platform)
+            .map_err(|e| format!("Failed to delete OAuth secret: {}", e))?;
+    }
+
+    Ok(OAuthConfigResponse {
+        success: true,
+        message: format!("OAuth configuration deleted for {}", platform),
+    })
+}
+
+#[tauri::command]
+pub async fn has_oauth_config(app_handle: AppHandle, platform: String) -> Result<bool, String> {
+    // 設定ファイルからClient IDの存在を確認
+    let settings = SettingsManager::load_settings(&app_handle)
+        .map_err(|e| format!("Failed to load settings: {}", e))?;
+
+    let has_client_id = match platform.as_str() {
+        "twitch" => settings.twitch.client_id.is_some(),
+        "youtube" => settings.youtube.client_id.is_some(),
+        _ => return Err(format!("Unsupported platform: {}", platform)),
+    };
+
+    // TwitchはDevice Code Flowを使用するため、Client IDのみで十分
+    // YouTubeの場合はClient Secretも必要
+    match platform.as_str() {
+        "twitch" => Ok(has_client_id),
+        "youtube" => {
+            let has_client_secret = StrongholdStore::has_oauth_secret(&platform);
+            Ok(has_client_id && has_client_secret)
+        }
+        _ => Err(format!("Unsupported platform: {}", platform)),
+    }
 }
 
 #[command]

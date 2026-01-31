@@ -138,13 +138,25 @@ stream-monitor/
 
 #### Twitch API
 - **レート制限**: 800リクエスト/分
-- **認証**: OAuth 2.0 Client Credentials Flow
+- **認証**: OAuth 2.0 Device Code Grant Flow（推奨）
+  - デスクトップアプリケーション向けの公式推奨フロー
+  - Client Secret不要で安全に認証
+  - リフレッシュトークン対応（30日間有効、1回限り使用）
+  - ユーザーがブラウザでコードを入力して認証
 - **エンドポイント**: Helix API を使用
 - **IRC接続**: WebSocket経由で最大50チャンネル同時接続
 
+**Twitch Device Code Flow の実装詳細:**
+1. `start_twitch_device_auth` コマンドでデバイスコードとユーザーコードを取得
+2. ユーザーがブラウザで `https://www.twitch.tv/activate` にアクセスしてコードを入力
+3. `poll_twitch_device_token` コマンドでポーリングしてトークンを取得
+4. トークンは自動的にkeyringに保存され、30日間有効なリフレッシュトークンも取得
+
 #### YouTube API
 - **クォータ制限**: 10,000ユニット/日
-- **認証**: OAuth 2.0
+- **認証**: OAuth 2.0 Authorization Code Grant Flow
+  - Client IDとClient Secretが必要
+  - ローカルコールバックサーバーを使用
 - **Live Chat API**: ポーリング方式でチャット取得
 - **スクレイピング**: 控えめな頻度（5分以上）で使用
 
@@ -154,6 +166,14 @@ stream-monitor/
 - **保存場所**: OSネイティブのキーチェーン（keyring クレート）
 - **メモリ**: 暗号化して保持
 - **ログ**: トークンはマスキングして出力
+
+#### OAuth認証のセキュリティ
+- **Twitch**: Device Code Grant Flow採用によりClient Secretが不要
+  - OSSプロジェクトとして適切なセキュリティプラクティス
+  - ソースコードに機密情報を埋め込むリスクを完全に排除
+- **YouTube**: Authorization Code Grant Flow（Client Secret必須）
+  - Client SecretはOSのキーチェーンに安全に保存
+  - ソースコードには含めない
 
 #### データ保護
 - ローカルストレージのみ使用

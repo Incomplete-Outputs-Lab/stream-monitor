@@ -1,4 +1,4 @@
-use crate::config::credentials::CredentialManager;
+use crate::config::stronghold_store::StrongholdStore;
 use google_youtube3::{hyper_rustls, hyper_util, yup_oauth2, YouTube};
 use hyper_util::client::legacy::connect::HttpConnector;
 use std::sync::Arc;
@@ -46,7 +46,7 @@ impl YouTubeApiClient {
         let hub = Arc::new(YouTube::new(client, auth));
 
         // 既存のトークンを取得
-        let access_token = CredentialManager::get_token("youtube").ok();
+        let access_token = StrongholdStore::get_token("youtube").ok();
 
         Ok(Self { hub, access_token })
     }
@@ -148,7 +148,7 @@ impl YouTubeApiClient {
 
     pub fn set_access_token(&mut self, token: String) {
         // トークンを保存（借用する前に）
-        let _ = CredentialManager::save_token("youtube", &token);
+        let _ = StrongholdStore::save_token("youtube", &token);
         self.access_token = Some(token);
     }
 

@@ -7,4 +7,3 @@ pub mod logs;
 pub mod oauth;
 pub mod stats;
 pub mod twitch;
-pub mod utils;

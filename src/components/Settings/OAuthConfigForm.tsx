@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useConfigStore } from '../../stores/configStore';
+import { openUrl } from '@tauri-apps/plugin-opener';
 
 interface OAuthConfigFormProps {
   platform: 'twitch' | 'youtube';
@@ -130,7 +131,11 @@ export function OAuthConfigForm({ platform, onClose }: OAuthConfigFormProps) {
             <div className="text-xs space-y-2 p-3 bg-blue-50 dark:bg-blue-900/10 rounded border border-blue-200 dark:border-blue-800">
               <p className="font-semibold text-blue-700 dark:text-blue-400">📝 設定手順：</p>
               <div className="space-y-1 pl-2">
-                <p>1. <a href="https://dev.twitch.tv/console/apps" target="_blank" rel="noopener noreferrer" className="underline hover:text-blue-600 font-medium">Twitch Developer Console</a> でアプリを作成または編集</p>
+                <p>1. <button 
+                  type="button"
+                  onClick={() => openUrl("https://dev.twitch.tv/console/apps")} 
+                  className="underline hover:text-blue-600 font-medium text-left"
+                >Twitch Developer Console</button> でアプリを作成または編集</p>
                 <p>2. <span className="font-medium">Category</span> を選択（例：Application Integration）</p>
                 <p>3. <span className="font-medium">Client ID</span> をコピーして下記に貼り付け</p>
               </div>

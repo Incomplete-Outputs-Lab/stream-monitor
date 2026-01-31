@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { ChannelWithStats } from "../../types";
 
 interface ChannelItemProps {
@@ -21,7 +21,7 @@ export function ChannelItem({ channel, onEdit, onDelete, onToggle }: ChannelItem
       : `https://youtube.com/channel/${channel.channel_id}`;
     
     try {
-      await invoke("open_url", { url });
+      await openUrl(url);
     } catch (error) {
       console.error("Failed to open URL:", error);
       alert("URLを開くことができませんでした: " + String(error));

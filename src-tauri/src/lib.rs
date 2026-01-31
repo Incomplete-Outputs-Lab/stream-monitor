@@ -26,7 +26,6 @@ use commands::{
     oauth::{start_twitch_device_auth, poll_twitch_device_token},
     stats::{get_channel_stats, get_collector_status, get_live_channels, get_stream_stats},
     twitch::validate_twitch_channel,
-    utils::open_url,
 };
 use config::settings::SettingsManager;
 use database::DatabaseManager;
@@ -279,8 +278,6 @@ pub fn run() {
             get_logs,
             // Twitch commands
             validate_twitch_channel,
-            // Utils commands
-            open_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -24,6 +24,10 @@ use commands::{
     export::{export_to_csv, export_to_json},
     logs::get_logs,
     oauth::{start_twitch_device_auth, poll_twitch_device_token},
+    sql::{
+        delete_sql_template, execute_sql, get_sql_template, list_database_tables,
+        list_sql_templates, save_sql_template,
+    },
     stats::{get_channel_stats, get_collector_status, get_live_channels, get_stream_stats},
     twitch::validate_twitch_channel,
 };
@@ -263,6 +267,13 @@ pub fn run() {
             // Database commands
             create_database_backup,
             get_database_info,
+            // SQL commands
+            execute_sql,
+            list_sql_templates,
+            get_sql_template,
+            save_sql_template,
+            delete_sql_template,
+            list_database_tables,
             // OAuth commands
             start_twitch_device_auth,
             poll_twitch_device_token,

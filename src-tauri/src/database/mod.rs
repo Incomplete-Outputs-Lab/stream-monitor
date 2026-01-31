@@ -28,11 +28,16 @@ impl DatabaseManager {
             PathBuf::from("stream_stats.db")
         };
 
-        eprintln!("Opening DuckDB at: {}", db_path.display());
-
-        // ファイルベースのDuckDB接続を作成
-        let conn = Connection::open(&db_path)
-            .map_err(|e| format!("Failed to open database: {}", e))?;
+        // 開発環境ではインメモリDB、本番環境ではファイルベースDBを使用
+        let conn = if cfg!(debug_assertions) {
+            eprintln!("Development mode: Using in-memory database (hot-reload safe)");
+            Connection::open_in_memory()
+                .map_err(|e| format!("Failed to open in-memory database: {}", e))?
+        } else {
+            eprintln!("Production mode: Opening DuckDB at: {}", db_path.display());
+            Connection::open(&db_path)
+                .map_err(|e| format!("Failed to open database: {}", e))?
+        };
 
         // DuckDBの設定
         conn.execute("PRAGMA memory_limit='1GB'", []).ok();
@@ -60,6 +65,11 @@ impl DatabaseManager {
 
     /// 手動バックアップを作成
     pub fn create_backup(&self) -> Result<PathBuf, Box<dyn std::error::Error>> {
+        // インメモリDB使用時はバックアップを作成できない
+        if cfg!(debug_assertions) {
+            return Err("Cannot create backup in development mode (using in-memory database)".into());
+        }
+
         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
         let backup_path = self
             .db_path

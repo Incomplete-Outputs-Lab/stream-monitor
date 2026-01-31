@@ -154,3 +154,31 @@ export interface CollectorStatus {
   poll_count: number;
   error_count: number;
 }
+
+export interface SqlQueryResult {
+  columns: string[];
+  rows: any[][];
+  affected_rows?: number;
+  execution_time_ms: number;
+}
+
+export interface SqlTemplate {
+  id?: number;
+  name: string;
+  description?: string;
+  query: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SaveTemplateRequest {
+  id?: number;
+  name: string;
+  description?: string;
+  query: string;
+}
+
+export interface TableInfo {
+  table_name: string;
+  column_count: number;
+}

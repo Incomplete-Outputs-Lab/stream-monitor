@@ -1,9 +1,8 @@
 use crate::api::twitch_api::TwitchApiClient;
 use crate::collectors::collector_trait::Collector;
-use crate::database::models::{Channel, StreamStats};
+use crate::database::models::{Channel, StreamData};
 use crate::websocket::twitch_irc::TwitchIrcManager;
 use async_trait::async_trait;
-use chrono::Utc;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -54,7 +53,7 @@ impl Collector for TwitchCollector {
     async fn poll_channel(
         &self,
         channel: &Channel,
-    ) -> Result<Option<StreamStats>, Box<dyn std::error::Error>> {
+    ) -> Result<Option<StreamData>, Box<dyn std::error::Error>> {
         // ユーザー情報を取得
         let user = self
             .api_client
@@ -68,14 +67,18 @@ impl Collector for TwitchCollector {
             .await?;
 
         if let Some(stream) = stream_opt {
-            Ok(Some(StreamStats {
-                id: None,
-                stream_id: 0, // TODO: ストリームIDをデータベースから取得する必要がある
-                collected_at: Utc::now().to_rfc3339(),
+            // Twitch APIから取得したストリーム情報を構造化して返す
+            Ok(Some(StreamData {
+                stream_id: stream.id.to_string(),
+                title: Some(stream.title.to_string()),
+                category: Some(stream.game_name.to_string()),
+                thumbnail_url: Some(stream.thumbnail_url.to_string()),
+                started_at: stream.started_at.as_str().to_string(),
                 viewer_count: Some(stream.viewer_count as i32),
-                chat_rate_1min: 0, // Phase 2で実装
+                chat_rate_1min: 0, // Phase 2で実装（チャット機能）
             }))
         } else {
+            // 配信していない場合はNone
             Ok(None)
         }
     }

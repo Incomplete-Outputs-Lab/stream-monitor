@@ -115,14 +115,14 @@ export function ChatAnalysis({ dateRange, selectedChannelId }: ChatAnalysisProps
   return (
     <div className="space-y-6">
       {/* ストリーム選択 */}
-      <div className="bg-white rounded-lg shadow p-4 border border-gray-200">
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+      <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-4 border border-gray-200 dark:border-gray-700">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
           ストリーム選択（オプション）
         </label>
         <select
           value={selectedStreamId || ''}
           onChange={(e) => setSelectedStreamId(e.target.value ? parseInt(e.target.value) : null)}
-          className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full max-w-xs px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100"
         >
           <option value="">すべてのストリーム</option>
           {/* TODO: ストリーム一覧を取得して表示 */}
@@ -131,7 +131,7 @@ export function ChatAnalysis({ dateRange, selectedChannelId }: ChatAnalysisProps
 
       {/* チャット統計サマリー */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-white rounded-lg shadow p-6 border border-gray-200">
+        <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-6 border border-gray-200 dark:border-gray-700">
           <div className="flex items-center">
             <div className="flex-shrink-0">
               <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
@@ -139,15 +139,15 @@ export function ChatAnalysis({ dateRange, selectedChannelId }: ChatAnalysisProps
               </div>
             </div>
             <div className="ml-4">
-              <h3 className="text-2xl font-bold text-gray-900">
+              <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                 {chatStats?.total_messages.toLocaleString() || 0}
               </h3>
-              <p className="text-sm text-gray-500">総メッセージ数</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">総メッセージ数</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6 border border-gray-200">
+        <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-6 border border-gray-200 dark:border-gray-700">
           <div className="flex items-center">
             <div className="flex-shrink-0">
               <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
@@ -155,15 +155,15 @@ export function ChatAnalysis({ dateRange, selectedChannelId }: ChatAnalysisProps
               </div>
             </div>
             <div className="ml-4">
-              <h3 className="text-2xl font-bold text-gray-900">
+              <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                 {chatStats?.unique_users.toLocaleString() || 0}
               </h3>
-              <p className="text-sm text-gray-500">ユニークユーザー数</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">ユニークユーザー数</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6 border border-gray-200">
+        <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-6 border border-gray-200 dark:border-gray-700">
           <div className="flex items-center">
             <div className="flex-shrink-0">
               <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
@@ -171,15 +171,15 @@ export function ChatAnalysis({ dateRange, selectedChannelId }: ChatAnalysisProps
               </div>
             </div>
             <div className="ml-4">
-              <h3 className="text-2xl font-bold text-gray-900">
+              <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                 {chatStats?.messages_per_minute.toFixed(1) || '0.0'}
               </h3>
-              <p className="text-sm text-gray-500">1分間平均メッセージ数</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">1分間平均メッセージ数</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6 border border-gray-200">
+        <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-6 border border-gray-200 dark:border-gray-700">
           <div className="flex items-center">
             <div className="flex-shrink-0">
               <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center">
@@ -187,10 +187,10 @@ export function ChatAnalysis({ dateRange, selectedChannelId }: ChatAnalysisProps
               </div>
             </div>
             <div className="ml-4">
-              <h3 className="text-2xl font-bold text-gray-900">
+              <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                 {chatStats?.top_users[0]?.message_count || 0}
               </h3>
-              <p className="text-sm text-gray-500">最多投稿者メッセージ数</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">最多投稿者メッセージ数</p>
             </div>
           </div>
         </div>
@@ -199,8 +199,8 @@ export function ChatAnalysis({ dateRange, selectedChannelId }: ChatAnalysisProps
       {/* チャート表示 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* チャット速度推移 */}
-        <div className="bg-white rounded-lg shadow p-6 border border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">チャット速度推移</h3>
+        <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-6 border border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">チャット速度推移</h3>
           {rateChartData.length > 0 ? (
             <LineChart
               data={rateChartData}
@@ -211,15 +211,15 @@ export function ChatAnalysis({ dateRange, selectedChannelId }: ChatAnalysisProps
               yAxisLabel="メッセージ数"
             />
           ) : (
-            <div className="h-64 flex items-center justify-center text-gray-500">
+            <div className="h-64 flex items-center justify-center text-gray-500 dark:text-gray-400">
               データがありません
             </div>
           )}
         </div>
 
         {/* 時間帯別分布 */}
-        <div className="bg-white rounded-lg shadow p-6 border border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">時間帯別メッセージ分布</h3>
+        <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-6 border border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">時間帯別メッセージ分布</h3>
           {hourlyChartData.length > 0 ? (
             <BarChart
               data={hourlyChartData}
@@ -230,7 +230,7 @@ export function ChatAnalysis({ dateRange, selectedChannelId }: ChatAnalysisProps
               yAxisLabel="メッセージ数"
             />
           ) : (
-            <div className="h-64 flex items-center justify-center text-gray-500">
+            <div className="h-64 flex items-center justify-center text-gray-500 dark:text-gray-400">
               データがありません
             </div>
           )}
@@ -238,29 +238,29 @@ export function ChatAnalysis({ dateRange, selectedChannelId }: ChatAnalysisProps
       </div>
 
       {/* トップユーザー */}
-      <div className="bg-white rounded-lg shadow border border-gray-200">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">トップ投稿者</h3>
+      <div className="bg-white dark:bg-slate-800 rounded-lg shadow border border-gray-200 dark:border-gray-700">
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">トップ投稿者</h3>
         </div>
-        <div className="divide-y divide-gray-200">
+        <div className="divide-y divide-gray-200 dark:divide-gray-700">
           {topUsersData.length > 0 ? (
             topUsersData.map((user) => (
               <div key={user.rank} className="px-6 py-4 flex items-center justify-between">
                 <div className="flex items-center space-x-4">
-                  <div className="flex-shrink-0 w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                    <span className="text-sm font-medium text-blue-800">#{user.rank}</span>
+                  <div className="flex-shrink-0 w-8 h-8 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center">
+                    <span className="text-sm font-medium text-blue-800 dark:text-blue-200">#{user.rank}</span>
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-gray-900">{user.user}</p>
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{user.user}</p>
                   </div>
                 </div>
-                <div className="text-sm text-gray-500">
+                <div className="text-sm text-gray-500 dark:text-gray-400">
                   {user.messages.toLocaleString()} メッセージ
                 </div>
               </div>
             ))
           ) : (
-            <div className="px-6 py-8 text-center text-gray-500">
+            <div className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
               投稿者データがありません
             </div>
           )}
@@ -269,15 +269,15 @@ export function ChatAnalysis({ dateRange, selectedChannelId }: ChatAnalysisProps
 
       {/* メッセージタイプ分布 */}
       {chatStats?.message_types && chatStats.message_types.length > 0 && (
-        <div className="bg-white rounded-lg shadow p-6 border border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">メッセージタイプ分布</h3>
+        <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-6 border border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">メッセージタイプ分布</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {chatStats.message_types.map((type) => (
               <div key={type.message_type} className="text-center">
-                <div className="text-2xl font-bold text-gray-900">
+                <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                   {type.count.toLocaleString()}
                 </div>
-                <div className="text-sm text-gray-500 capitalize">
+                <div className="text-sm text-gray-500 dark:text-gray-400 capitalize">
                   {type.message_type}
                 </div>
               </div>

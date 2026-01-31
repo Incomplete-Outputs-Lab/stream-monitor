@@ -7,8 +7,12 @@ pub struct Channel {
     pub channel_id: String,
     pub channel_name: String,
     pub display_name: Option<String>,
+    pub profile_image_url: Option<String>,
     pub enabled: bool,
     pub poll_interval: i32,
+    pub follower_count: Option<i32>,
+    pub broadcaster_type: Option<String>,
+    pub view_count: Option<i32>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
 }
@@ -34,6 +38,18 @@ pub struct StreamStats {
     pub chat_rate_1min: i32,
 }
 
+/// Combined stream data returned by collectors
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamData {
+    pub stream_id: String,           // Platform-specific stream ID
+    pub title: Option<String>,
+    pub category: Option<String>,
+    pub thumbnail_url: Option<String>,
+    pub started_at: String,
+    pub viewer_count: Option<i32>,
+    pub chat_rate_1min: i32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelWithStats {
     #[serde(flatten)]
@@ -41,6 +57,15 @@ pub struct ChannelWithStats {
     pub is_live: bool,
     pub current_viewers: Option<i32>,
     pub current_title: Option<String>,
+}
+
+/// Event payload for channel stats updates
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelStatsEvent {
+    pub channel_id: i64,
+    pub is_live: bool,
+    pub viewer_count: Option<i32>,
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +92,10 @@ mod tests {
             channel_id: "test_channel".to_string(),
             channel_name: "Test Channel".to_string(),
             display_name: None,
+            profile_image_url: None,
+            follower_count: None,
+            broadcaster_type: None,
+            view_count: None,
             enabled: true,
             poll_interval: 60,
             created_at: Some("2024-01-01T00:00:00Z".to_string()),

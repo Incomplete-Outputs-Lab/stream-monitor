@@ -1,6 +1,8 @@
+use crate::collectors::poller::{ChannelPoller, CollectorStatus};
 use crate::database::{models::StreamStats, utils, DatabaseManager};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
+use tokio::sync::Mutex;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StreamStatsQuery {
@@ -80,19 +82,28 @@ pub async fn get_live_channels(
         .get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
+    // 最新のstream_statsを明示的に取得するように修正
     let sql = r#"
+        WITH latest_stats AS (
+            SELECT 
+                stream_id,
+                viewer_count,
+                collected_at,
+                ROW_NUMBER() OVER (PARTITION BY stream_id ORDER BY collected_at DESC) as rn
+            FROM stream_stats
+        )
         SELECT 
-            c.id, c.platform, c.channel_id, c.channel_name, c.enabled, c.poll_interval, CAST(c.created_at AS VARCHAR) as created_at, CAST(c.updated_at AS VARCHAR) as updated_at,
-            CASE WHEN s.id IS NOT NULL THEN 1 ELSE 0 END as is_live,
-            ss.viewer_count as current_viewers,
+            c.id, c.platform, c.channel_id, c.channel_name, c.display_name, c.profile_image_url, c.enabled, c.poll_interval, 
+            c.follower_count, c.broadcaster_type, c.view_count,
+            CAST(c.created_at AS VARCHAR) as created_at, CAST(c.updated_at AS VARCHAR) as updated_at,
+            TRUE as is_live,
+            ls.viewer_count as current_viewers,
             s.title as current_title
         FROM channels c
-        LEFT JOIN streams s ON c.id = s.channel_id AND s.ended_at IS NULL
-        LEFT JOIN stream_stats ss ON s.id = ss.stream_id
-        WHERE c.enabled = 1
-        GROUP BY c.id, s.id
-        HAVING is_live = 1
-        ORDER BY ss.collected_at DESC
+        INNER JOIN streams s ON c.id = s.channel_id AND s.ended_at IS NULL
+        LEFT JOIN latest_stats ls ON s.id = ls.stream_id AND ls.rn = 1
+        WHERE c.enabled = TRUE
+        ORDER BY COALESCE(ls.collected_at, s.started_at) DESC
     "#;
 
     let mut stmt = conn
@@ -107,15 +118,19 @@ pub async fn get_live_channels(
                     platform: row.get(1)?,
                     channel_id: row.get(2)?,
                     channel_name: row.get(3)?,
-                    display_name: None,
-                    enabled: row.get(4)?,
-                    poll_interval: row.get(5)?,
-                    created_at: Some(row.get(6)?),
-                    updated_at: Some(row.get(7)?),
+                    display_name: row.get(4)?,
+                    profile_image_url: row.get(5)?,
+                    enabled: row.get(6)?,
+                    poll_interval: row.get(7)?,
+                    follower_count: row.get(8).ok(),
+                    broadcaster_type: row.get(9).ok(),
+                    view_count: row.get(10).ok(),
+                    created_at: Some(row.get(11)?),
+                    updated_at: Some(row.get(12)?),
                 },
-                is_live: row.get(8)?,
-                current_viewers: row.get(9)?,
-                current_title: row.get(10)?,
+                is_live: row.get(13)?,
+                current_viewers: row.get(14)?,
+                current_title: row.get(15)?,
             })
         })
         .map_err(|e| format!("Failed to query channels: {}", e))?
@@ -141,4 +156,12 @@ pub async fn get_channel_stats(
         },
     )
     .await
+}
+
+#[tauri::command]
+pub async fn get_collector_status(
+    poller: State<'_, std::sync::Arc<Mutex<ChannelPoller>>>,
+) -> Result<Vec<CollectorStatus>, String> {
+    let poller = poller.lock().await;
+    Ok(poller.get_all_status())
 }

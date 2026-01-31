@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
-import { useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { useState, useMemo, useEffect } from "react";
 import { useChannelStore } from "../../stores/channelStore";
-import { Channel } from "../../types";
+import { Channel, ChannelWithStats } from "../../types";
 import { ChannelForm } from "./ChannelForm";
 import { ChannelItem } from "./ChannelItem";
 
@@ -14,6 +15,22 @@ export function ChannelList() {
   const { channels, error, fetchChannels } = useChannelStore();
   const queryClient = useQueryClient();
 
+  // Tauriイベントリスナー: チャンネル統計更新を監視
+  useEffect(() => {
+    const unlisten = listen<{ channel_id: number; is_live: boolean; viewer_count?: number; title?: string }>(
+      'channel-stats-updated',
+      (event) => {
+        console.log('Channel stats updated:', event.payload);
+        // ライブチャンネルキャッシュを無効化して再取得
+        queryClient.invalidateQueries({ queryKey: ["live-channels"] });
+      }
+    );
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [queryClient]);
+
   // チャンネル取得
   const { isLoading } = useQuery({
     queryKey: ["channels"],
@@ -23,6 +40,32 @@ export function ChannelList() {
     },
     initialData: channels,
   });
+
+  // ライブ状態の取得
+  const { data: liveChannels = [] } = useQuery({
+    queryKey: ["live-channels"],
+    queryFn: async () => {
+      const result = await invoke<ChannelWithStats[]>("get_live_channels");
+      return result;
+    },
+    refetchInterval: 30000, // 30秒ごとに更新
+  });
+
+  // チャンネルとライブ状態を統合
+  const channelsWithStats = useMemo<ChannelWithStats[]>(() => {
+    return channels.map(channel => {
+      const liveData = liveChannels.find(lc => lc.id === channel.id);
+      if (liveData) {
+        return liveData;
+      }
+      return {
+        ...channel,
+        is_live: false,
+        current_viewers: undefined,
+        current_title: undefined,
+      };
+    });
+  }, [channels, liveChannels]);
 
   // チャンネル削除ミューテーション
   const deleteMutation = useMutation({
@@ -65,7 +108,7 @@ export function ChannelList() {
   };
 
   // フィルタリングされたチャンネル
-  const filteredChannels = channels.filter(channel => {
+  const filteredChannels = channelsWithStats.filter(channel => {
     if (filter === 'all') return true;
     return channel.platform === filter;
   });
@@ -75,7 +118,7 @@ export function ChannelList() {
     setEditingChannel(null);
   };
 
-  const handleEditChannel = (channel: Channel) => {
+  const handleEditChannel = (channel: Channel | ChannelWithStats) => {
     setEditingChannel(channel);
     setShowAddForm(false);
   };

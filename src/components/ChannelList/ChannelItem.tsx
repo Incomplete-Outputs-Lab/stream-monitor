@@ -1,8 +1,9 @@
-import { Channel } from "../../types";
+import { openUrl } from '@tauri-apps/plugin-opener';
+import { ChannelWithStats } from "../../types";
 
 interface ChannelItemProps {
-  channel: Channel;
-  onEdit: (channel: Channel) => void;
+  channel: ChannelWithStats;
+  onEdit: (channel: ChannelWithStats) => void;
   onDelete: (channelId: number) => void;
   onToggle: (channelId: number) => void;
 }
@@ -14,31 +15,60 @@ export function ChannelItem({ channel, onEdit, onDelete, onToggle }: ChannelItem
   };
 
   // ブラウザでチャンネルを開く
-  const openChannelInBrowser = () => {
+  const openChannelInBrowser = async () => {
     const url = channel.platform === 'twitch'
-      ? `https://twitch.tv/${channel.channel_name}`
+      ? `https://twitch.tv/${channel.channel_id}`
       : `https://youtube.com/channel/${channel.channel_id}`;
-    window.open(url, '_blank');
+    
+    try {
+      await openUrl(url);
+    } catch (error) {
+      console.error("Failed to open URL:", error);
+      alert("URLを開くことができませんでした: " + String(error));
+    }
   };
 
-  // モックデータ（実際にはAPIから取得）
-  const isLive = Math.random() > 0.5; // ライブ中かどうか（ランダム）
-  const followerCount = Math.floor(Math.random() * 100000); // フォロワー数（ランダム）
+  // ライブ状態と視聴者数を取得
+  const isLive = channel.is_live;
+  const viewerCount = channel.current_viewers;
 
   return (
     <div className="card p-6 hover:shadow-md transition-all duration-200 group">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center space-x-4 flex-1 min-w-0">
-          {/* プラットフォームアイコン */}
-          <div className={`flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center ${
-            channel.platform === 'twitch'
-              ? 'bg-gradient-to-br from-purple-500 to-purple-600'
-              : 'bg-gradient-to-br from-red-500 to-red-600'
-          } shadow-lg`}>
-            <span className="text-white text-xl">
-              {channel.platform === 'twitch' ? '🎮' : '▶️'}
-            </span>
-          </div>
+          {/* プラットフォームアイコン / プロフィール画像 */}
+          {channel.profile_image_url ? (
+            <div className="flex-shrink-0 w-12 h-12 rounded-xl overflow-hidden shadow-lg border-2 border-gray-200 dark:border-slate-600">
+              <img 
+                src={channel.profile_image_url} 
+                alt={channel.display_name || channel.channel_name}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  // 画像の読み込みに失敗した場合、フォールバックとしてデフォルトアイコンを表示
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                  if (target.parentElement) {
+                    target.parentElement.className = `flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center ${
+                      channel.platform === 'twitch'
+                        ? 'bg-gradient-to-br from-purple-500 to-purple-600'
+                        : 'bg-gradient-to-br from-red-500 to-red-600'
+                    } shadow-lg`;
+                    target.parentElement.innerHTML = `<span class="text-white text-xl">${channel.platform === 'twitch' ? '🎮' : '▶️'}</span>`;
+                  }
+                }}
+              />
+            </div>
+          ) : (
+            <div className={`flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center ${
+              channel.platform === 'twitch'
+                ? 'bg-gradient-to-br from-purple-500 to-purple-600'
+                : 'bg-gradient-to-br from-red-500 to-red-600'
+            } shadow-lg`}>
+              <span className="text-white text-xl">
+                {channel.platform === 'twitch' ? '🎮' : '▶️'}
+              </span>
+            </div>
+          )}
 
           {/* チャンネル情報 */}
           <div className="flex-1 min-w-0">
@@ -63,18 +93,51 @@ export function ChannelItem({ channel, onEdit, onDelete, onToggle }: ChannelItem
                 {isLive ? 'ライブ中' : 'オフライン'}
               </span>
             </div>
-            <div className="flex items-center space-x-4 text-sm text-gray-500 dark:text-gray-400">
+            <div className="flex items-center flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500 dark:text-gray-400">
               <span>ID: {channel.channel_id}</span>
               <span>•</span>
               <span>{channel.poll_interval}秒間隔</span>
-              <span>•</span>
-              <span className="flex items-center space-x-1">
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
-                </svg>
-                <span>{followerCount.toLocaleString()}人</span>
-              </span>
+              {channel.follower_count !== undefined && (
+                <>
+                  <span>•</span>
+                  <span className="flex items-center space-x-1 text-purple-600 dark:text-purple-400 font-semibold">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                    <span>{channel.follower_count.toLocaleString()}フォロワー</span>
+                  </span>
+                </>
+              )}
+              {channel.broadcaster_type && channel.broadcaster_type !== '' && (
+                <>
+                  <span>•</span>
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
+                    channel.broadcaster_type === 'partner'
+                      ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300'
+                      : 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
+                  }`}>
+                    {channel.broadcaster_type === 'partner' ? '✓ パートナー' : '✓ アフェリエイト'}
+                  </span>
+                </>
+              )}
+              {isLive && viewerCount !== undefined && (
+                <>
+                  <span>•</span>
+                  <span className="flex items-center space-x-1 text-red-600 dark:text-red-400 font-semibold">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                    <span>{viewerCount.toLocaleString()}人視聴中</span>
+                  </span>
+                </>
+              )}
             </div>
+            {isLive && channel.current_title && (
+              <div className="mt-2 text-sm text-gray-600 dark:text-gray-300 truncate">
+                <span className="font-medium">配信タイトル:</span> {channel.current_title}
+              </div>
+            )}
           </div>
         </div>
 

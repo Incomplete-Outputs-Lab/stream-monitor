@@ -1,4 +1,4 @@
-use crate::config::stronghold_store::StrongholdStore;
+use crate::config::keyring_store::KeyringStore;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -143,7 +143,7 @@ impl TwitchOAuth {
                 // アクセストークンを保存
                 eprintln!("[Twitch Device Flow] About to save access token...");
                 if let Some(ref handle) = self.app_handle {
-                    match StrongholdStore::save_token_with_app(handle, "twitch", &token_response.access_token) {
+                    match KeyringStore::save_token_with_app(handle, "twitch", &token_response.access_token) {
                         Ok(_) => {
                             eprintln!("[Twitch Device Flow] Access token saved successfully to Stronghold");
                         }
@@ -156,7 +156,7 @@ impl TwitchOAuth {
                     // リフレッシュトークンがある場合は保存
                     if let Some(refresh_token) = &token_response.refresh_token {
                         eprintln!("[Twitch Device Flow] About to save refresh token...");
-                        match StrongholdStore::save_token_with_app(handle, "twitch_refresh", refresh_token) {
+                        match KeyringStore::save_token_with_app(handle, "twitch_refresh", refresh_token) {
                             Ok(_) => {
                                 eprintln!("[Twitch Device Flow] Refresh token saved successfully to Stronghold");
                             }
@@ -234,7 +234,7 @@ impl TwitchOAuth {
         let handle = app_handle.or_else(|| self.app_handle.clone())
             .ok_or("No app handle available")?;
         
-        let refresh_token = StrongholdStore::get_token_with_app(&handle, "twitch_refresh")
+        let refresh_token = KeyringStore::get_token_with_app(&handle, "twitch_refresh")
             .map_err(|_| "No refresh token found")?;
 
         let mut params = HashMap::new();
@@ -263,11 +263,11 @@ impl TwitchOAuth {
         eprintln!("[Twitch Device Flow] Token refreshed successfully");
 
         // 新しいアクセストークンを保存
-        StrongholdStore::save_token_with_app(&handle, "twitch", &token_response.access_token)?;
+        KeyringStore::save_token_with_app(&handle, "twitch", &token_response.access_token)?;
 
         // 新しいリフレッシュトークンがある場合は保存（1回限り使用）
         if let Some(new_refresh_token) = &token_response.refresh_token {
-            StrongholdStore::save_token_with_app(&handle, "twitch_refresh", new_refresh_token)?;
+            KeyringStore::save_token_with_app(&handle, "twitch_refresh", new_refresh_token)?;
             eprintln!("[Twitch Device Flow] New refresh token saved (one-time use)");
         }
 

@@ -1,4 +1,4 @@
-use crate::config::stronghold_store::StrongholdStore;
+use crate::config::keyring_store::KeyringStore;
 use crate::config::settings::SettingsManager;
 use crate::database::{get_connection, DatabaseManager};
 use serde::{Deserialize, Serialize};
@@ -45,8 +45,8 @@ pub struct OAuthConfigResponse {
 }
 
 #[tauri::command]
-pub async fn save_token(platform: String, token: String) -> Result<TokenResponse, String> {
-    StrongholdStore::save_token(&platform, &token)
+pub async fn save_token(app_handle: AppHandle, platform: String, token: String) -> Result<TokenResponse, String> {
+    KeyringStore::save_token_with_app(&app_handle, &platform, &token)
         .map_err(|e| format!("Failed to save token: {}", e))?;
 
     Ok(TokenResponse {
@@ -56,14 +56,14 @@ pub async fn save_token(platform: String, token: String) -> Result<TokenResponse
 }
 
 #[tauri::command]
-pub async fn get_token(platform: String) -> Result<String, String> {
-    StrongholdStore::get_token(&platform)
+pub async fn get_token(app_handle: AppHandle, platform: String) -> Result<String, String> {
+    KeyringStore::get_token_with_app(&app_handle, &platform)
         .map_err(|e| format!("Failed to get token: {}", e))
 }
 
 #[tauri::command]
-pub async fn delete_token(platform: String) -> Result<TokenResponse, String> {
-    StrongholdStore::delete_token(&platform)
+pub async fn delete_token(app_handle: AppHandle, platform: String) -> Result<TokenResponse, String> {
+    KeyringStore::delete_token_with_app(&app_handle, &platform)
         .map_err(|e| format!("Failed to delete token: {}", e))?;
 
     Ok(TokenResponse {
@@ -73,15 +73,15 @@ pub async fn delete_token(platform: String) -> Result<TokenResponse, String> {
 }
 
 #[tauri::command]
-pub async fn has_token(platform: String) -> Result<bool, String> {
-    Ok(StrongholdStore::has_token(&platform))
+pub async fn has_token(app_handle: AppHandle, platform: String) -> Result<bool, String> {
+    Ok(KeyringStore::has_token_with_app(&app_handle, &platform))
 }
 
 #[tauri::command]
-pub async fn verify_token(platform: String) -> Result<bool, String> {
+pub async fn verify_token(app_handle: AppHandle, platform: String) -> Result<bool, String> {
     // TODO: 実際のAPIを呼び出してトークンを検証する
     // ここでは一旦、トークンが存在するかどうかのみを確認
-    Ok(StrongholdStore::has_token(&platform))
+    Ok(KeyringStore::has_token_with_app(&app_handle, &platform))
 }
 
 #[tauri::command]
@@ -96,9 +96,9 @@ pub async fn get_oauth_config(app_handle: AppHandle, platform: String) -> Result
         _ => return Err(format!("Unsupported platform: {}", platform)),
     };
 
-    // YouTubeの場合のみStrongholdからClient Secretを取得（TwitchはDevice Code Flowでクライアント Secret不要）
+    // YouTubeの場合のみKeyringからClient Secretを取得（TwitchはDevice Code Flowでクライアント Secret不要）
     let client_secret = if platform == "youtube" {
-        StrongholdStore::get_oauth_secret(&platform).ok()
+        KeyringStore::get_oauth_secret_with_app(&app_handle, &platform).ok()
     } else {
         None
     };
@@ -135,11 +135,11 @@ pub async fn save_oauth_config(
     SettingsManager::save_settings(&app_handle, &settings)
         .map_err(|e| format!("Failed to save settings: {}", e))?;
 
-    // YouTubeの場合のみClient SecretをStrongholdに保存（TwitchはDevice Code FlowでClient Secret不要）
+    // YouTubeの場合のみClient SecretをKeyringに保存（TwitchはDevice Code FlowでClient Secret不要）
     if platform == "youtube" {
         if let Some(secret) = client_secret {
             if !secret.trim().is_empty() {
-                StrongholdStore::save_oauth_secret(&platform, &secret)
+                KeyringStore::save_oauth_secret_with_app(&app_handle, &platform, &secret)
                     .map_err(|e| format!("Failed to save OAuth secret: {}", e))?;
             }
         }
@@ -172,9 +172,9 @@ pub async fn delete_oauth_config(app_handle: AppHandle, platform: String) -> Res
     SettingsManager::save_settings(&app_handle, &settings)
         .map_err(|e| format!("Failed to save settings: {}", e))?;
 
-    // YouTubeの場合のみClient SecretをStrongholdから削除（TwitchはDevice Code FlowでClient Secret不要）
+    // YouTubeの場合のみClient SecretをKeyringから削除（TwitchはDevice Code FlowでClient Secret不要）
     if platform == "youtube" {
-        StrongholdStore::delete_oauth_secret(&platform)
+        KeyringStore::delete_token_with_app(&app_handle, &format!("{}_oauth_secret", platform))
             .map_err(|e| format!("Failed to delete OAuth secret: {}", e))?;
     }
 
@@ -201,7 +201,7 @@ pub async fn has_oauth_config(app_handle: AppHandle, platform: String) -> Result
     match platform.as_str() {
         "twitch" => Ok(has_client_id),
         "youtube" => {
-            let has_client_secret = StrongholdStore::has_oauth_secret(&platform);
+            let has_client_secret = KeyringStore::get_oauth_secret_with_app(&app_handle, &platform).is_ok();
             Ok(has_client_id && has_client_secret)
         }
         _ => Err(format!("Unsupported platform: {}", platform)),

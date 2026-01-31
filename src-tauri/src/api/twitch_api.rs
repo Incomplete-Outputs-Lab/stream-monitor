@@ -1,4 +1,4 @@
-use crate::config::stronghold_store::StrongholdStore;
+use crate::config::keyring_store::KeyringStore;
 use crate::oauth::twitch::TwitchOAuth;
 use std::sync::Arc;
 use twitch_api::{
@@ -41,9 +41,9 @@ impl TwitchApiClient {
     }
 
     async fn get_access_token(&self) -> Result<AccessToken, Box<dyn std::error::Error>> {
-        // Strongholdからトークンを取得を試みる（Device Code Flowで取得したユーザートークン）
+        // Keyringからトークンを取得を試みる（Device Code Flowで取得したユーザートークン）
         if let Some(ref handle) = self.app_handle {
-            if let Ok(token_str) = StrongholdStore::get_token_with_app(handle, "twitch") {
+            if let Ok(token_str) = KeyringStore::get_token_with_app(handle, "twitch") {
                 return Ok(AccessToken::from(token_str));
             }
         }
@@ -62,7 +62,7 @@ impl TwitchApiClient {
 
             // トークンを保存
             if let Some(ref handle) = self.app_handle {
-                StrongholdStore::save_token_with_app(handle, "twitch", &access_token_str)?;
+                KeyringStore::save_token_with_app(handle, "twitch", &access_token_str)?;
             }
 
             return Ok(AccessToken::from(access_token_str));

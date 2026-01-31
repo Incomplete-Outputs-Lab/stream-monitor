@@ -31,19 +31,19 @@ export function DateRangePicker({ startDate, endDate, onChange }: DateRangePicke
       <div className="flex space-x-2">
         <button
           onClick={() => setDateRange(1)}
-          className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded-md"
+          className="px-3 py-1 text-sm bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-900 dark:text-gray-100 rounded-md transition-colors"
         >
           今日
         </button>
         <button
           onClick={() => setDateRange(7)}
-          className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded-md"
+          className="px-3 py-1 text-sm bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-900 dark:text-gray-100 rounded-md transition-colors"
         >
           7日間
         </button>
         <button
           onClick={() => setDateRange(30)}
-          className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded-md"
+          className="px-3 py-1 text-sm bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-900 dark:text-gray-100 rounded-md transition-colors"
         >
           30日間
         </button>
@@ -55,14 +55,14 @@ export function DateRangePicker({ startDate, endDate, onChange }: DateRangePicke
           type="date"
           value={startDate}
           onChange={handleStartChange}
-          className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100"
         />
-        <span className="text-gray-500">〜</span>
+        <span className="text-gray-500 dark:text-gray-400">〜</span>
         <input
           type="date"
           value={endDate}
           onChange={handleEndChange}
-          className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100"
         />
       </div>
     </div>

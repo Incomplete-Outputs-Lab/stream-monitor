@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { ChannelWithStats } from "../../types";
+import { ChannelWithStats, CollectorStatus } from "../../types";
 
 interface StreamStats {
   id?: number;
@@ -58,6 +58,94 @@ function LiveChannelCard({ channel }: LiveChannelCardProps) {
 
 interface ViewerChartProps {
   data: StreamStats[];
+}
+
+interface CollectorStatusPanelProps {
+  statuses: CollectorStatus[];
+}
+
+function CollectorStatusPanel({ statuses }: CollectorStatusPanelProps) {
+  const formatTime = (timestamp?: string) => {
+    if (!timestamp) return '-';
+    return new Date(timestamp).toLocaleTimeString('ja-JP', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  };
+
+  const getSuccessRate = (status: CollectorStatus) => {
+    if (status.poll_count === 0) return '-';
+    const successCount = status.poll_count - status.error_count;
+    return `${Math.round((successCount / status.poll_count) * 100)}%`;
+  };
+
+  return (
+    <div className="card p-6 animate-fade-in">
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">コレクター状態</h3>
+        <span className="text-xs font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-slate-700 px-2 py-1 rounded-full">
+          {statuses.length}件
+        </span>
+      </div>
+      <div className="space-y-3 max-h-96 overflow-y-auto">
+        {statuses.length > 0 ? (
+          statuses.map((status) => (
+            <div
+              key={status.channel_id}
+              className="border border-gray-200 dark:border-slate-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center space-x-2">
+                  {status.is_running ? (
+                    <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                  ) : (
+                    <span className="w-2 h-2 bg-gray-400 rounded-full"></span>
+                  )}
+                  <span className="font-medium text-gray-900 dark:text-gray-100">
+                    {status.channel_name}
+                  </span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400 capitalize">
+                    {status.platform === 'twitch' ? '🎮' : '▶️'} {status.platform}
+                  </span>
+                </div>
+                <span className={`text-xs font-medium px-2 py-1 rounded ${
+                  status.is_running 
+                    ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' 
+                    : 'bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-gray-300'
+                }`}>
+                  {status.is_running ? '動作中' : '停止'}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs text-gray-600 dark:text-gray-400 mt-2">
+                <div>
+                  <span className="font-medium">最終ポーリング:</span> {formatTime(status.last_poll_at)}
+                </div>
+                <div>
+                  <span className="font-medium">最終成功:</span> {formatTime(status.last_success_at)}
+                </div>
+                <div>
+                  <span className="font-medium">ポーリング回数:</span> {status.poll_count}
+                </div>
+                <div>
+                  <span className="font-medium">成功率:</span> {getSuccessRate(status)}
+                </div>
+              </div>
+              {status.last_error && (
+                <div className="mt-2 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-2 rounded">
+                  ⚠ {status.last_error}
+                </div>
+              )}
+            </div>
+          ))
+        ) : (
+          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+            コレクターが実行されていません
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function ViewerChart({ data }: ViewerChartProps) {
@@ -124,6 +212,15 @@ function ViewerChart({ data }: ViewerChartProps) {
 
 export function Dashboard() {
   const [statsData, setStatsData] = useState<StreamStats[]>([]);
+
+  // コレクターステータスを取得
+  const { data: collectorStatuses } = useQuery({
+    queryKey: ["collector-status"],
+    queryFn: async () => {
+      return await invoke<CollectorStatus[]>("get_collector_status");
+    },
+    refetchInterval: 10000, // 10秒ごとに更新
+  });
 
   // ライブチャンネルを取得
   const { data: liveChannels, isLoading: channelsLoading } = useQuery({
@@ -224,6 +321,11 @@ export function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* コレクターステータス */}
+      {collectorStatuses && collectorStatuses.length > 0 && (
+        <CollectorStatusPanel statuses={collectorStatuses} />
+      )}
 
       {/* チャートとライブチャンネル */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -4,8 +4,12 @@ export interface Channel {
   channel_id: string;
   channel_name: string;
   display_name?: string;
+  profile_image_url?: string;
   enabled: boolean;
   poll_interval: number;
+  follower_count?: number;
+  broadcaster_type?: string;
+  view_count?: number;
   created_at?: string;
   updated_at?: string;
 }
@@ -137,4 +141,16 @@ export interface DeviceAuthStatus {
   expires_in: number;
   device_code: string;
   interval: number;
+}
+
+export interface CollectorStatus {
+  channel_id: number;
+  channel_name: string;
+  platform: string;
+  is_running: boolean;
+  last_poll_at?: string;
+  last_success_at?: string;
+  last_error?: string;
+  poll_count: number;
+  error_count: number;
 }

@@ -33,16 +33,16 @@ export function ChannelStatistics({ channelStats, dateRange }: ChannelStatistics
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow border border-gray-200">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">
+      <div className="bg-white dark:bg-slate-800 rounded-lg shadow border border-gray-200 dark:border-gray-700">
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
             チャンネル別統計 ({dateRange.start} 〜 {dateRange.end})
           </h3>
         </div>
 
-        <div className="divide-y divide-gray-200">
+        <div className="divide-y divide-gray-200 dark:divide-gray-700">
           {channelStats.length === 0 ? (
-            <div className="px-6 py-8 text-center text-gray-500">
+            <div className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
               統計データがありません
             </div>
           ) : (
@@ -57,10 +57,10 @@ export function ChannelStatistics({ channelStats, dateRange }: ChannelStatistics
 
                     {/* チャンネル情報 */}
                     <div>
-                      <h4 className="text-lg font-semibold text-gray-900">
+                      <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                         {channel.display_name || channel.channel_name}
                       </h4>
-                      <p className="text-sm text-gray-500">
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
                         {channel.channel_id}
                       </p>
                     </div>
@@ -69,44 +69,44 @@ export function ChannelStatistics({ channelStats, dateRange }: ChannelStatistics
                   {/* 統計データ */}
                   <div className="grid grid-cols-4 gap-8 text-center">
                     <div>
-                      <div className="text-2xl font-bold text-blue-600">
+                      <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
                         {stats.avgViewers.toLocaleString()}
                       </div>
-                      <div className="text-sm text-gray-500">平均視聴者数</div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">平均視聴者数</div>
                     </div>
 
                     <div>
-                      <div className="text-2xl font-bold text-green-600">
+                      <div className="text-2xl font-bold text-green-600 dark:text-green-400">
                         {stats.maxViewers.toLocaleString()}
                       </div>
-                      <div className="text-sm text-gray-500">最大視聴者数</div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">最大視聴者数</div>
                     </div>
 
                     <div>
-                      <div className="text-2xl font-bold text-purple-600">
+                      <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
                         {stats.totalChatMessages.toLocaleString()}
                       </div>
-                      <div className="text-sm text-gray-500">総チャット数</div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">総チャット数</div>
                     </div>
 
                     <div>
-                      <div className="text-2xl font-bold text-gray-600">
+                      <div className="text-2xl font-bold text-gray-600 dark:text-gray-400">
                         {stats.dataPoints}
                       </div>
-                      <div className="text-sm text-gray-500">データポイント</div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">データポイント</div>
                     </div>
                   </div>
                 </div>
 
                 {/* 詳細チャートや追加情報 */}
                 <div className="mt-4 grid grid-cols-2 gap-4">
-                  <div className="bg-gray-50 rounded p-3">
-                    <div className="text-sm text-gray-600">監視間隔</div>
-                    <div className="font-semibold">{channel.poll_interval}秒</div>
+                  <div className="bg-gray-50 dark:bg-slate-700 rounded p-3">
+                    <div className="text-sm text-gray-600 dark:text-gray-400">監視間隔</div>
+                    <div className="font-semibold text-gray-900 dark:text-gray-100">{channel.poll_interval}秒</div>
                   </div>
-                  <div className="bg-gray-50 rounded p-3">
-                    <div className="text-sm text-gray-600">ステータス</div>
-                    <div className={`font-semibold ${channel.enabled ? 'text-green-600' : 'text-red-600'}`}>
+                  <div className="bg-gray-50 dark:bg-slate-700 rounded p-3">
+                    <div className="text-sm text-gray-600 dark:text-gray-400">ステータス</div>
+                    <div className={`font-semibold ${channel.enabled ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                       {channel.enabled ? '有効' : '無効'}
                     </div>
                   </div>
@@ -119,35 +119,35 @@ export function ChannelStatistics({ channelStats, dateRange }: ChannelStatistics
 
       {/* サマリー統計 */}
       {channelStats.length > 0 && (
-        <div className="bg-white rounded-lg shadow p-6 border border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">全体サマリー</h3>
+        <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-6 border border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">全体サマリー</h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div className="text-center">
-              <div className="text-3xl font-bold text-blue-600">
-                {channelStats.reduce((sum, stat) => sum + stat.stats.avgViewers, 0) / channelStats.length || 0}
+              <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">
+                {Math.round(channelStats.reduce((sum, stat) => sum + stat.stats.avgViewers, 0) / channelStats.length) || 0}
               </div>
-              <div className="text-sm text-gray-500">全チャンネル平均視聴者数</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">全チャンネル平均視聴者数</div>
             </div>
 
             <div className="text-center">
-              <div className="text-3xl font-bold text-green-600">
+              <div className="text-3xl font-bold text-green-600 dark:text-green-400">
                 {Math.max(...channelStats.map(stat => stat.stats.maxViewers))}
               </div>
-              <div className="text-sm text-gray-500">最高視聴者数</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">最高視聴者数</div>
             </div>
 
             <div className="text-center">
-              <div className="text-3xl font-bold text-purple-600">
+              <div className="text-3xl font-bold text-purple-600 dark:text-purple-400">
                 {channelStats.reduce((sum, stat) => sum + stat.stats.totalChatMessages, 0)}
               </div>
-              <div className="text-sm text-gray-500">総チャットメッセージ数</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">総チャットメッセージ数</div>
             </div>
 
             <div className="text-center">
-              <div className="text-3xl font-bold text-gray-600">
+              <div className="text-3xl font-bold text-gray-600 dark:text-gray-400">
                 {channelStats.reduce((sum, stat) => sum + stat.stats.dataPoints, 0)}
               </div>
-              <div className="text-sm text-gray-500">総データポイント数</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">総データポイント数</div>
             </div>
           </div>
         </div>

@@ -1,19 +1,35 @@
 use crate::collectors::collector_trait::Collector;
 use crate::database::{
-    models::{Channel, Stream, StreamStats},
+    models::{Channel, ChannelStatsEvent, Stream, StreamData, StreamStats},
     writer::DatabaseWriter,
     DatabaseManager,
 };
+use crate::logger::AppLogger;
 use chrono::Utc;
 use duckdb::Connection;
+use serde::Serialize;
 use std::collections::HashMap;
-use std::sync::Arc;
-use tauri::State;
+use std::sync::{Arc, RwLock};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::time::{interval, Duration, MissedTickBehavior};
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CollectorStatus {
+    pub channel_id: i64,
+    pub channel_name: String,
+    pub platform: String,
+    pub is_running: bool,
+    pub last_poll_at: Option<String>,
+    pub last_success_at: Option<String>,
+    pub last_error: Option<String>,
+    pub poll_count: u64,
+    pub error_count: u64,
+}
 
 pub struct ChannelPoller {
     collectors: HashMap<String, Arc<dyn Collector + Send + Sync>>,
     tasks: HashMap<i64, tokio::task::JoinHandle<()>>,
+    status_map: Arc<RwLock<HashMap<i64, CollectorStatus>>>,
 }
 
 impl ChannelPoller {
@@ -21,6 +37,15 @@ impl ChannelPoller {
         Self {
             collectors: HashMap::new(),
             tasks: HashMap::new(),
+            status_map: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    pub fn get_all_status(&self) -> Vec<CollectorStatus> {
+        if let Ok(status_map) = self.status_map.read() {
+            status_map.values().cloned().collect()
+        } else {
+            Vec::new()
         }
     }
 
@@ -36,6 +61,7 @@ impl ChannelPoller {
         &mut self,
         channel: Channel,
         db_manager: &State<'_, DatabaseManager>,
+        app_handle: AppHandle,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if !channel.enabled {
             return Ok(());
@@ -51,27 +77,65 @@ impl ChannelPoller {
         let poll_interval = Duration::from_secs(channel.poll_interval as u64);
         let db_manager = Arc::new(db_manager.inner().clone());
 
+        // Initialize status
+        if let Ok(mut status_map) = self.status_map.write() {
+            status_map.insert(
+                channel_id,
+                CollectorStatus {
+                    channel_id,
+                    channel_name: channel.channel_name.clone(),
+                    platform: channel.platform.clone(),
+                    is_running: true,
+                    last_poll_at: None,
+                    last_success_at: None,
+                    last_error: None,
+                    poll_count: 0,
+                    error_count: 0,
+                },
+            );
+        }
+
+        let status_map = Arc::clone(&self.status_map);
         let task = tokio::spawn(async move {
+            // Get logger from app_handle
+            let logger = app_handle.state::<AppLogger>();
+
             let mut interval = interval(poll_interval);
             interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
             // 初回認証
             if let Err(e) = collector.start_collection(&channel).await {
-                eprintln!(
+                logger.error(&format!(
                     "Failed to start collection for channel {}: {}",
                     channel_id, e
-                );
+                ));
+                // Update status with error
+                if let Ok(mut map) = status_map.write() {
+                    if let Some(status) = map.get_mut(&channel_id) {
+                        status.last_error = Some(format!("Failed to start collection: {}", e));
+                        status.is_running = false;
+                    }
+                }
                 return;
             }
 
             loop {
                 interval.tick().await;
 
+                // Update last poll time
+                let now = Utc::now().to_rfc3339();
+                if let Ok(mut map) = status_map.write() {
+                    if let Some(status) = map.get_mut(&channel_id) {
+                        status.last_poll_at = Some(now.clone());
+                        status.poll_count += 1;
+                    }
+                }
+
                 // チャンネル情報を再取得（更新されている可能性があるため）
                 let conn = match db_manager.get_connection() {
                     Ok(conn) => conn,
                     Err(e) => {
-                        eprintln!("Failed to get database connection: {}", e);
+                        logger.error(&format!("Failed to get database connection: {}", e));
                         continue;
                     }
                 };
@@ -80,35 +144,89 @@ impl ChannelPoller {
                     Ok(Some(ch)) => ch,
                     Ok(None) => {
                         // チャンネルが削除された場合はタスクを終了
+                        logger.info(&format!("Channel {} was deleted, stopping polling", channel_id));
                         break;
                     }
                     Err(e) => {
-                        eprintln!("Failed to get channel: {}", e);
+                        logger.error(&format!("Failed to get channel: {}", e));
                         continue;
                     }
                 };
 
                 if !updated_channel.enabled {
                     // チャンネルが無効化された場合はタスクを終了
+                    logger.info(&format!("Channel {} was disabled, stopping polling", channel_id));
                     break;
                 }
 
+                // チャンネル情報を定期的に更新（Twitchの場合のみ）
+                // 注: 実際のダウンキャストは複雑なため、ここではスキップ
+                // 代わりに、start_polling時に一度だけ取得する方式を採用する必要がある
+
                 // ポーリング実行
                 match collector.poll_channel(&updated_channel).await {
-                    Ok(Some(stats)) => {
+                    Ok(Some(stream_data)) => {
                         // ストリーム情報をデータベースに保存
-                        if let Err(e) = Self::save_stream_stats(&conn, channel_id, &stats) {
-                            eprintln!(
-                                "Failed to save stream stats for channel {}: {}",
+                        if let Err(e) = Self::save_stream_data(&conn, channel_id, &stream_data) {
+                            logger.error(&format!(
+                                "Failed to save stream data for channel {}: {}",
                                 channel_id, e
-                            );
+                            ));
+                            // Update status with error
+                            if let Ok(mut map) = status_map.write() {
+                                if let Some(status) = map.get_mut(&channel_id) {
+                                    status.last_error = Some(format!("Failed to save data: {}", e));
+                                    status.error_count += 1;
+                                }
+                            }
+                        } else {
+                            // Update status with success
+                            let now = Utc::now().to_rfc3339();
+                            if let Ok(mut map) = status_map.write() {
+                                if let Some(status) = map.get_mut(&channel_id) {
+                                    status.last_success_at = Some(now);
+                                    status.last_error = None;
+                                }
+                            }
+
+                            // イベント発行: チャンネルがライブ中
+                            let event = ChannelStatsEvent {
+                                channel_id,
+                                is_live: true,
+                                viewer_count: stream_data.viewer_count,
+                                title: stream_data.title.clone(),
+                            };
+                            let _ = app_handle.emit("channel-stats-updated", event);
                         }
                     }
                     Ok(None) => {
-                        // 配信していない
+                        // 配信していない - オフラインイベントを発行
+                        // Update status with success (not live is valid state)
+                        let now = Utc::now().to_rfc3339();
+                        if let Ok(mut map) = status_map.write() {
+                            if let Some(status) = map.get_mut(&channel_id) {
+                                status.last_success_at = Some(now);
+                                status.last_error = None;
+                            }
+                        }
+
+                        let event = ChannelStatsEvent {
+                            channel_id,
+                            is_live: false,
+                            viewer_count: None,
+                            title: None,
+                        };
+                        let _ = app_handle.emit("channel-stats-updated", event);
                     }
                     Err(e) => {
-                        eprintln!("Failed to poll channel {}: {}", channel_id, e);
+                        logger.error(&format!("Failed to poll channel {}: {}", channel_id, e));
+                        // Update status with error
+                        if let Ok(mut map) = status_map.write() {
+                            if let Some(status) = map.get_mut(&channel_id) {
+                                status.last_error = Some(format!("Poll failed: {}", e));
+                                status.error_count += 1;
+                            }
+                        }
                     }
                 }
             }
@@ -122,10 +240,17 @@ impl ChannelPoller {
         if let Some(task) = self.tasks.remove(&channel_id) {
             task.abort();
         }
+
+        // Update status to stopped
+        if let Ok(mut status_map) = self.status_map.write() {
+            if let Some(status) = status_map.get_mut(&channel_id) {
+                status.is_running = false;
+            }
+        }
     }
 
     fn get_channel(conn: &Connection, channel_id: i64) -> Result<Option<Channel>, duckdb::Error> {
-        let mut stmt = conn.prepare("SELECT id, platform, channel_id, channel_name, enabled, poll_interval, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels WHERE id = ?")?;
+        let mut stmt = conn.prepare("SELECT id, platform, channel_id, channel_name, display_name, profile_image_url, enabled, poll_interval, follower_count, broadcaster_type, view_count, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels WHERE id = ?")?;
 
         let channel_id_str = channel_id.to_string();
         let rows: Result<Vec<_>, _> = stmt
@@ -135,11 +260,15 @@ impl ChannelPoller {
                     platform: row.get(1)?,
                     channel_id: row.get(2)?,
                     channel_name: row.get(3)?,
-                    display_name: None,
-                    enabled: row.get(4)?,
-                    poll_interval: row.get(5)?,
-                    created_at: Some(row.get(6)?),
-                    updated_at: Some(row.get(7)?),
+                    display_name: row.get(4)?,
+                    profile_image_url: row.get(5)?,
+                    enabled: row.get(6)?,
+                    poll_interval: row.get(7)?,
+                    follower_count: row.get(8).ok(),
+                    broadcaster_type: row.get(9).ok(),
+                    view_count: row.get(10).ok(),
+                    created_at: Some(row.get(11)?),
+                    updated_at: Some(row.get(12)?),
                 })
             })?
             .collect();
@@ -151,34 +280,37 @@ impl ChannelPoller {
     }
 
     /// ストリーム統計情報をデータベースに保存する
-    fn save_stream_stats(
+    fn save_stream_data(
         conn: &Connection,
         channel_id: i64,
-        stats: &StreamStats,
+        stream_data: &StreamData,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        // ストリームを作成または更新（現在は簡易実装：channel_id + timestampをstream_idとして使用）
-        let stream_id = format!("{}_{}", channel_id, Utc::now().timestamp());
-
+        // StreamDataから配信情報を含むStreamレコードを作成
         let stream = Stream {
             id: None,
             channel_id,
-            stream_id: stream_id.clone(),
-            title: None,         // 現在はタイトル情報なし
-            category: None,      // 現在はカテゴリ情報なし
-            thumbnail_url: None, // 現在はサムネイル情報なし
-            started_at: stats.collected_at.clone(),
+            stream_id: stream_data.stream_id.clone(),
+            title: stream_data.title.clone(),
+            category: stream_data.category.clone(),
+            thumbnail_url: stream_data.thumbnail_url.clone(),
+            started_at: stream_data.started_at.clone(),
             ended_at: None, // ライブ中なのでNone
         };
 
-        // ストリームを保存
+        // ストリームを保存（同じstream_idの場合は更新）
         let stream_db_id = DatabaseWriter::insert_or_update_stream(conn, channel_id, &stream)?;
 
-        // StreamStatsに正しいstream_idを設定
-        let mut stats_with_id = stats.clone();
-        stats_with_id.stream_id = stream_db_id;
+        // StreamStatsを作成して保存
+        let stats = StreamStats {
+            id: None,
+            stream_id: stream_db_id,
+            collected_at: Utc::now().to_rfc3339(),
+            viewer_count: stream_data.viewer_count,
+            chat_rate_1min: stream_data.chat_rate_1min,
+        };
 
         // ストリーム統計を保存
-        DatabaseWriter::insert_stream_stats(conn, &stats_with_id)?;
+        DatabaseWriter::insert_stream_stats(conn, &stats)?;
 
         Ok(())
     }

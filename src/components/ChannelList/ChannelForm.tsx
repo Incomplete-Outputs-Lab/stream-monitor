@@ -2,6 +2,8 @@ import { useForm } from "react-hook-form";
 import { useMutation } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { Channel } from "../../types";
+import { useState } from "react";
+import { getToken } from "../../utils/keyring";
 
 interface ChannelFormData {
   platform: 'twitch' | 'youtube';
@@ -16,8 +18,21 @@ interface ChannelFormProps {
   onCancel: () => void;
 }
 
+interface TwitchChannelInfo {
+  channel_id: string;
+  display_name: string;
+  profile_image_url: string;
+  description: string;
+  follower_count?: number;
+  broadcaster_type?: string;
+}
+
 export function ChannelForm({ channel, onSuccess, onCancel }: ChannelFormProps) {
-  const { register, handleSubmit, formState: { errors }, reset, watch } = useForm<ChannelFormData>({
+  const [isValidating, setIsValidating] = useState(false);
+  const [validatedInfo, setValidatedInfo] = useState<TwitchChannelInfo | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  const { register, handleSubmit, formState: { errors }, reset, watch, setValue } = useForm<ChannelFormData>({
     defaultValues: channel ? {
       platform: channel.platform as 'twitch' | 'youtube',
       channel_id: channel.channel_id,
@@ -32,19 +47,25 @@ export function ChannelForm({ channel, onSuccess, onCancel }: ChannelFormProps) 
   });
 
   const addMutation = useMutation({
-    mutationFn: async (data: ChannelFormData) => {
+    mutationFn: async (data: ChannelFormData & { display_name?: string; profile_image_url?: string; follower_count?: number; broadcaster_type?: string }) => {
       return await invoke<Channel>("add_channel", {
         request: {
           platform: data.platform,
           channel_id: data.channel_id,
           channel_name: data.channel_name,
+          display_name: data.display_name,
+          profile_image_url: data.profile_image_url,
           poll_interval: data.poll_interval,
+          follower_count: data.follower_count,
+          broadcaster_type: data.broadcaster_type,
         },
       });
     },
     onSuccess: () => {
       onSuccess();
       reset();
+      setValidatedInfo(null);
+      setValidationError(null);
     },
   });
 
@@ -63,8 +84,52 @@ export function ChannelForm({ channel, onSuccess, onCancel }: ChannelFormProps) 
     },
   });
 
+  // Twitchチャンネルのバリデーション
+  const handleValidateTwitchChannel = async (channelId: string) => {
+    if (!channelId.trim()) {
+      setValidationError('チャンネルIDを入力してください');
+      return;
+    }
+
+    setIsValidating(true);
+    setValidationError(null);
+    setValidatedInfo(null);
+
+    try {
+      // Get access token from Stronghold
+      let accessToken: string | null = null;
+      try {
+        accessToken = await getToken('twitch');
+      } catch (e) {
+        console.error('Failed to get token from Stronghold:', e);
+      }
+
+      const info = await invoke<TwitchChannelInfo>('validate_twitch_channel', {
+        channelId: channelId.trim(),
+        accessToken: accessToken,
+      });
+      
+      setValidatedInfo(info);
+      // 検証成功時、display_nameを自動設定
+      setValue('channel_name', info.display_name);
+      setValidationError(null);
+    } catch (error: any) {
+      const errorMessage = String(error);
+      setValidationError(errorMessage);
+      setValidatedInfo(null);
+    } finally {
+      setIsValidating(false);
+    }
+  };
+
   const onSubmit = async (data: ChannelFormData) => {
     try {
+      // Twitchの場合、バリデーションが必要
+      if (data.platform === 'twitch' && !channel && !validatedInfo) {
+        setValidationError('チャンネルを追加する前に、「チャンネルを確認」ボタンで検証してください。');
+        return;
+      }
+
       // YouTube URLからチャンネルIDを抽出
       let channelId = data.channel_id;
       if (data.platform === 'youtube' && data.channel_id.includes('youtube.com')) {
@@ -81,9 +146,21 @@ export function ChannelForm({ channel, onSuccess, onCancel }: ChannelFormProps) 
         }
       }
 
+      // Twitchの場合、検証済みのchannel_idを使用
+      if (data.platform === 'twitch' && validatedInfo) {
+        channelId = validatedInfo.channel_id;
+      }
+
       const submitData = {
         ...data,
         channel_id: channelId,
+        // Twitchの場合、検証済みの情報を追加
+        ...(data.platform === 'twitch' && validatedInfo ? {
+          display_name: validatedInfo.display_name,
+          profile_image_url: validatedInfo.profile_image_url,
+          follower_count: validatedInfo.follower_count,
+          broadcaster_type: validatedInfo.broadcaster_type,
+        } : {}),
       };
 
       if (channel) {
@@ -139,38 +216,86 @@ export function ChannelForm({ channel, onSuccess, onCancel }: ChannelFormProps) 
         </div>
 
         {/* チャンネルID/URL */}
-        <div>
+        <div className="md:col-span-2">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             {watch("platform") === 'youtube' ? 'チャンネルURL' : 'チャンネルID'}
             {channel && <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">（変更不可）</span>}
           </label>
-          <input
-            {...register("channel_id", {
-              required: watch("platform") === 'youtube' ? "チャンネルURLを入力してください" : "チャンネルIDを入力してください",
-              validate: (value) => {
-                if (watch("platform") === 'youtube') {
-                  // YouTube URLの検証
-                  const urlPattern = /^(https?:\/\/)?(www\.)?(youtube\.com\/(channel\/|user\/|c\/)|youtu\.be\/)/;
-                  if (!urlPattern.test(value)) {
-                    return "有効なYouTubeチャンネルURLを入力してください";
+          <div className="flex gap-2">
+            <input
+              {...register("channel_id", {
+                required: watch("platform") === 'youtube' ? "チャンネルURLを入力してください" : "チャンネルIDを入力してください",
+                validate: (value) => {
+                  if (watch("platform") === 'youtube') {
+                    // YouTube URLの検証
+                    const urlPattern = /^(https?:\/\/)?(www\.)?(youtube\.com\/(channel\/|user\/|c\/)|youtu\.be\/)/;
+                    if (!urlPattern.test(value)) {
+                      return "有効なYouTubeチャンネルURLを入力してください";
+                    }
+                  } else {
+                    // Twitch IDの検証
+                    const idPattern = /^[a-zA-Z0-9_-]+$/;
+                    if (!idPattern.test(value)) {
+                      return "チャンネルIDは英数字、ハイフン、アンダースコアのみ使用できます";
+                    }
                   }
-                } else {
-                  // Twitch IDの検証
-                  const idPattern = /^[a-zA-Z0-9_-]+$/;
-                  if (!idPattern.test(value)) {
-                    return "チャンネルIDは英数字、ハイフン、アンダースコアのみ使用できます";
-                  }
+                  return true;
+                },
+                onChange: () => {
+                  // 入力が変更されたら検証状態をリセット
+                  setValidatedInfo(null);
+                  setValidationError(null);
                 }
-                return true;
-              }
-            })}
-            disabled={!!channel} // 編集時は変更不可
-            type="text"
-            placeholder={watch("platform") === 'youtube' ? "例: https://www.youtube.com/channel/UC..." : "例: shroud"}
-            className="input-field disabled:bg-gray-100 dark:disabled:bg-slate-700"
-          />
+              })}
+              disabled={!!channel} // 編集時は変更不可
+              type="text"
+              placeholder={watch("platform") === 'youtube' ? "例: https://www.youtube.com/channel/UC..." : "例: shroud"}
+              className="input-field disabled:bg-gray-100 dark:disabled:bg-slate-700 flex-1"
+            />
+            {watch("platform") === 'twitch' && !channel && (
+              <button
+                type="button"
+                onClick={() => handleValidateTwitchChannel(watch("channel_id"))}
+                disabled={isValidating || !watch("channel_id")}
+                className="btn-secondary whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isValidating ? (
+                  <>
+                    <span className="inline-block animate-spin mr-2">⏳</span>
+                    確認中...
+                  </>
+                ) : (
+                  'チャンネルを確認'
+                )}
+              </button>
+            )}
+          </div>
           {errors.channel_id && (
             <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.channel_id.message}</p>
+          )}
+          {validationError && (
+            <p className="mt-1 text-sm text-red-600 dark:text-red-400">❌ {validationError}</p>
+          )}
+          {validatedInfo && (
+            <div className="mt-2 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md">
+              <div className="flex items-center gap-3">
+                <img 
+                  src={validatedInfo.profile_image_url} 
+                  alt={validatedInfo.display_name}
+                  className="w-10 h-10 rounded-full"
+                />
+                <div>
+                  <p className="text-sm font-medium text-green-800 dark:text-green-200">
+                    ✅ チャンネルが見つかりました: {validatedInfo.display_name}
+                  </p>
+                  {validatedInfo.description && (
+                    <p className="text-xs text-green-600 dark:text-green-300 mt-1">
+                      {validatedInfo.description.slice(0, 100)}{validatedInfo.description.length > 100 ? '...' : ''}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
           )}
         </div>
 

@@ -6,6 +6,6 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "stronghold:default"
+    "keyring:default"
   ]
 }

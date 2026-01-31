@@ -14,7 +14,7 @@ impl DatabaseWriter {
             conn.prepare("SELECT id FROM streams WHERE channel_id = ? AND stream_id = ?")?;
 
         let channel_id_str = channel_id.to_string();
-        let stream_id_str = stream.id.unwrap_or(0).to_string();
+        let stream_id_str = stream.stream_id.clone();
 
         let existing_id: Option<i64> = stmt
             .query_map([&channel_id_str as &str, &stream_id_str as &str], |row| {
@@ -25,33 +25,36 @@ impl DatabaseWriter {
 
         if let Some(id) = existing_id {
             // 更新
+            let ended_at_value = stream.ended_at.as_deref();
+            
             conn.execute(
                 "UPDATE streams SET title = ?, category = ?, ended_at = ? WHERE id = ?",
-                [
-                    &stream.title.clone().unwrap_or_default(),
-                    &stream.category.clone().unwrap_or_default(),
-                    &stream.ended_at.clone().unwrap_or_default(),
-                    &id.to_string(),
+                duckdb::params![
+                    stream.title.as_deref().unwrap_or(""),
+                    stream.category.as_deref().unwrap_or(""),
+                    ended_at_value,
+                    id,
                 ],
             )?;
             Ok(id)
         } else {
-            // 挿入
-            conn.execute(
+            // 挿入 - DuckDBではRETURNING句を使用してINSERTと同時にIDを取得
+            // ended_atはOptionなので、Noneの場合はNULLとして扱う
+            let ended_at_value = stream.ended_at.as_deref();
+            
+            let id: i64 = conn.query_row(
                 "INSERT INTO streams (channel_id, stream_id, title, category, started_at, ended_at) 
-                 VALUES (?, ?, ?, ?, ?, ?)",
-                [
-                    &channel_id.to_string(),
+                 VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+                duckdb::params![
+                    channel_id,
                     &stream.stream_id,
-                    &stream.title.clone().unwrap_or_default(),
-                    &stream.category.clone().unwrap_or_default(),
+                    stream.title.as_deref().unwrap_or(""),
+                    stream.category.as_deref().unwrap_or(""),
                     &stream.started_at,
-                    &stream.ended_at.clone().unwrap_or_default(),
+                    ended_at_value,
                 ],
+                |row| row.get(0)
             )?;
-            // DuckDBでは、last_insert_rowid()を直接取得できないため、SELECTを使用
-            // DuckDBでは、last_insert_rowid()を直接取得できないため、SELECTを使用
-            let id: i64 = conn.query_row("SELECT last_insert_rowid()", [], |row| row.get(0))?;
             Ok(id)
         }
     }
@@ -108,25 +111,42 @@ impl DatabaseWriter {
         // バッチインサート用のトランザクション開始
         conn.execute("BEGIN TRANSACTION", [])?;
 
-        // プリペアドステートメントを使用した効率的なバッチインサート
-        let mut stmt = conn.prepare(
-            "INSERT INTO chat_messages (stream_id, timestamp, platform, user_id, user_name, message, message_type)
-             VALUES (?, ?, ?, ?, ?, ?, ?)"
-        )?;
+        // エラー時のROLLBACK処理を含むスコープ
+        let result = (|| {
+            // プリペアドステートメントを使用した効率的なバッチインサート
+            let mut stmt = conn.prepare(
+                "INSERT INTO chat_messages (stream_id, timestamp, platform, user_id, user_name, message, message_type)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)"
+            )?;
 
-        for message in messages {
-            stmt.execute([
-                &message.stream_id.to_string(),
-                &message.timestamp,
-                &message.platform,
-                &message.user_id.as_deref().unwrap_or("").to_string(),
-                &message.user_name,
-                &message.message,
-                &message.message_type,
-            ])?;
+            for message in messages {
+                stmt.execute([
+                    &message.stream_id.to_string(),
+                    &message.timestamp,
+                    &message.platform,
+                    &message.user_id.as_deref().unwrap_or("").to_string(),
+                    &message.user_name,
+                    &message.message,
+                    &message.message_type,
+                ])?;
+            }
+
+            Ok::<(), duckdb::Error>(())
+        })();
+
+        // エラーハンドリング: エラーの場合はROLLBACK、成功の場合はCOMMIT
+        match result {
+            Ok(_) => {
+                conn.execute("COMMIT", [])?;
+                Ok(())
+            }
+            Err(e) => {
+                // ROLLBACKを試行（ROLLBACKが失敗しても元のエラーを返す）
+                if let Err(rollback_err) = conn.execute("ROLLBACK", []) {
+                    eprintln!("Failed to rollback transaction: {}", rollback_err);
+                }
+                Err(e)
+            }
         }
-
-        conn.execute("COMMIT", [])?;
-        Ok(())
     }
 }

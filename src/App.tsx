@@ -9,10 +9,7 @@ import { Logs } from "./components/Logs";
 import { MultiView } from "./components/MultiView";
 import { ErrorBoundary } from "./components/common/ErrorBoundary";
 import { SplashScreen } from "./components/common/SplashScreen";
-import { VaultSetupDialog } from "./components/Settings/VaultSetupDialog";
-import { VaultUnlockDialog } from "./components/Settings/VaultUnlockDialog";
 import { useThemeStore } from "./stores/themeStore";
-import { isVaultInitialized, isVaultUnlocked, setupStrongholdEventListeners } from "./utils/stronghold";
 import "./App.css";
 import { SQLViewer } from "./components/SQL";
 
@@ -23,22 +20,7 @@ type Tab = "dashboard" | "channels" | "statistics" | "export" | "logs" | "settin
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
   const [showSplash, setShowSplash] = useState(true);
-  const [vaultInitialized, setVaultInitialized] = useState<boolean | null>(null);
-  const [vaultUnlocked, setVaultUnlocked] = useState(false);
   const { theme } = useThemeStore();
-
-  // Check vault initialization status on mount
-  useEffect(() => {
-    const checkVault = async () => {
-      const initialized = await isVaultInitialized();
-      setVaultInitialized(initialized);
-      setVaultUnlocked(isVaultUnlocked());
-      
-      // Setup event listeners for Rust-to-Frontend Stronghold communication
-      setupStrongholdEventListeners();
-    };
-    checkVault();
-  }, []);
 
   useEffect(() => {
     // テーマを適用
@@ -104,42 +86,6 @@ function App() {
           setShowSplash(false);
         }}
       />
-    );
-  }
-
-  // Show vault setup dialog if vault is not initialized
-  if (vaultInitialized === false) {
-    return (
-      <ErrorBoundary>
-        <VaultSetupDialog
-          onComplete={() => {
-            setVaultInitialized(true);
-            setVaultUnlocked(true);
-          }}
-        />
-      </ErrorBoundary>
-    );
-  }
-
-  // Show unlock dialog if vault is initialized but locked
-  if (vaultInitialized === true && !vaultUnlocked) {
-    return (
-      <ErrorBoundary>
-        <VaultUnlockDialog
-          onUnlock={() => {
-            setVaultUnlocked(true);
-          }}
-        />
-      </ErrorBoundary>
-    );
-  }
-
-  // Still checking vault status
-  if (vaultInitialized === null) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 flex items-center justify-center">
-        <div className="text-gray-600 dark:text-gray-400">Loading...</div>
-      </div>
     );
   }
 

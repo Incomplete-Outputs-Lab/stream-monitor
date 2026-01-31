@@ -1,7 +1,7 @@
 use crate::api::youtube_api::YouTubeApiClient;
 use crate::api::youtube_live_chat::YouTubeLiveChatCollector;
 use crate::collectors::collector_trait::Collector;
-use crate::database::models::{Channel, StreamStats};
+use crate::database::models::{Channel, StreamData};
 use async_trait::async_trait;
 use chrono::Utc;
 use std::collections::HashMap;
@@ -37,7 +37,7 @@ impl Collector for YouTubeCollector {
     async fn poll_channel(
         &self,
         channel: &Channel,
-    ) -> Result<Option<StreamStats>, Box<dyn std::error::Error>> {
+    ) -> Result<Option<StreamData>, Box<dyn std::error::Error>> {
         let mut client = self.api_client.lock().await;
 
         // チャンネルIDからライブストリームを取得
@@ -51,15 +51,46 @@ impl Collector for YouTubeCollector {
                 .and_then(|details| details.concurrent_viewers)
                 .map(|v| v as i32);
 
-            // ストリームIDは動画IDを使用（未使用だが将来的に使用可能）
-            let _stream_id = video.id.as_ref().unwrap_or(&String::new()).clone();
+            // 配信開始時刻を取得
+            let started_at = video
+                .live_streaming_details
+                .as_ref()
+                .and_then(|details| details.actual_start_time.as_ref())
+                .map(|dt| dt.to_rfc3339())
+                .unwrap_or_else(|| Utc::now().to_rfc3339());
 
-            Ok(Some(StreamStats {
-                id: None,
-                stream_id: 0, // TODO: ストリームIDをデータベースから取得する必要がある
-                collected_at: Utc::now().to_rfc3339(),
+            // ストリームIDは動画IDを使用
+            let stream_id = video.id.as_ref().unwrap_or(&String::new()).clone();
+
+            // サムネイルURLを取得（高解像度優先）
+            let thumbnail_url = video
+                .snippet
+                .as_ref()
+                .and_then(|snippet| {
+                    snippet.thumbnails.as_ref().and_then(|thumbs| {
+                        thumbs
+                            .maxres
+                            .as_ref()
+                            .or(thumbs.high.as_ref())
+                            .or(thumbs.medium.as_ref())
+                            .and_then(|thumb| thumb.url.clone())
+                    })
+                });
+
+            Ok(Some(StreamData {
+                stream_id,
+                title: video
+                    .snippet
+                    .as_ref()
+                    .and_then(|s| s.title.clone()),
+                category: video
+                    .snippet
+                    .as_ref()
+                    .and_then(|s| s.category_id.clone()),
+                thumbnail_url,
+                started_at,
                 viewer_count,
-                chat_rate_1min: 0, // Phase 2で実装
+                chat_rate_1min: 0, // Phase 2で実装（チャット機能）
             }))
         } else {
             Ok(None)

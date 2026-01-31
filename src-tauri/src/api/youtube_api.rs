@@ -1,4 +1,4 @@
-use crate::config::stronghold_store::StrongholdStore;
+// Keyring is not used in this file as it doesn't have AppHandle access
 use google_youtube3::{hyper_rustls, hyper_util, yup_oauth2, YouTube};
 use hyper_util::client::legacy::connect::HttpConnector;
 use std::sync::Arc;
@@ -45,8 +45,8 @@ impl YouTubeApiClient {
 
         let hub = Arc::new(YouTube::new(client, auth));
 
-        // 既存のトークンを取得
-        let access_token = StrongholdStore::get_token("youtube").ok();
+        // Note: Token retrieval requires AppHandle which this struct doesn't have
+        let access_token = None;
 
         Ok(Self { hub, access_token })
     }
@@ -147,8 +147,8 @@ impl YouTubeApiClient {
     }
 
     pub fn set_access_token(&mut self, token: String) {
-        // トークンを保存（借用する前に）
-        let _ = StrongholdStore::save_token("youtube", &token);
+        // Note: Token saving requires AppHandle which this struct doesn't have
+        // The token will be saved through other means (e.g., via commands)
         self.access_token = Some(token);
     }
 

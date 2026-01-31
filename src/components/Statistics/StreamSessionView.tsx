@@ -68,18 +68,18 @@ export function StreamSessionView({ channelId, dateRange }: StreamSessionViewPro
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow p-6 border border-gray-200">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+      <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-6 border border-gray-200 dark:border-gray-700">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
           配信セッション一覧 ({dateRange.start} 〜 {dateRange.end})
         </h3>
 
         {sessions && sessions.length > 0 ? (
           <div className="space-y-4">
             {sessions.map((session, index) => (
-              <div key={index} className="border border-gray-200 rounded-lg p-4">
+              <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
                 <div className="flex justify-between items-start mb-4">
                   <div>
-                    <h4 className="font-semibold text-gray-900">
+                    <h4 className="font-semibold text-gray-900 dark:text-gray-100">
                       {new Date(session.date).toLocaleDateString('ja-JP', {
                         year: 'numeric',
                         month: 'long',
@@ -87,29 +87,29 @@ export function StreamSessionView({ channelId, dateRange }: StreamSessionViewPro
                         weekday: 'long'
                       })}
                     </h4>
-                    <p className="text-sm text-gray-500">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
                       データポイント: {session.duration}個
                     </p>
                   </div>
 
                   <div className="grid grid-cols-3 gap-6 text-center">
                     <div>
-                      <div className="text-lg font-bold text-blue-600">
+                      <div className="text-lg font-bold text-blue-600 dark:text-blue-400">
                         {session.avgViewers.toLocaleString()}
                       </div>
-                      <div className="text-xs text-gray-500">平均視聴者数</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">平均視聴者数</div>
                     </div>
                     <div>
-                      <div className="text-lg font-bold text-green-600">
+                      <div className="text-lg font-bold text-green-600 dark:text-green-400">
                         {session.maxViewers.toLocaleString()}
                       </div>
-                      <div className="text-xs text-gray-500">最高視聴者数</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">最高視聴者数</div>
                     </div>
                     <div>
-                      <div className="text-lg font-bold text-purple-600">
+                      <div className="text-lg font-bold text-purple-600 dark:text-purple-400">
                         {session.totalChat.toLocaleString()}
                       </div>
-                      <div className="text-xs text-gray-500">総チャット数</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">総チャット数</div>
                     </div>
                   </div>
                 </div>
@@ -134,7 +134,7 @@ export function StreamSessionView({ channelId, dateRange }: StreamSessionViewPro
             ))}
           </div>
         ) : (
-          <div className="text-center py-8 text-gray-500">
+          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
             指定期間内の配信セッションデータがありません
           </div>
         )}
@@ -142,35 +142,35 @@ export function StreamSessionView({ channelId, dateRange }: StreamSessionViewPro
 
       {/* セッション統計サマリー */}
       {sessions && sessions.length > 0 && (
-        <div className="bg-white rounded-lg shadow p-6 border border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">セッション統計サマリー</h3>
+        <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-6 border border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">セッション統計サマリー</h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600">
+              <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
                 {sessions.length}
               </div>
-              <div className="text-sm text-gray-500">総セッション数</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">総セッション数</div>
             </div>
 
             <div className="text-center">
-              <div className="text-2xl font-bold text-green-600">
+              <div className="text-2xl font-bold text-green-600 dark:text-green-400">
                 {Math.max(...sessions.map(s => s.maxViewers))}
               </div>
-              <div className="text-sm text-gray-500">全期間最高視聴者数</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">全期間最高視聴者数</div>
             </div>
 
             <div className="text-center">
-              <div className="text-2xl font-bold text-purple-600">
+              <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
                 {Math.round(sessions.reduce((sum, s) => sum + s.avgViewers, 0) / sessions.length)}
               </div>
-              <div className="text-sm text-gray-500">平均視聴者数（全セッション）</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">平均視聴者数（全セッション）</div>
             </div>
 
             <div className="text-center">
-              <div className="text-2xl font-bold text-gray-600">
+              <div className="text-2xl font-bold text-gray-600 dark:text-gray-400">
                 {sessions.reduce((sum, s) => sum + s.totalChat, 0)}
               </div>
-              <div className="text-sm text-gray-500">総チャットメッセージ数</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">総チャットメッセージ数</div>
             </div>
           </div>
         </div>

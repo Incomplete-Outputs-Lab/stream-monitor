@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import { hasToken as hasTokenInStronghold, isVaultUnlocked } from '../utils/stronghold';
+import { hasToken } from '../utils/keyring';
 
 interface OAuthConfig {
   client_id: string | null;
@@ -36,27 +36,12 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
   checkTokens: async () => {
     set({ loading: true });
     try {
-      // Check if vault is unlocked to directly query Stronghold
-      const vaultUnlocked = isVaultUnlocked();
-      
-      let hasTwitch = false;
-      let hasYouTube = false;
-      
-      if (vaultUnlocked) {
-        // Vault is unlocked - check tokens directly from Stronghold
-        console.log('[ConfigStore] Vault is unlocked, checking tokens from Stronghold');
-        [hasTwitch, hasYouTube] = await Promise.all([
-          hasTokenInStronghold('twitch'),
-          hasTokenInStronghold('youtube'),
-        ]);
-      } else {
-        // Vault is locked - fall back to backend check (will return false)
-        console.log('[ConfigStore] Vault is locked, falling back to backend check');
-        [hasTwitch, hasYouTube] = await Promise.all([
-          invoke<boolean>('has_token', { platform: 'twitch' }),
-          invoke<boolean>('has_token', { platform: 'youtube' }),
-        ]);
-      }
+      // Check tokens directly from Keyring
+      console.log('[ConfigStore] Checking tokens from Keyring');
+      const [hasTwitch, hasYouTube] = await Promise.all([
+        hasToken('twitch'),
+        hasToken('youtube'),
+      ]);
       
       const [hasTwitchOAuth, hasYouTubeOAuth] = await Promise.all([
         invoke<boolean>('has_oauth_config', { platform: 'twitch' }),
@@ -86,22 +71,12 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
     try {
       await invoke('save_token', { platform, token });
       
-      // After saving, check token status from Stronghold
-      const vaultUnlocked = isVaultUnlocked();
-      if (vaultUnlocked) {
-        const hasToken = await hasTokenInStronghold(platform);
-        if (platform === 'twitch') {
-          set({ hasTwitchToken: hasToken });
-        } else if (platform === 'youtube') {
-          set({ hasYouTubeToken: hasToken });
-        }
-      } else {
-        // Vault not unlocked, optimistically set to true
-        if (platform === 'twitch') {
-          set({ hasTwitchToken: true });
-        } else if (platform === 'youtube') {
-          set({ hasYouTubeToken: true });
-        }
+      // After saving, check token status from Keyring
+      const tokenExists = await hasToken(platform);
+      if (platform === 'twitch') {
+        set({ hasTwitchToken: tokenExists });
+      } else if (platform === 'youtube') {
+        set({ hasYouTubeToken: tokenExists });
       }
     } catch (error) {
       set({ error: String(error) });
@@ -113,22 +88,12 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
     try {
       await invoke('delete_token', { platform });
       
-      // After deleting, check token status from Stronghold
-      const vaultUnlocked = isVaultUnlocked();
-      if (vaultUnlocked) {
-        const hasToken = await hasTokenInStronghold(platform);
-        if (platform === 'twitch') {
-          set({ hasTwitchToken: hasToken });
-        } else if (platform === 'youtube') {
-          set({ hasYouTubeToken: hasToken });
-        }
-      } else {
-        // Vault not unlocked, optimistically set to false
-        if (platform === 'twitch') {
-          set({ hasTwitchToken: false });
-        } else if (platform === 'youtube') {
-          set({ hasYouTubeToken: false });
-        }
+      // After deleting, check token status from Keyring
+      const tokenExists = await hasToken(platform);
+      if (platform === 'twitch') {
+        set({ hasTwitchToken: tokenExists });
+      } else if (platform === 'youtube') {
+        set({ hasYouTubeToken: tokenExists });
       }
     } catch (error) {
       set({ error: String(error) });

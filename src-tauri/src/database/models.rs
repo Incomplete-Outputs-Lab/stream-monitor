@@ -7,6 +7,7 @@ pub struct Channel {
     pub channel_id: String,
     pub channel_name: String,
     pub display_name: Option<String>,
+    pub profile_image_url: Option<String>,
     pub enabled: bool,
     pub poll_interval: i32,
     pub created_at: Option<String>,

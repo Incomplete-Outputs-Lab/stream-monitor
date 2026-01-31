@@ -11,6 +11,8 @@ pub struct AddChannelRequest {
     pub platform: String,
     pub channel_id: String,
     pub channel_name: String,
+    pub display_name: Option<String>,
+    pub profile_image_url: Option<String>,
     pub poll_interval: Option<i32>,
 }
 
@@ -27,22 +29,53 @@ pub async fn add_channel(
     let poll_interval = request.poll_interval.unwrap_or(60);
 
     let poll_interval_str = poll_interval.to_string();
-    conn.execute(
-        "INSERT INTO channels (platform, channel_id, channel_name, poll_interval) 
-         VALUES (?, ?, ?, ?)",
-        [
-            request.platform.as_str(),
-            request.channel_id.as_str(),
-            request.channel_name.as_str(),
-            poll_interval_str.as_str(),
-        ],
-    )
-    .map_err(|e| format!("Failed to insert channel: {}", e))?;
-
-    // DuckDBでは、last_insert_rowid()を直接取得できないため、SELECTを使用
-    let channel_id: i64 = conn
-        .query_row("SELECT last_insert_rowid()", [], |row| row.get(0))
-        .map_err(|e| format!("Failed to get last insert rowid: {}", e))?;
+    
+    // DuckDBでは、RETURNING句を使用してINSERTと同時にIDを取得
+    let channel_id: i64 = if let Some(ref display_name) = request.display_name {
+        // display_nameとprofile_image_urlがある場合
+        if let Some(ref profile_image_url) = request.profile_image_url {
+            conn.query_row(
+                "INSERT INTO channels (platform, channel_id, channel_name, display_name, profile_image_url, poll_interval) 
+                 VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+                [
+                    request.platform.as_str(),
+                    request.channel_id.as_str(),
+                    request.channel_name.as_str(),
+                    display_name.as_str(),
+                    profile_image_url.as_str(),
+                    poll_interval_str.as_str(),
+                ],
+                |row| row.get(0)
+            )
+        } else {
+            // display_nameのみある場合
+            conn.query_row(
+                "INSERT INTO channels (platform, channel_id, channel_name, display_name, poll_interval) 
+                 VALUES (?, ?, ?, ?, ?) RETURNING id",
+                [
+                    request.platform.as_str(),
+                    request.channel_id.as_str(),
+                    request.channel_name.as_str(),
+                    display_name.as_str(),
+                    poll_interval_str.as_str(),
+                ],
+                |row| row.get(0)
+            )
+        }
+    } else {
+        // display_nameもprofile_image_urlもない場合（後方互換性）
+        conn.query_row(
+            "INSERT INTO channels (platform, channel_id, channel_name, poll_interval) 
+             VALUES (?, ?, ?, ?) RETURNING id",
+            [
+                request.platform.as_str(),
+                request.channel_id.as_str(),
+                request.channel_name.as_str(),
+                poll_interval_str.as_str(),
+            ],
+            |row| row.get(0)
+        )
+    }.map_err(|e| format!("Failed to insert channel: {}", e))?;
 
     let channel = get_channel_by_id(&conn, channel_id)
         .ok_or_else(|| "Failed to retrieve created channel".to_string())?;
@@ -166,7 +199,7 @@ pub async fn list_channels(
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     let mut stmt = conn
-        .prepare("SELECT id, platform, channel_id, channel_name, enabled, poll_interval, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels ORDER BY created_at DESC")
+        .prepare("SELECT id, platform, channel_id, channel_name, display_name, profile_image_url, enabled, poll_interval, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels ORDER BY created_at DESC")
         .map_err(|e| format!("Failed to prepare statement: {}", e))?;
 
     let channels: Result<Vec<Channel>, _> = stmt
@@ -176,11 +209,12 @@ pub async fn list_channels(
                 platform: row.get(1)?,
                 channel_id: row.get(2)?,
                 channel_name: row.get(3)?,
-                display_name: None,
-                enabled: row.get(4)?,
-                poll_interval: row.get(5)?,
-                created_at: Some(row.get(6)?),
-                updated_at: Some(row.get(7)?),
+                display_name: row.get(4)?,
+                profile_image_url: row.get(5)?,
+                enabled: row.get(6)?,
+                poll_interval: row.get(7)?,
+                created_at: Some(row.get(8)?),
+                updated_at: Some(row.get(9)?),
             })
         })
         .map_err(|e| format!("Failed to query channels: {}", e))?
@@ -234,7 +268,7 @@ pub async fn toggle_channel(
 
 fn get_channel_by_id(conn: &Connection, id: i64) -> Option<Channel> {
     let mut stmt = conn
-        .prepare("SELECT id, platform, channel_id, channel_name, enabled, poll_interval, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels WHERE id = ?")
+        .prepare("SELECT id, platform, channel_id, channel_name, display_name, profile_image_url, enabled, poll_interval, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels WHERE id = ?")
         .ok()?;
 
     let id_str = id.to_string();
@@ -245,11 +279,12 @@ fn get_channel_by_id(conn: &Connection, id: i64) -> Option<Channel> {
                 platform: row.get(1)?,
                 channel_id: row.get(2)?,
                 channel_name: row.get(3)?,
-                display_name: None, // TODO: データベースから取得
-                enabled: row.get(4)?,
-                poll_interval: row.get(5)?,
-                created_at: Some(row.get(6)?),
-                updated_at: Some(row.get(7)?),
+                display_name: row.get(4)?,
+                profile_image_url: row.get(5)?,
+                enabled: row.get(6)?,
+                poll_interval: row.get(7)?,
+                created_at: Some(row.get(8)?),
+                updated_at: Some(row.get(9)?),
             })
         })
         .ok()?;

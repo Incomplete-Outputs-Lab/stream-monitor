@@ -109,9 +109,10 @@ pub fn init_database(conn: &Connection) -> Result<(), duckdb::Error> {
     )?;
     eprintln!("[Schema] Step 4: chat_messages table created");
 
+    eprintln!("[Schema] Step 4.5: Running database migrations...");
     // 既存テーブルにフィールドを追加（マイグレーション）
-    // DISABLED: Temporarily disabled due to stack overflow issues
-    // migrate_database_schema(conn)?;
+    migrate_database_schema(conn)?;
+    eprintln!("[Schema] Step 4.5: Migrations completed");
 
     eprintln!("[Schema] Step 5: Creating indexes...");
     // インデックス作成
@@ -157,9 +158,6 @@ pub fn init_database(conn: &Connection) -> Result<(), duckdb::Error> {
 
 /// データベーススキーマのマイグレーションを行う関数
 /// 既存のテーブルにフィールドを追加する
-///
-/// NOTE: 現在は呼び出し側を一時的に無効化しているため dead_code を許可しています。
-#[allow(dead_code)]
 fn migrate_database_schema(conn: &Connection) -> Result<(), duckdb::Error> {
     // streamsテーブルにthumbnail_urlフィールドを追加
     let mut streams_has_thumbnail = conn.prepare(
@@ -169,6 +167,7 @@ fn migrate_database_schema(conn: &Connection) -> Result<(), duckdb::Error> {
 
     if streams_has_thumbnail_count == 0 {
         // thumbnail_urlフィールドがない場合、ALTER TABLEで追加
+        eprintln!("[Migration] Adding thumbnail_url column to streams table");
         conn.execute("ALTER TABLE streams ADD COLUMN thumbnail_url TEXT", [])?;
     }
 
@@ -181,7 +180,21 @@ fn migrate_database_schema(conn: &Connection) -> Result<(), duckdb::Error> {
 
     if channels_has_display_name_count == 0 {
         // display_nameフィールドがない場合、ALTER TABLEで追加
+        eprintln!("[Migration] Adding display_name column to channels table");
         conn.execute("ALTER TABLE channels ADD COLUMN display_name TEXT", [])?;
+    }
+
+    // channelsテーブルにprofile_image_urlフィールドを追加
+    let mut channels_has_profile_image = conn.prepare(
+        "SELECT COUNT(*) FROM pragma_table_info('channels') WHERE name = 'profile_image_url'",
+    )?;
+    let channels_has_profile_image_count: i64 =
+        channels_has_profile_image.query_row([], |row| row.get(0))?;
+
+    if channels_has_profile_image_count == 0 {
+        // profile_image_urlフィールドがない場合、ALTER TABLEで追加
+        eprintln!("[Migration] Adding profile_image_url column to channels table");
+        conn.execute("ALTER TABLE channels ADD COLUMN profile_image_url TEXT", [])?;
     }
 
     Ok(())

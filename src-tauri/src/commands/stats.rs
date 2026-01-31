@@ -82,7 +82,7 @@ pub async fn get_live_channels(
 
     let sql = r#"
         SELECT 
-            c.id, c.platform, c.channel_id, c.channel_name, c.enabled, c.poll_interval, CAST(c.created_at AS VARCHAR) as created_at, CAST(c.updated_at AS VARCHAR) as updated_at,
+            c.id, c.platform, c.channel_id, c.channel_name, c.display_name, c.profile_image_url, c.enabled, c.poll_interval, CAST(c.created_at AS VARCHAR) as created_at, CAST(c.updated_at AS VARCHAR) as updated_at,
             CASE WHEN s.id IS NOT NULL THEN 1 ELSE 0 END as is_live,
             ss.viewer_count as current_viewers,
             s.title as current_title
@@ -107,15 +107,16 @@ pub async fn get_live_channels(
                     platform: row.get(1)?,
                     channel_id: row.get(2)?,
                     channel_name: row.get(3)?,
-                    display_name: None,
-                    enabled: row.get(4)?,
-                    poll_interval: row.get(5)?,
-                    created_at: Some(row.get(6)?),
-                    updated_at: Some(row.get(7)?),
+                    display_name: row.get(4)?,
+                    profile_image_url: row.get(5)?,
+                    enabled: row.get(6)?,
+                    poll_interval: row.get(7)?,
+                    created_at: Some(row.get(8)?),
+                    updated_at: Some(row.get(9)?),
                 },
-                is_live: row.get(8)?,
-                current_viewers: row.get(9)?,
-                current_title: row.get(10)?,
+                is_live: row.get(10)?,
+                current_viewers: row.get(11)?,
+                current_title: row.get(12)?,
             })
         })
         .map_err(|e| format!("Failed to query channels: {}", e))?

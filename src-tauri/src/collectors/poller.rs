@@ -125,7 +125,7 @@ impl ChannelPoller {
     }
 
     fn get_channel(conn: &Connection, channel_id: i64) -> Result<Option<Channel>, duckdb::Error> {
-        let mut stmt = conn.prepare("SELECT id, platform, channel_id, channel_name, enabled, poll_interval, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels WHERE id = ?")?;
+        let mut stmt = conn.prepare("SELECT id, platform, channel_id, channel_name, display_name, profile_image_url, enabled, poll_interval, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels WHERE id = ?")?;
 
         let channel_id_str = channel_id.to_string();
         let rows: Result<Vec<_>, _> = stmt
@@ -135,11 +135,12 @@ impl ChannelPoller {
                     platform: row.get(1)?,
                     channel_id: row.get(2)?,
                     channel_name: row.get(3)?,
-                    display_name: None,
-                    enabled: row.get(4)?,
-                    poll_interval: row.get(5)?,
-                    created_at: Some(row.get(6)?),
-                    updated_at: Some(row.get(7)?),
+                    display_name: row.get(4)?,
+                    profile_image_url: row.get(5)?,
+                    enabled: row.get(6)?,
+                    poll_interval: row.get(7)?,
+                    created_at: Some(row.get(8)?),
+                    updated_at: Some(row.get(9)?),
                 })
             })?
             .collect();

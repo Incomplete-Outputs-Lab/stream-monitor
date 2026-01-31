@@ -24,6 +24,7 @@ use commands::{
     oauth::{start_twitch_device_auth, poll_twitch_device_token},
     stats::{get_channel_stats, get_live_channels, get_stream_stats},
     twitch::validate_twitch_channel,
+    utils::open_url,
 };
 use config::settings::SettingsManager;
 use database::DatabaseManager;
@@ -43,7 +44,7 @@ fn start_existing_channels_polling(
     
     // Get all enabled channels
     let mut stmt = conn.prepare(
-        "SELECT id, platform, channel_id, channel_name, enabled, poll_interval, \
+        "SELECT id, platform, channel_id, channel_name, display_name, profile_image_url, enabled, poll_interval, \
          CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at \
          FROM channels WHERE enabled = true"
     )?;
@@ -55,11 +56,12 @@ fn start_existing_channels_polling(
                 platform: row.get(1)?,
                 channel_id: row.get(2)?,
                 channel_name: row.get(3)?,
-                display_name: None,
-                enabled: row.get(4)?,
-                poll_interval: row.get(5)?,
-                created_at: Some(row.get(6)?),
-                updated_at: Some(row.get(7)?),
+                display_name: row.get(4)?,
+                profile_image_url: row.get(5)?,
+                enabled: row.get(6)?,
+                poll_interval: row.get(7)?,
+                created_at: Some(row.get(8)?),
+                updated_at: Some(row.get(9)?),
             })
         })?
         .collect();
@@ -244,6 +246,8 @@ pub fn run() {
             get_logs,
             // Twitch commands
             validate_twitch_channel,
+            // Utils commands
+            open_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

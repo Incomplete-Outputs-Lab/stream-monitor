@@ -36,10 +36,10 @@ impl DatabaseWriter {
             )?;
             Ok(id)
         } else {
-            // 挿入
-            conn.execute(
+            // 挿入 - DuckDBではRETURNING句を使用してINSERTと同時にIDを取得
+            let id: i64 = conn.query_row(
                 "INSERT INTO streams (channel_id, stream_id, title, category, started_at, ended_at) 
-                 VALUES (?, ?, ?, ?, ?, ?)",
+                 VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
                 [
                     &channel_id.to_string(),
                     &stream.stream_id,
@@ -48,10 +48,8 @@ impl DatabaseWriter {
                     &stream.started_at,
                     &stream.ended_at.clone().unwrap_or_default(),
                 ],
+                |row| row.get(0)
             )?;
-            // DuckDBでは、last_insert_rowid()を直接取得できないため、SELECTを使用
-            // DuckDBでは、last_insert_rowid()を直接取得できないため、SELECTを使用
-            let id: i64 = conn.query_row("SELECT last_insert_rowid()", [], |row| row.get(0))?;
             Ok(id)
         }
     }

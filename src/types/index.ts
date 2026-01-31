@@ -4,6 +4,7 @@ export interface Channel {
   channel_id: string;
   channel_name: string;
   display_name?: string;
+  profile_image_url?: string;
   enabled: boolean;
   poll_interval: number;
   created_at?: string;

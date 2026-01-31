@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { Channel } from "../../types";
 
 interface ChannelItemProps {
@@ -14,11 +15,17 @@ export function ChannelItem({ channel, onEdit, onDelete, onToggle }: ChannelItem
   };
 
   // ブラウザでチャンネルを開く
-  const openChannelInBrowser = () => {
+  const openChannelInBrowser = async () => {
     const url = channel.platform === 'twitch'
-      ? `https://twitch.tv/${channel.channel_name}`
+      ? `https://twitch.tv/${channel.channel_id}`
       : `https://youtube.com/channel/${channel.channel_id}`;
-    window.open(url, '_blank');
+    
+    try {
+      await invoke("open_url", { url });
+    } catch (error) {
+      console.error("Failed to open URL:", error);
+      alert("URLを開くことができませんでした: " + String(error));
+    }
   };
 
   // モックデータ（実際にはAPIから取得）
@@ -29,16 +36,39 @@ export function ChannelItem({ channel, onEdit, onDelete, onToggle }: ChannelItem
     <div className="card p-6 hover:shadow-md transition-all duration-200 group">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center space-x-4 flex-1 min-w-0">
-          {/* プラットフォームアイコン */}
-          <div className={`flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center ${
-            channel.platform === 'twitch'
-              ? 'bg-gradient-to-br from-purple-500 to-purple-600'
-              : 'bg-gradient-to-br from-red-500 to-red-600'
-          } shadow-lg`}>
-            <span className="text-white text-xl">
-              {channel.platform === 'twitch' ? '🎮' : '▶️'}
-            </span>
-          </div>
+          {/* プラットフォームアイコン / プロフィール画像 */}
+          {channel.profile_image_url ? (
+            <div className="flex-shrink-0 w-12 h-12 rounded-xl overflow-hidden shadow-lg border-2 border-gray-200 dark:border-slate-600">
+              <img 
+                src={channel.profile_image_url} 
+                alt={channel.display_name || channel.channel_name}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  // 画像の読み込みに失敗した場合、フォールバックとしてデフォルトアイコンを表示
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                  if (target.parentElement) {
+                    target.parentElement.className = `flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center ${
+                      channel.platform === 'twitch'
+                        ? 'bg-gradient-to-br from-purple-500 to-purple-600'
+                        : 'bg-gradient-to-br from-red-500 to-red-600'
+                    } shadow-lg`;
+                    target.parentElement.innerHTML = `<span class="text-white text-xl">${channel.platform === 'twitch' ? '🎮' : '▶️'}</span>`;
+                  }
+                }}
+              />
+            </div>
+          ) : (
+            <div className={`flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center ${
+              channel.platform === 'twitch'
+                ? 'bg-gradient-to-br from-purple-500 to-purple-600'
+                : 'bg-gradient-to-br from-red-500 to-red-600'
+            } shadow-lg`}>
+              <span className="text-white text-xl">
+                {channel.platform === 'twitch' ? '🎮' : '▶️'}
+              </span>
+            </div>
+          )}
 
           {/* チャンネル情報 */}
           <div className="flex-1 min-w-0">

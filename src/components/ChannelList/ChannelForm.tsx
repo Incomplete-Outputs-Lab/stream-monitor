@@ -45,12 +45,14 @@ export function ChannelForm({ channel, onSuccess, onCancel }: ChannelFormProps) 
   });
 
   const addMutation = useMutation({
-    mutationFn: async (data: ChannelFormData) => {
+    mutationFn: async (data: ChannelFormData & { display_name?: string; profile_image_url?: string }) => {
       return await invoke<Channel>("add_channel", {
         request: {
           platform: data.platform,
           channel_id: data.channel_id,
           channel_name: data.channel_name,
+          display_name: data.display_name,
+          profile_image_url: data.profile_image_url,
           poll_interval: data.poll_interval,
         },
       });
@@ -58,6 +60,8 @@ export function ChannelForm({ channel, onSuccess, onCancel }: ChannelFormProps) 
     onSuccess: () => {
       onSuccess();
       reset();
+      setValidatedInfo(null);
+      setValidationError(null);
     },
   });
 
@@ -146,6 +150,11 @@ export function ChannelForm({ channel, onSuccess, onCancel }: ChannelFormProps) 
       const submitData = {
         ...data,
         channel_id: channelId,
+        // Twitchの場合、検証済みの情報を追加
+        ...(data.platform === 'twitch' && validatedInfo ? {
+          display_name: validatedInfo.display_name,
+          profile_image_url: validatedInfo.profile_image_url,
+        } : {}),
       };
 
       if (channel) {

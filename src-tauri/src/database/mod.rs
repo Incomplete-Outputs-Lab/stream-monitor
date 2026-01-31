@@ -35,8 +35,7 @@ impl DatabaseManager {
                 .map_err(|e| format!("Failed to open in-memory database: {}", e))?
         } else {
             eprintln!("Production mode: Opening DuckDB at: {}", db_path.display());
-            Connection::open(&db_path)
-                .map_err(|e| format!("Failed to open database: {}", e))?
+            Connection::open(&db_path).map_err(|e| format!("Failed to open database: {}", e))?
         };
 
         // DuckDBの設定
@@ -56,7 +55,8 @@ impl DatabaseManager {
 
     /// データベース接続を取得
     pub fn get_connection(&self) -> Result<Connection, Box<dyn std::error::Error>> {
-        let conn = self.conn
+        let conn = self
+            .conn
             .lock()
             .map_err(|e| format!("Failed to lock connection: {}", e))?;
         conn.try_clone()
@@ -67,7 +67,9 @@ impl DatabaseManager {
     pub fn create_backup(&self) -> Result<PathBuf, Box<dyn std::error::Error>> {
         // インメモリDB使用時はバックアップを作成できない
         if cfg!(debug_assertions) {
-            return Err("Cannot create backup in development mode (using in-memory database)".into());
+            return Err(
+                "Cannot create backup in development mode (using in-memory database)".into(),
+            );
         }
 
         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
@@ -100,9 +102,7 @@ pub fn get_connection(app_handle: &AppHandle) -> Result<Connection, Box<dyn std:
 }
 
 #[allow(dead_code)]
-pub fn get_connection_with_path(
-    path: PathBuf,
-) -> Result<Connection, Box<dyn std::error::Error>> {
+pub fn get_connection_with_path(path: PathBuf) -> Result<Connection, Box<dyn std::error::Error>> {
     let conn = Connection::open(&path).map_err(|e| format!("Failed to open database: {}", e))?;
     Ok(conn)
 }

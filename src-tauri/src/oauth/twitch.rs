@@ -55,12 +55,15 @@ impl TwitchOAuth {
     }
 
     /// Device Code Grant Flow を開始
-    /// 
+    ///
     /// デバイスコードとユーザーコードを取得します。
     /// ユーザーはブラウザで verification_uri にアクセスして user_code を入力します。
-    pub async fn start_device_flow(&self, scopes: Vec<&str>) -> Result<DeviceAuthStatus, Box<dyn std::error::Error>> {
+    pub async fn start_device_flow(
+        &self,
+        scopes: Vec<&str>,
+    ) -> Result<DeviceAuthStatus, Box<dyn std::error::Error>> {
         let scope_string = scopes.join(" ");
-        
+
         let mut params = HashMap::new();
         params.insert("client_id", self.client_id.as_str());
         params.insert("scopes", scope_string.as_str());
@@ -77,11 +80,17 @@ impl TwitchOAuth {
             .await?;
 
         let status = response.status();
-        eprintln!("[Twitch Device Flow] Device code request status: {}", status);
+        eprintln!(
+            "[Twitch Device Flow] Device code request status: {}",
+            status
+        );
 
         if !status.is_success() {
             let error_text = response.text().await?;
-            eprintln!("[Twitch Device Flow] Device code error response: {}", error_text);
+            eprintln!(
+                "[Twitch Device Flow] Device code error response: {}",
+                error_text
+            );
             return Err(format!("Device code request failed: {}", error_text).into());
         }
 
@@ -103,7 +112,7 @@ impl TwitchOAuth {
     }
 
     /// Device Code を使用してアクセストークンを取得
-    /// 
+    ///
     /// この関数は1回だけ呼び出され、内部でポーリングを行います。
     /// ユーザーが認証を完了するまで待機します。
     pub async fn poll_for_device_token(
@@ -143,7 +152,11 @@ impl TwitchOAuth {
                 // アクセストークンを保存
                 eprintln!("[Twitch Device Flow] About to save access token...");
                 if let Some(ref handle) = self.app_handle {
-                    match KeyringStore::save_token_with_app(handle, "twitch", &token_response.access_token) {
+                    match KeyringStore::save_token_with_app(
+                        handle,
+                        "twitch",
+                        &token_response.access_token,
+                    ) {
                         Ok(_) => {
                             eprintln!("[Twitch Device Flow] Access token saved successfully to Stronghold");
                         }
@@ -156,7 +169,11 @@ impl TwitchOAuth {
                     // リフレッシュトークンがある場合は保存
                     if let Some(refresh_token) = &token_response.refresh_token {
                         eprintln!("[Twitch Device Flow] About to save refresh token...");
-                        match KeyringStore::save_token_with_app(handle, "twitch_refresh", refresh_token) {
+                        match KeyringStore::save_token_with_app(
+                            handle,
+                            "twitch_refresh",
+                            refresh_token,
+                        ) {
                             Ok(_) => {
                                 eprintln!("[Twitch Device Flow] Refresh token saved successfully to Stronghold");
                             }
@@ -170,7 +187,9 @@ impl TwitchOAuth {
                     // Give frontend time to process the save event
                     eprintln!("[Twitch Device Flow] Token save event sent, waiting for frontend processing...");
                     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-                    eprintln!("[Twitch Device Flow] Token should now be saved in Stronghold by frontend");
+                    eprintln!(
+                        "[Twitch Device Flow] Token should now be saved in Stronghold by frontend"
+                    );
                 } else {
                     eprintln!("[Twitch Device Flow] WARNING: No AppHandle available, tokens will not be persisted");
                 }
@@ -178,7 +197,10 @@ impl TwitchOAuth {
                 // 確実に読み取れることを確認してからイベント送信
                 if let Some(handle) = app_handle {
                     if let Err(e) = handle.emit("twitch-auth-success", ()) {
-                        eprintln!("[Twitch Device Flow] Failed to emit auth success event: {}", e);
+                        eprintln!(
+                            "[Twitch Device Flow] Failed to emit auth success event: {}",
+                            e
+                        );
                     } else {
                         eprintln!("[Twitch Device Flow] Auth success event emitted to frontend");
                     }
@@ -201,8 +223,11 @@ impl TwitchOAuth {
                             }
                             "slow_down" => {
                                 // ポーリングが速すぎる - 間隔を延長
-                                eprintln!("[Twitch Device Flow] Slow down requested, increasing interval");
-                                tokio::time::sleep(tokio::time::Duration::from_secs(interval_secs)).await;
+                                eprintln!(
+                                    "[Twitch Device Flow] Slow down requested, increasing interval"
+                                );
+                                tokio::time::sleep(tokio::time::Duration::from_secs(interval_secs))
+                                    .await;
                                 continue;
                             }
                             "expired_token" | "invalid device code" => {
@@ -227,13 +252,17 @@ impl TwitchOAuth {
     }
 
     /// Device Code Flow用のリフレッシュトークン更新
-    /// 
+    ///
     /// Device Code Flow のリフレッシュトークンは1回限り使用で、Client Secret不要
-    pub async fn refresh_device_token(&self, app_handle: Option<tauri::AppHandle>) -> Result<String, Box<dyn std::error::Error>> {
+    pub async fn refresh_device_token(
+        &self,
+        app_handle: Option<tauri::AppHandle>,
+    ) -> Result<String, Box<dyn std::error::Error>> {
         // リフレッシュトークンを取得
-        let handle = app_handle.or_else(|| self.app_handle.clone())
+        let handle = app_handle
+            .or_else(|| self.app_handle.clone())
             .ok_or("No app handle available")?;
-        
+
         let refresh_token = KeyringStore::get_token_with_app(&handle, "twitch_refresh")
             .map_err(|_| "No refresh token found")?;
 
@@ -277,7 +306,10 @@ impl TwitchOAuth {
 
         // フロントエンドに認証更新成功を通知
         if let Err(e) = handle.emit("twitch-auth-success", ()) {
-            eprintln!("[Twitch Device Flow] Failed to emit auth refresh event: {}", e);
+            eprintln!(
+                "[Twitch Device Flow] Failed to emit auth refresh event: {}",
+                e
+            );
         } else {
             eprintln!("[Twitch Device Flow] Auth refresh event emitted to frontend");
         }

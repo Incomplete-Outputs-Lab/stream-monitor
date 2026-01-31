@@ -11,9 +11,7 @@ pub struct DatabaseInfo {
 #[tauri::command]
 pub async fn create_database_backup(app_handle: AppHandle) -> Result<String, String> {
     let db_manager: tauri::State<'_, DatabaseManager> = app_handle.state();
-    let backup_path = db_manager
-        .create_backup()
-        .map_err(|e| e.to_string())?;
+    let backup_path = db_manager.create_backup().map_err(|e| e.to_string())?;
     Ok(backup_path.display().to_string())
 }
 

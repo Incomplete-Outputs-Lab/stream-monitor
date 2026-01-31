@@ -138,14 +138,6 @@ export function SQLViewer() {
     setError(null);
   };
 
-  // 新規テンプレート作成
-  const newTemplate = () => {
-    setQuery("");
-    setSelectedTemplate(null);
-    setResult(null);
-    setError(null);
-  };
-
   // テーブル名をクエリに挿入
   const insertTableName = (tableName: string) => {
     setQuery((prev) => {

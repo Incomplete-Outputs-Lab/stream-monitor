@@ -23,7 +23,7 @@ use commands::{
     database::{create_database_backup, get_database_info},
     export::{export_to_csv, export_to_json},
     logs::get_logs,
-    oauth::{start_twitch_device_auth, poll_twitch_device_token},
+    oauth::{poll_twitch_device_token, start_twitch_device_auth},
     sql::{
         delete_sql_template, execute_sql, get_sql_template, list_database_tables,
         list_sql_templates, save_sql_template,
@@ -48,14 +48,14 @@ fn start_existing_channels_polling(
     app_handle: &tauri::AppHandle,
 ) -> Result<usize, Box<dyn std::error::Error>> {
     let conn = db_manager.get_connection()?;
-    
+
     // Get all enabled channels
     let mut stmt = conn.prepare(
         "SELECT id, platform, channel_id, channel_name, display_name, profile_image_url, enabled, poll_interval, follower_count, broadcaster_type, view_count, \
          CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at \
          FROM channels WHERE enabled = true"
     )?;
-    
+
     let channels: Result<Vec<_>, _> = stmt
         .query_map([], |row| {
             Ok(database::models::Channel {
@@ -75,19 +75,22 @@ fn start_existing_channels_polling(
             })
         })?
         .collect();
-    
+
     let channels = channels?;
     let count = channels.len();
-    
+
     // Start polling for each enabled channel
     for channel in channels {
         if let Err(e) = poller.start_polling(channel.clone(), db_manager, app_handle.clone()) {
-            eprintln!("Failed to start polling for channel {:?}: {}", channel.id, e);
+            eprintln!(
+                "Failed to start polling for channel {:?}: {}",
+                channel.id, e
+            );
             // Note: ここではloggerを渡していないため、eprintln!のままにする
             // start_pollingメソッド内でloggerを使用するように変更する
         }
     }
-    
+
     Ok(count)
 }
 

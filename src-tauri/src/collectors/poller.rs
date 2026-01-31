@@ -144,7 +144,10 @@ impl ChannelPoller {
                     Ok(Some(ch)) => ch,
                     Ok(None) => {
                         // チャンネルが削除された場合はタスクを終了
-                        logger.info(&format!("Channel {} was deleted, stopping polling", channel_id));
+                        logger.info(&format!(
+                            "Channel {} was deleted, stopping polling",
+                            channel_id
+                        ));
                         break;
                     }
                     Err(e) => {
@@ -155,7 +158,10 @@ impl ChannelPoller {
 
                 if !updated_channel.enabled {
                     // チャンネルが無効化された場合はタスクを終了
-                    logger.info(&format!("Channel {} was disabled, stopping polling", channel_id));
+                    logger.info(&format!(
+                        "Channel {} was disabled, stopping polling",
+                        channel_id
+                    ));
                     break;
                 }
 

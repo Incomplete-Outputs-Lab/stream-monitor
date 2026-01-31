@@ -54,11 +54,10 @@ jobs:
           cmake --version || echo "CMake check failed"
           where cl || echo "MSVC compiler check"
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: 'lts/*'
-          cache: 'npm'
+          bun-version: latest
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -102,10 +101,10 @@ jobs:
           }
 
       - name: Install frontend dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Build frontend
-        run: npm run build
+        run: bun run build
 
       - name: Build Rust (check)
         working-directory: src-tauri

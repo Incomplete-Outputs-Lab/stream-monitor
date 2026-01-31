@@ -246,9 +246,8 @@ fn migrate_database_schema(conn: &Connection) -> Result<(), duckdb::Error> {
     }
 
     // channelsテーブルにview_countフィールドを追加
-    let mut channels_has_view_count = conn.prepare(
-        "SELECT COUNT(*) FROM pragma_table_info('channels') WHERE name = 'view_count'",
-    )?;
+    let mut channels_has_view_count = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('channels') WHERE name = 'view_count'")?;
     let channels_has_view_count_count: i64 =
         channels_has_view_count.query_row([], |row| row.get(0))?;
 

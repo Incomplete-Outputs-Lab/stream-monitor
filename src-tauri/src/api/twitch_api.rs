@@ -54,9 +54,13 @@ impl TwitchApiClient {
             let client_secret = ClientSecret::new(client_secret.clone());
 
             let http_client = reqwest::Client::new();
-            let app_token =
-                AppAccessToken::get_app_access_token(&http_client, client_id, client_secret, vec![])
-                    .await?;
+            let app_token = AppAccessToken::get_app_access_token(
+                &http_client,
+                client_id,
+                client_secret,
+                vec![],
+            )
+            .await?;
 
             let access_token_str = app_token.access_token.secret().to_string();
 
@@ -69,7 +73,10 @@ impl TwitchApiClient {
         }
 
         // トークンが見つからず、Client Secretもない場合はエラー
-        Err("No Twitch access token found. Please authenticate using Device Code Flow first.".into())
+        Err(
+            "No Twitch access token found. Please authenticate using Device Code Flow first."
+                .into(),
+        )
     }
 
     /// トークンをリフレッシュ
@@ -121,8 +128,11 @@ impl TwitchApiClient {
                     eprintln!("Token expired, attempting refresh...");
                     let _new_token = self.refresh_token().await?;
                     let refreshed_token = self.get_user_token().await?;
-                    
-                    let response = self.client.req_get(GetUsersRequest::logins(login_refs), &refreshed_token).await?;
+
+                    let response = self
+                        .client
+                        .req_get(GetUsersRequest::logins(login_refs), &refreshed_token)
+                        .await?;
                     response
                         .data
                         .into_iter()
@@ -152,8 +162,11 @@ impl TwitchApiClient {
                     eprintln!("Token expired, attempting refresh...");
                     let _new_token = self.refresh_token().await?;
                     let refreshed_token = self.get_user_token().await?;
-                    
-                    let response = self.client.req_get(GetStreamsRequest::user_ids(user_id_refs), &refreshed_token).await?;
+
+                    let response = self
+                        .client
+                        .req_get(GetStreamsRequest::user_ids(user_id_refs), &refreshed_token)
+                        .await?;
                     Ok(response.data.into_iter().next())
                 } else {
                     Err(e.into())

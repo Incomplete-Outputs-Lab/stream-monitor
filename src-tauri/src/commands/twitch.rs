@@ -2,11 +2,7 @@ use crate::config::settings::SettingsManager;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 use twitch_api::{
-    helix::{
-        channels::GetChannelFollowersRequest,
-        users::GetUsersRequest,
-        HelixClient,
-    },
+    helix::{channels::GetChannelFollowersRequest, users::GetUsersRequest, HelixClient},
     twitch_oauth2::{AccessToken, UserToken as TwitchApiUserToken},
     types,
 };
@@ -33,10 +29,9 @@ pub async fn validate_twitch_channel(
     let settings = SettingsManager::load_settings(&app_handle)
         .map_err(|e| format!("設定の読み込みに失敗しました: {}", e))?;
 
-    let _client_id = settings
-        .twitch
-        .client_id
-        .ok_or_else(|| "Twitch Client IDが設定されていません。設定画面からOAuth設定を行ってください。".to_string())?;
+    let _client_id = settings.twitch.client_id.ok_or_else(|| {
+        "Twitch Client IDが設定されていません。設定画面からOAuth設定を行ってください。".to_string()
+    })?;
 
     // Check if access token is provided
     let token_str = access_token
@@ -52,23 +47,21 @@ pub async fn validate_twitch_channel(
     let login_refs: &[&types::UserNameRef] = &[channel_id.as_str().into()];
     let request = GetUsersRequest::logins(login_refs);
 
-    let response = client
-        .req_get(request, &token)
-        .await
-        .map_err(|e| {
-            let error_msg = e.to_string();
-            if error_msg.contains("401") || error_msg.contains("Unauthorized") {
-                "認証トークンが無効です。設定画面から再度認証を行ってください。".to_string()
-            } else {
-                format!("Twitch APIエラー: {}", error_msg)
-            }
-        })?;
+    let response = client.req_get(request, &token).await.map_err(|e| {
+        let error_msg = e.to_string();
+        if error_msg.contains("401") || error_msg.contains("Unauthorized") {
+            "認証トークンが無効です。設定画面から再度認証を行ってください。".to_string()
+        } else {
+            format!("Twitch APIエラー: {}", error_msg)
+        }
+    })?;
 
-    let user = response
-        .data
-        .into_iter()
-        .next()
-        .ok_or_else(|| format!("チャンネル '{}' が見つかりません。正しいチャンネルIDを入力してください。", channel_id))?;
+    let user = response.data.into_iter().next().ok_or_else(|| {
+        format!(
+            "チャンネル '{}' が見つかりません。正しいチャンネルIDを入力してください。",
+            channel_id
+        )
+    })?;
 
     // Get follower count
     let broadcaster_id_ref: &types::UserIdRef = user.id.as_str().into();
@@ -82,12 +75,17 @@ pub async fn validate_twitch_channel(
     };
 
     // Get broadcaster type
-    let broadcaster_type = user.broadcaster_type.map(|bt| format!("{:?}", bt).to_lowercase());
+    let broadcaster_type = user
+        .broadcaster_type
+        .map(|bt| format!("{:?}", bt).to_lowercase());
 
     Ok(TwitchChannelInfo {
         channel_id: user.login.to_string(),
         display_name: user.display_name.to_string(),
-        profile_image_url: user.profile_image_url.map(|url| url.to_string()).unwrap_or_default(),
+        profile_image_url: user
+            .profile_image_url
+            .map(|url| url.to_string())
+            .unwrap_or_default(),
         description: user.description.unwrap_or_default(),
         follower_count,
         broadcaster_type,

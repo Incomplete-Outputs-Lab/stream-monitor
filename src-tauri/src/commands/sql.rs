@@ -37,12 +37,15 @@ pub async fn execute_sql(
     query: String,
 ) -> Result<SqlQueryResult, String> {
     let start_time = Instant::now();
-    
+
     let conn = db_manager
         .get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
-    eprintln!("[SQL] Database path: {}", db_manager.get_db_path().display());
+    eprintln!(
+        "[SQL] Database path: {}",
+        db_manager.get_db_path().display()
+    );
 
     // クエリをトリムして、空の場合はエラーを返す
     let query = query.trim();
@@ -59,35 +62,30 @@ pub async fn execute_sql(
         .map(|line| line.trim())
         .filter(|line| !line.is_empty() && !line.starts_with("--"))
         .flat_map(|line| line.split_whitespace())
-        .filter(|word| !word.is_empty())
-        .next()
+        .find(|word| !word.is_empty())
         .unwrap_or("")
         .to_uppercase();
 
-    let result =     if query_type == "SELECT"
+    let result = if query_type == "SELECT"
         || query_type == "WITH"
         || query_type == "SHOW"
         || query_type == "DESCRIBE"
         || query_type == "PRAGMA"
     {
         // SELECT系クエリの処理
-        let mut stmt = conn
-            .prepare(&query)
-            .map_err(|e| {
-                eprintln!("[SQL ERROR] Failed to prepare: {}", e);
-                format!("Failed to prepare query: {}", e)
-            })?;
+        let mut stmt = conn.prepare(query).map_err(|e| {
+            eprintln!("[SQL ERROR] Failed to prepare: {}", e);
+            format!("Failed to prepare query: {}", e)
+        })?;
 
         eprintln!("[SQL] Statement prepared successfully");
 
         // クエリを実行してRowsを取得
-        let mut rows = stmt
-            .query([])
-            .map_err(|e| {
-                eprintln!("[SQL ERROR] Failed to execute query: {}", e);
-                format!("Failed to execute query: {}", e)
-            })?;
-        
+        let mut rows = stmt.query([]).map_err(|e| {
+            eprintln!("[SQL ERROR] Failed to execute query: {}", e);
+            format!("Failed to execute query: {}", e)
+        })?;
+
         eprintln!("[SQL] Query executed, collecting rows...");
 
         // カラム情報と行データを収集
@@ -104,93 +102,93 @@ pub async fn execute_sql(
             eprintln!("[SQL] Column count: {}", column_count);
 
             columns = (0..column_count)
-                .filter_map(|i| first_row.as_ref().column_name(i).ok().map(|s| s.to_string()))
+                .filter_map(|i| {
+                    first_row
+                        .as_ref()
+                        .column_name(i)
+                        .ok()
+                        .map(|s| s.to_string())
+                })
                 .collect();
-            
+
             eprintln!("[SQL] Columns: {:?}", columns);
 
             // 最初の行のデータを処理
             let mut row_values = Vec::new();
             for i in 0..column_count {
-                    let value = match first_row.get_ref(i) {
-                        Ok(ValueRef::Null) => serde_json::Value::Null,
-                        Ok(ValueRef::Boolean(b)) => serde_json::Value::Bool(b),
-                        Ok(ValueRef::TinyInt(i)) => serde_json::json!(i),
-                        Ok(ValueRef::SmallInt(i)) => serde_json::json!(i),
-                        Ok(ValueRef::Int(i)) => serde_json::json!(i),
-                        Ok(ValueRef::BigInt(i)) => serde_json::json!(i),
-                        Ok(ValueRef::HugeInt(i)) => serde_json::json!(i),
-                        Ok(ValueRef::UTinyInt(i)) => serde_json::json!(i),
-                        Ok(ValueRef::USmallInt(i)) => serde_json::json!(i),
-                        Ok(ValueRef::UInt(i)) => serde_json::json!(i),
-                        Ok(ValueRef::UBigInt(i)) => serde_json::json!(i),
-                        Ok(ValueRef::Float(f)) => serde_json::json!(f),
-                        Ok(ValueRef::Double(f)) => serde_json::json!(f),
-                        Ok(ValueRef::Decimal(d)) => serde_json::json!(d.to_string()),
-                        Ok(ValueRef::Timestamp(_, _)) => {
-                            // Timestampを文字列に変換
-                            match first_row.get::<_, String>(i) {
-                                Ok(s) => serde_json::Value::String(s),
-                                Err(_) => serde_json::Value::Null,
-                            }
+                let value = match first_row.get_ref(i) {
+                    Ok(ValueRef::Null) => serde_json::Value::Null,
+                    Ok(ValueRef::Boolean(b)) => serde_json::Value::Bool(b),
+                    Ok(ValueRef::TinyInt(i)) => serde_json::json!(i),
+                    Ok(ValueRef::SmallInt(i)) => serde_json::json!(i),
+                    Ok(ValueRef::Int(i)) => serde_json::json!(i),
+                    Ok(ValueRef::BigInt(i)) => serde_json::json!(i),
+                    Ok(ValueRef::HugeInt(i)) => serde_json::json!(i),
+                    Ok(ValueRef::UTinyInt(i)) => serde_json::json!(i),
+                    Ok(ValueRef::USmallInt(i)) => serde_json::json!(i),
+                    Ok(ValueRef::UInt(i)) => serde_json::json!(i),
+                    Ok(ValueRef::UBigInt(i)) => serde_json::json!(i),
+                    Ok(ValueRef::Float(f)) => serde_json::json!(f),
+                    Ok(ValueRef::Double(f)) => serde_json::json!(f),
+                    Ok(ValueRef::Decimal(d)) => serde_json::json!(d.to_string()),
+                    Ok(ValueRef::Timestamp(_, _)) => {
+                        // Timestampを文字列に変換
+                        match first_row.get::<_, String>(i) {
+                            Ok(s) => serde_json::Value::String(s),
+                            Err(_) => serde_json::Value::Null,
                         }
-                        Ok(ValueRef::Text(s)) => {
-                            serde_json::Value::String(String::from_utf8_lossy(s).to_string())
+                    }
+                    Ok(ValueRef::Text(s)) => {
+                        serde_json::Value::String(String::from_utf8_lossy(s).to_string())
+                    }
+                    Ok(ValueRef::Blob(b)) => {
+                        serde_json::Value::String(format!("<BLOB {} bytes>", b.len()))
+                    }
+                    Ok(ValueRef::Date32(_)) => {
+                        // Dateを文字列に変換
+                        match first_row.get::<_, String>(i) {
+                            Ok(s) => serde_json::Value::String(s),
+                            Err(_) => serde_json::Value::Null,
                         }
-                        Ok(ValueRef::Blob(b)) => {
-                            serde_json::Value::String(format!("<BLOB {} bytes>", b.len()))
+                    }
+                    Ok(ValueRef::Time64(_, _)) => {
+                        // Timeを文字列に変換
+                        match first_row.get::<_, String>(i) {
+                            Ok(s) => serde_json::Value::String(s),
+                            Err(_) => serde_json::Value::Null,
                         }
-                        Ok(ValueRef::Date32(_)) => {
-                            // Dateを文字列に変換
-                            match first_row.get::<_, String>(i) {
-                                Ok(s) => serde_json::Value::String(s),
-                                Err(_) => serde_json::Value::Null,
-                            }
+                    }
+                    Ok(ValueRef::Interval { .. }) => {
+                        serde_json::Value::String("<INTERVAL>".to_string())
+                    }
+                    Ok(ValueRef::List(_, _)) => {
+                        // Listを文字列に変換
+                        match first_row.get::<_, String>(i) {
+                            Ok(s) => serde_json::Value::String(s),
+                            Err(_) => serde_json::Value::String("<LIST>".to_string()),
                         }
-                        Ok(ValueRef::Time64(_, _)) => {
-                            // Timeを文字列に変換
-                            match first_row.get::<_, String>(i) {
-                                Ok(s) => serde_json::Value::String(s),
-                                Err(_) => serde_json::Value::Null,
-                            }
+                    }
+                    Ok(ValueRef::Enum(_, _)) => {
+                        // Enumを文字列に変換
+                        match first_row.get::<_, String>(i) {
+                            Ok(s) => serde_json::Value::String(s),
+                            Err(_) => serde_json::Value::String("<ENUM>".to_string()),
                         }
-                        Ok(ValueRef::Interval { .. }) => {
-                            serde_json::Value::String("<INTERVAL>".to_string())
+                    }
+                    Ok(ValueRef::Struct(..)) => {
+                        // Structを文字列に変換
+                        match first_row.get::<_, String>(i) {
+                            Ok(s) => serde_json::Value::String(s),
+                            Err(_) => serde_json::Value::String("<STRUCT>".to_string()),
                         }
-                        Ok(ValueRef::List(_, _)) => {
-                            // Listを文字列に変換
-                            match first_row.get::<_, String>(i) {
-                                Ok(s) => serde_json::Value::String(s),
-                                Err(_) => serde_json::Value::String("<LIST>".to_string()),
-                            }
-                        }
-                        Ok(ValueRef::Enum(_, _)) => {
-                            // Enumを文字列に変換
-                            match first_row.get::<_, String>(i) {
-                                Ok(s) => serde_json::Value::String(s),
-                                Err(_) => serde_json::Value::String("<ENUM>".to_string()),
-                            }
-                        }
-                        Ok(ValueRef::Struct(..)) => {
-                            // Structを文字列に変換
-                            match first_row.get::<_, String>(i) {
-                                Ok(s) => serde_json::Value::String(s),
-                                Err(_) => serde_json::Value::String("<STRUCT>".to_string()),
-                            }
-                        }
-                        Ok(ValueRef::Union(_, _)) => {
-                            serde_json::Value::String("<UNION>".to_string())
-                        }
-                        Ok(ValueRef::Map(_, _)) => {
-                            serde_json::Value::String("<MAP>".to_string())
-                        }
-                        Ok(ValueRef::Array(_, _)) => {
-                            serde_json::Value::String("<ARRAY>".to_string())
-                        }
-                        Err(_) => serde_json::Value::Null,
-                    };
-                    row_values.push(value);
-                }
+                    }
+                    Ok(ValueRef::Union(_, _)) => serde_json::Value::String("<UNION>".to_string()),
+                    Ok(ValueRef::Map(_, _)) => serde_json::Value::String("<MAP>".to_string()),
+                    Ok(ValueRef::Array(_, _)) => serde_json::Value::String("<ARRAY>".to_string()),
+                    Err(_) => serde_json::Value::Null,
+                };
+                row_values.push(value);
+            }
             row_data.push(row_values);
         }
 
@@ -201,85 +199,79 @@ pub async fn execute_sql(
         })? {
             let mut row_values = Vec::new();
             for i in 0..column_count {
-                    let value = match row.get_ref(i) {
-                        Ok(ValueRef::Null) => serde_json::Value::Null,
-                        Ok(ValueRef::Boolean(b)) => serde_json::Value::Bool(b),
-                        Ok(ValueRef::TinyInt(i)) => serde_json::json!(i),
-                        Ok(ValueRef::SmallInt(i)) => serde_json::json!(i),
-                        Ok(ValueRef::Int(i)) => serde_json::json!(i),
-                        Ok(ValueRef::BigInt(i)) => serde_json::json!(i),
-                        Ok(ValueRef::HugeInt(i)) => serde_json::json!(i),
-                        Ok(ValueRef::UTinyInt(i)) => serde_json::json!(i),
-                        Ok(ValueRef::USmallInt(i)) => serde_json::json!(i),
-                        Ok(ValueRef::UInt(i)) => serde_json::json!(i),
-                        Ok(ValueRef::UBigInt(i)) => serde_json::json!(i),
-                        Ok(ValueRef::Float(f)) => serde_json::json!(f),
-                        Ok(ValueRef::Double(f)) => serde_json::json!(f),
-                        Ok(ValueRef::Decimal(d)) => serde_json::json!(d.to_string()),
-                        Ok(ValueRef::Timestamp(_, _)) => {
-                            // Timestampを文字列に変換
-                            match row.get::<_, String>(i) {
-                                Ok(s) => serde_json::Value::String(s),
-                                Err(_) => serde_json::Value::Null,
-                            }
+                let value = match row.get_ref(i) {
+                    Ok(ValueRef::Null) => serde_json::Value::Null,
+                    Ok(ValueRef::Boolean(b)) => serde_json::Value::Bool(b),
+                    Ok(ValueRef::TinyInt(i)) => serde_json::json!(i),
+                    Ok(ValueRef::SmallInt(i)) => serde_json::json!(i),
+                    Ok(ValueRef::Int(i)) => serde_json::json!(i),
+                    Ok(ValueRef::BigInt(i)) => serde_json::json!(i),
+                    Ok(ValueRef::HugeInt(i)) => serde_json::json!(i),
+                    Ok(ValueRef::UTinyInt(i)) => serde_json::json!(i),
+                    Ok(ValueRef::USmallInt(i)) => serde_json::json!(i),
+                    Ok(ValueRef::UInt(i)) => serde_json::json!(i),
+                    Ok(ValueRef::UBigInt(i)) => serde_json::json!(i),
+                    Ok(ValueRef::Float(f)) => serde_json::json!(f),
+                    Ok(ValueRef::Double(f)) => serde_json::json!(f),
+                    Ok(ValueRef::Decimal(d)) => serde_json::json!(d.to_string()),
+                    Ok(ValueRef::Timestamp(_, _)) => {
+                        // Timestampを文字列に変換
+                        match row.get::<_, String>(i) {
+                            Ok(s) => serde_json::Value::String(s),
+                            Err(_) => serde_json::Value::Null,
                         }
-                        Ok(ValueRef::Text(s)) => {
-                            serde_json::Value::String(String::from_utf8_lossy(s).to_string())
+                    }
+                    Ok(ValueRef::Text(s)) => {
+                        serde_json::Value::String(String::from_utf8_lossy(s).to_string())
+                    }
+                    Ok(ValueRef::Blob(b)) => {
+                        serde_json::Value::String(format!("<BLOB {} bytes>", b.len()))
+                    }
+                    Ok(ValueRef::Date32(_)) => {
+                        // Dateを文字列に変換
+                        match row.get::<_, String>(i) {
+                            Ok(s) => serde_json::Value::String(s),
+                            Err(_) => serde_json::Value::Null,
                         }
-                        Ok(ValueRef::Blob(b)) => {
-                            serde_json::Value::String(format!("<BLOB {} bytes>", b.len()))
+                    }
+                    Ok(ValueRef::Time64(_, _)) => {
+                        // Timeを文字列に変換
+                        match row.get::<_, String>(i) {
+                            Ok(s) => serde_json::Value::String(s),
+                            Err(_) => serde_json::Value::Null,
                         }
-                        Ok(ValueRef::Date32(_)) => {
-                            // Dateを文字列に変換
-                            match row.get::<_, String>(i) {
-                                Ok(s) => serde_json::Value::String(s),
-                                Err(_) => serde_json::Value::Null,
-                            }
+                    }
+                    Ok(ValueRef::Interval { .. }) => {
+                        serde_json::Value::String("<INTERVAL>".to_string())
+                    }
+                    Ok(ValueRef::List(_, _)) => {
+                        // Listを文字列に変換
+                        match row.get::<_, String>(i) {
+                            Ok(s) => serde_json::Value::String(s),
+                            Err(_) => serde_json::Value::String("<LIST>".to_string()),
                         }
-                        Ok(ValueRef::Time64(_, _)) => {
-                            // Timeを文字列に変換
-                            match row.get::<_, String>(i) {
-                                Ok(s) => serde_json::Value::String(s),
-                                Err(_) => serde_json::Value::Null,
-                            }
+                    }
+                    Ok(ValueRef::Enum(_, _)) => {
+                        // Enumを文字列に変換
+                        match row.get::<_, String>(i) {
+                            Ok(s) => serde_json::Value::String(s),
+                            Err(_) => serde_json::Value::String("<ENUM>".to_string()),
                         }
-                        Ok(ValueRef::Interval { .. }) => {
-                            serde_json::Value::String("<INTERVAL>".to_string())
+                    }
+                    Ok(ValueRef::Struct(..)) => {
+                        // Structを文字列に変換
+                        match row.get::<_, String>(i) {
+                            Ok(s) => serde_json::Value::String(s),
+                            Err(_) => serde_json::Value::String("<STRUCT>".to_string()),
                         }
-                        Ok(ValueRef::List(_, _)) => {
-                            // Listを文字列に変換
-                            match row.get::<_, String>(i) {
-                                Ok(s) => serde_json::Value::String(s),
-                                Err(_) => serde_json::Value::String("<LIST>".to_string()),
-                            }
-                        }
-                        Ok(ValueRef::Enum(_, _)) => {
-                            // Enumを文字列に変換
-                            match row.get::<_, String>(i) {
-                                Ok(s) => serde_json::Value::String(s),
-                                Err(_) => serde_json::Value::String("<ENUM>".to_string()),
-                            }
-                        }
-                        Ok(ValueRef::Struct(..)) => {
-                            // Structを文字列に変換
-                            match row.get::<_, String>(i) {
-                                Ok(s) => serde_json::Value::String(s),
-                                Err(_) => serde_json::Value::String("<STRUCT>".to_string()),
-                            }
-                        }
-                        Ok(ValueRef::Union(_, _)) => {
-                            serde_json::Value::String("<UNION>".to_string())
-                        }
-                        Ok(ValueRef::Map(_, _)) => {
-                            serde_json::Value::String("<MAP>".to_string())
-                        }
-                        Ok(ValueRef::Array(_, _)) => {
-                            serde_json::Value::String("<ARRAY>".to_string())
-                        }
-                        Err(_) => serde_json::Value::Null,
-                    };
-                    row_values.push(value);
-                }
+                    }
+                    Ok(ValueRef::Union(_, _)) => serde_json::Value::String("<UNION>".to_string()),
+                    Ok(ValueRef::Map(_, _)) => serde_json::Value::String("<MAP>".to_string()),
+                    Ok(ValueRef::Array(_, _)) => serde_json::Value::String("<ARRAY>".to_string()),
+                    Err(_) => serde_json::Value::Null,
+                };
+                row_values.push(value);
+            }
             row_data.push(row_values);
         }
 
@@ -301,7 +293,7 @@ pub async fn execute_sql(
     } else {
         // INSERT/UPDATE/DELETE/CREATE/DROP等の処理
         let affected = conn
-            .execute(&query, &[] as &[&dyn duckdb::ToSql])
+            .execute(query, &[] as &[&dyn duckdb::ToSql])
             .map_err(|e| format!("Failed to execute query: {}", e))?;
 
         let execution_time = start_time.elapsed().as_millis();
@@ -491,7 +483,8 @@ pub async fn list_database_tables(
     let mut tables = Vec::new();
     for table_name in table_names {
         // カラム数を取得
-        let column_count_query = format!("SELECT COUNT(*) FROM pragma_table_info('{}')", table_name);
+        let column_count_query =
+            format!("SELECT COUNT(*) FROM pragma_table_info('{}')", table_name);
         let mut stmt = conn
             .prepare(&column_count_query)
             .map_err(|e| format!("Failed to prepare column count query: {}", e))?;

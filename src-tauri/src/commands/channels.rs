@@ -31,7 +31,7 @@ pub async fn add_channel(
     let poll_interval = request.poll_interval.unwrap_or(60);
 
     let poll_interval_str = poll_interval.to_string();
-    
+
     // パラメータを準備
     let mut sql_parts = vec!["platform", "channel_id", "channel_name", "poll_interval"];
     let mut sql_values = vec!["?", "?", "?", "?"];
@@ -74,13 +74,69 @@ pub async fn add_channel(
 
     // DuckDBのparamsは固定サイズの配列しか受け付けないため、動的にSQLを実行
     let channel_id: i64 = match params.len() {
-        4 => conn.query_row(&sql, [params[0].as_str(), params[1].as_str(), params[2].as_str(), params[3].as_str()], |row| row.get(0)),
-        5 => conn.query_row(&sql, [params[0].as_str(), params[1].as_str(), params[2].as_str(), params[3].as_str(), params[4].as_str()], |row| row.get(0)),
-        6 => conn.query_row(&sql, [params[0].as_str(), params[1].as_str(), params[2].as_str(), params[3].as_str(), params[4].as_str(), params[5].as_str()], |row| row.get(0)),
-        7 => conn.query_row(&sql, [params[0].as_str(), params[1].as_str(), params[2].as_str(), params[3].as_str(), params[4].as_str(), params[5].as_str(), params[6].as_str()], |row| row.get(0)),
-        8 => conn.query_row(&sql, [params[0].as_str(), params[1].as_str(), params[2].as_str(), params[3].as_str(), params[4].as_str(), params[5].as_str(), params[6].as_str(), params[7].as_str()], |row| row.get(0)),
+        4 => conn.query_row(
+            &sql,
+            [
+                params[0].as_str(),
+                params[1].as_str(),
+                params[2].as_str(),
+                params[3].as_str(),
+            ],
+            |row| row.get(0),
+        ),
+        5 => conn.query_row(
+            &sql,
+            [
+                params[0].as_str(),
+                params[1].as_str(),
+                params[2].as_str(),
+                params[3].as_str(),
+                params[4].as_str(),
+            ],
+            |row| row.get(0),
+        ),
+        6 => conn.query_row(
+            &sql,
+            [
+                params[0].as_str(),
+                params[1].as_str(),
+                params[2].as_str(),
+                params[3].as_str(),
+                params[4].as_str(),
+                params[5].as_str(),
+            ],
+            |row| row.get(0),
+        ),
+        7 => conn.query_row(
+            &sql,
+            [
+                params[0].as_str(),
+                params[1].as_str(),
+                params[2].as_str(),
+                params[3].as_str(),
+                params[4].as_str(),
+                params[5].as_str(),
+                params[6].as_str(),
+            ],
+            |row| row.get(0),
+        ),
+        8 => conn.query_row(
+            &sql,
+            [
+                params[0].as_str(),
+                params[1].as_str(),
+                params[2].as_str(),
+                params[3].as_str(),
+                params[4].as_str(),
+                params[5].as_str(),
+                params[6].as_str(),
+                params[7].as_str(),
+            ],
+            |row| row.get(0),
+        ),
         _ => return Err(format!("Invalid number of parameters: {}", params.len())),
-    }.map_err(|e| format!("Failed to insert channel: {}", e))?;
+    }
+    .map_err(|e| format!("Failed to insert channel: {}", e))?;
 
     let channel = get_channel_by_id(&conn, channel_id)
         .ok_or_else(|| "Failed to retrieve created channel".to_string())?;
@@ -181,7 +237,9 @@ pub async fn update_channel(
             let mut poller = poller.lock().await;
             if enabled && !old_channel.enabled {
                 // 無効→有効になった場合、ポーリングを開始
-                if let Err(e) = poller.start_polling(updated_channel.clone(), &db_manager, app_handle.clone()) {
+                if let Err(e) =
+                    poller.start_polling(updated_channel.clone(), &db_manager, app_handle.clone())
+                {
                     eprintln!("Failed to start polling for updated channel {}: {}", id, e);
                 }
             } else if !enabled && old_channel.enabled {
@@ -262,7 +320,9 @@ pub async fn toggle_channel(
         let mut poller = poller.lock().await;
         if new_enabled {
             // 有効化された場合、ポーリングを開始
-            if let Err(e) = poller.start_polling(updated_channel.clone(), &db_manager, app_handle.clone()) {
+            if let Err(e) =
+                poller.start_polling(updated_channel.clone(), &db_manager, app_handle.clone())
+            {
                 eprintln!("Failed to start polling for channel {}: {}", id, e);
             }
         } else {

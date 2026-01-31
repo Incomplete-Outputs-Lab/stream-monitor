@@ -41,7 +41,7 @@ pub struct StreamStats {
 /// Combined stream data returned by collectors
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamData {
-    pub stream_id: String,           // Platform-specific stream ID
+    pub stream_id: String, // Platform-specific stream ID
     pub title: Option<String>,
     pub category: Option<String>,
     pub thumbnail_url: Option<String>,

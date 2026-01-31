@@ -26,14 +26,21 @@ impl TwitchCollector {
     }
 
     /// Create a new TwitchCollector with AppHandle for Stronghold access
-    pub fn new_with_app(client_id: String, client_secret: Option<String>, app_handle: tauri::AppHandle) -> Self {
+    pub fn new_with_app(
+        client_id: String,
+        client_secret: Option<String>,
+        app_handle: tauri::AppHandle,
+    ) -> Self {
         Self {
-            api_client: Arc::new(TwitchApiClient::new(client_id, client_secret).with_app_handle(app_handle)),
+            api_client: Arc::new(
+                TwitchApiClient::new(client_id, client_secret).with_app_handle(app_handle),
+            ),
             irc_manager: Arc::new(Mutex::new(None)),
         }
     }
 
-    async fn get_client_id_and_secret() -> Result<(String, Option<String>), Box<dyn std::error::Error>> {
+    async fn get_client_id_and_secret(
+    ) -> Result<(String, Option<String>), Box<dyn std::error::Error>> {
         // TODO: 設定から取得する
         // 現時点では環境変数または設定ファイルから取得する必要がある
         let client_id =

@@ -26,7 +26,7 @@ impl DatabaseWriter {
         if let Some(id) = existing_id {
             // 更新
             let ended_at_value = stream.ended_at.as_deref();
-            
+
             conn.execute(
                 "UPDATE streams SET title = ?, category = ?, ended_at = ? WHERE id = ?",
                 duckdb::params![
@@ -41,7 +41,7 @@ impl DatabaseWriter {
             // 挿入 - DuckDBではRETURNING句を使用してINSERTと同時にIDを取得
             // ended_atはOptionなので、Noneの場合はNULLとして扱う
             let ended_at_value = stream.ended_at.as_deref();
-            
+
             let id: i64 = conn.query_row(
                 "INSERT INTO streams (channel_id, stream_id, title, category, started_at, ended_at) 
                  VALUES (?, ?, ?, ?, ?, ?) RETURNING id",

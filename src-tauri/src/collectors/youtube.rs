@@ -63,30 +63,21 @@ impl Collector for YouTubeCollector {
             let stream_id = video.id.as_ref().unwrap_or(&String::new()).clone();
 
             // サムネイルURLを取得（高解像度優先）
-            let thumbnail_url = video
-                .snippet
-                .as_ref()
-                .and_then(|snippet| {
-                    snippet.thumbnails.as_ref().and_then(|thumbs| {
-                        thumbs
-                            .maxres
-                            .as_ref()
-                            .or(thumbs.high.as_ref())
-                            .or(thumbs.medium.as_ref())
-                            .and_then(|thumb| thumb.url.clone())
-                    })
-                });
+            let thumbnail_url = video.snippet.as_ref().and_then(|snippet| {
+                snippet.thumbnails.as_ref().and_then(|thumbs| {
+                    thumbs
+                        .maxres
+                        .as_ref()
+                        .or(thumbs.high.as_ref())
+                        .or(thumbs.medium.as_ref())
+                        .and_then(|thumb| thumb.url.clone())
+                })
+            });
 
             Ok(Some(StreamData {
                 stream_id,
-                title: video
-                    .snippet
-                    .as_ref()
-                    .and_then(|s| s.title.clone()),
-                category: video
-                    .snippet
-                    .as_ref()
-                    .and_then(|s| s.category_id.clone()),
+                title: video.snippet.as_ref().and_then(|s| s.title.clone()),
+                category: video.snippet.as_ref().and_then(|s| s.category_id.clone()),
                 thumbnail_url,
                 started_at,
                 viewer_count,

@@ -53,11 +53,10 @@ jobs:
           cmake --version || echo "CMake not found, will use bundled"
           cl 2>&1 | head -n 1 || echo "MSVC not found, check environment"
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: 'lts/*'
-          cache: 'npm'
+          bun-version: latest
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -76,7 +75,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Install frontend dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Build and release Tauri app
         uses: tauri-apps/tauri-action@v1

@@ -45,7 +45,11 @@ pub struct OAuthConfigResponse {
 }
 
 #[tauri::command]
-pub async fn save_token(app_handle: AppHandle, platform: String, token: String) -> Result<TokenResponse, String> {
+pub async fn save_token(
+    app_handle: AppHandle,
+    platform: String,
+    token: String,
+) -> Result<TokenResponse, String> {
     KeyringStore::save_token_with_app(&app_handle, &platform, &token)
         .map_err(|e| format!("Failed to save token: {}", e))?;
 
@@ -62,7 +66,10 @@ pub async fn get_token(app_handle: AppHandle, platform: String) -> Result<String
 }
 
 #[tauri::command]
-pub async fn delete_token(app_handle: AppHandle, platform: String) -> Result<TokenResponse, String> {
+pub async fn delete_token(
+    app_handle: AppHandle,
+    platform: String,
+) -> Result<TokenResponse, String> {
     KeyringStore::delete_token_with_app(&app_handle, &platform)
         .map_err(|e| format!("Failed to delete token: {}", e))?;
 
@@ -85,7 +92,10 @@ pub async fn verify_token(app_handle: AppHandle, platform: String) -> Result<boo
 }
 
 #[tauri::command]
-pub async fn get_oauth_config(app_handle: AppHandle, platform: String) -> Result<OAuthConfig, String> {
+pub async fn get_oauth_config(
+    app_handle: AppHandle,
+    platform: String,
+) -> Result<OAuthConfig, String> {
     // 設定ファイルからClient IDを取得
     let settings = SettingsManager::load_settings(&app_handle)
         .map_err(|e| format!("Failed to load settings: {}", e))?;
@@ -152,7 +162,10 @@ pub async fn save_oauth_config(
 }
 
 #[tauri::command]
-pub async fn delete_oauth_config(app_handle: AppHandle, platform: String) -> Result<OAuthConfigResponse, String> {
+pub async fn delete_oauth_config(
+    app_handle: AppHandle,
+    platform: String,
+) -> Result<OAuthConfigResponse, String> {
     // 現在の設定を読み込み
     let mut settings = SettingsManager::load_settings(&app_handle)
         .map_err(|e| format!("Failed to load settings: {}", e))?;
@@ -201,7 +214,8 @@ pub async fn has_oauth_config(app_handle: AppHandle, platform: String) -> Result
     match platform.as_str() {
         "twitch" => Ok(has_client_id),
         "youtube" => {
-            let has_client_secret = KeyringStore::get_oauth_secret_with_app(&app_handle, &platform).is_ok();
+            let has_client_secret =
+                KeyringStore::get_oauth_secret_with_app(&app_handle, &platform).is_ok();
             Ok(has_client_id && has_client_secret)
         }
         _ => Err(format!("Unsupported platform: {}", platform)),

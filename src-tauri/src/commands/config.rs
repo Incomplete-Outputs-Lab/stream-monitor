@@ -98,10 +98,7 @@ pub async fn get_oauth_config(app_handle: AppHandle, platform: String) -> Result
 
     // YouTubeの場合のみStrongholdからClient Secretを取得（TwitchはDevice Code Flowでクライアント Secret不要）
     let client_secret = if platform == "youtube" {
-        match StrongholdStore::get_oauth_secret(&platform) {
-            Ok(secret) => Some(secret),
-            Err(_) => None, // Secretが存在しない場合はNone
-        }
+        StrongholdStore::get_oauth_secret(&platform).ok()
     } else {
         None
     };

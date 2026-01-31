@@ -118,28 +118,4 @@ impl TwitchCollector {
         //     irc_manager.stop_channel_collection(channel_name).await;
         // }
     }
-
-    /// チャンネル情報を取得（フォロワー数、配信者タイプなど）
-    pub async fn get_channel_info(
-        &self,
-        channel_id: &str,
-    ) -> Result<(Option<i32>, Option<String>, Option<i32>), Box<dyn std::error::Error>> {
-        // ユーザー情報を取得
-        let user = self.api_client.get_user_by_login(channel_id).await?;
-        
-        // フォロワー数を取得
-        let follower_count = match self.api_client.get_followers_count(user.id.as_str()).await {
-            Ok(count) => Some(count),
-            Err(e) => {
-                eprintln!("Failed to get follower count: {}", e);
-                None
-            }
-        };
-
-        // broadcaster_typeをUserから取得
-        let broadcaster_type = user.broadcaster_type.map(|bt| format!("{:?}", bt).to_lowercase());
-
-        // view_countは取得しない（deprecated）
-        Ok((follower_count, broadcaster_type, None))
-    }
 }

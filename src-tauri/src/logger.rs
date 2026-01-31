@@ -77,10 +77,6 @@ impl AppLogger {
     pub fn error(&self, message: &str) {
         self.log("ERROR", message);
     }
-
-    pub fn warn(&self, message: &str) {
-        self.log("WARN", message);
-    }
 }
 
 impl Clone for AppLogger {

@@ -3,7 +3,6 @@ use crate::oauth::twitch::TwitchOAuth;
 use std::sync::Arc;
 use twitch_api::{
     helix::{
-        channels::{GetChannelFollowersRequest, GetChannelInformationRequest},
         streams::{GetStreamsRequest, Stream},
         users::{GetUsersRequest, User},
         HelixClient,
@@ -156,68 +155,6 @@ impl TwitchApiClient {
                     
                     let response = self.client.req_get(GetStreamsRequest::user_ids(user_id_refs), &refreshed_token).await?;
                     Ok(response.data.into_iter().next())
-                } else {
-                    Err(e.into())
-                }
-            }
-        }
-    }
-
-    pub async fn get_followers_count(
-        &self,
-        broadcaster_id: &str,
-    ) -> Result<i32, Box<dyn std::error::Error>> {
-        let token = self.get_user_token().await?;
-
-        let broadcaster_id_ref: &types::UserIdRef = broadcaster_id.into();
-        let request = GetChannelFollowersRequest::broadcaster_id(broadcaster_id_ref);
-
-        match self.client.req_get(request, &token).await {
-            Ok(response) => Ok(response.total.unwrap_or(0) as i32),
-            Err(e) => {
-                // 401エラーの場合、トークンをリフレッシュして再試行
-                if e.to_string().contains("401") || e.to_string().contains("Unauthorized") {
-                    eprintln!("Token expired, attempting refresh...");
-                    let _new_token = self.refresh_token().await?;
-                    let refreshed_token = self.get_user_token().await?;
-                    
-                    let response = self.client.req_get(GetChannelFollowersRequest::broadcaster_id(broadcaster_id_ref), &refreshed_token).await?;
-                    Ok(response.total.unwrap_or(0) as i32)
-                } else {
-                    Err(e.into())
-                }
-            }
-        }
-    }
-
-    pub async fn get_channel_information(
-        &self,
-        broadcaster_id: &str,
-    ) -> Result<twitch_api::helix::channels::ChannelInformation, Box<dyn std::error::Error>> {
-        let token = self.get_user_token().await?;
-
-        let broadcaster_id_refs: &[&types::UserIdRef] = &[broadcaster_id.into()];
-        let request = GetChannelInformationRequest::broadcaster_ids(broadcaster_id_refs);
-
-        match self.client.req_get(request, &token).await {
-            Ok(response) => response
-                .data
-                .into_iter()
-                .next()
-                .ok_or_else(|| "Channel information not found".into()),
-            Err(e) => {
-                // 401エラーの場合、トークンをリフレッシュして再試行
-                if e.to_string().contains("401") || e.to_string().contains("Unauthorized") {
-                    eprintln!("Token expired, attempting refresh...");
-                    let _new_token = self.refresh_token().await?;
-                    let refreshed_token = self.get_user_token().await?;
-                    
-                    let response = self.client.req_get(GetChannelInformationRequest::broadcaster_ids(broadcaster_id_refs), &refreshed_token).await?;
-                    response
-                        .data
-                        .into_iter()
-                        .next()
-                        .ok_or_else(|| "Channel information not found".into())
                 } else {
                     Err(e.into())
                 }

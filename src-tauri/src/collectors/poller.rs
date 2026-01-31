@@ -279,50 +279,6 @@ impl ChannelPoller {
         }
     }
 
-    /// チャンネル情報を更新する
-    fn update_channel_info(
-        conn: &Connection,
-        channel_id: i64,
-        follower_count: Option<i32>,
-        broadcaster_type: Option<String>,
-        view_count: Option<i32>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut params: Vec<String> = Vec::new();
-        let mut sql_parts: Vec<String> = Vec::new();
-
-        if let Some(count) = follower_count {
-            sql_parts.push("follower_count = ?".to_string());
-            params.push(count.to_string());
-        }
-
-        if let Some(btype) = broadcaster_type {
-            sql_parts.push("broadcaster_type = ?".to_string());
-            params.push(btype);
-        }
-
-        if let Some(vcount) = view_count {
-            sql_parts.push("view_count = ?".to_string());
-            params.push(vcount.to_string());
-        }
-
-        if sql_parts.is_empty() {
-            return Ok(());
-        }
-
-        sql_parts.push("updated_at = CURRENT_TIMESTAMP".to_string());
-
-        let sql = format!(
-            "UPDATE channels SET {} WHERE id = ?",
-            sql_parts.join(", ")
-        );
-        params.push(channel_id.to_string());
-
-        let params_refs: Vec<&dyn duckdb::ToSql> = params.iter().map(|s| s as &dyn duckdb::ToSql).collect();
-        conn.execute(&sql, params_refs.as_slice())?;
-
-        Ok(())
-    }
-
     /// ストリーム統計情報をデータベースに保存する
     fn save_stream_data(
         conn: &Connection,

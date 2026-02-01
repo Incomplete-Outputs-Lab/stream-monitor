@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import { useState, useMemo, useEffect } from "react";
+import { useState } from "react";
 import { Channel, ChannelWithStats } from "../../types";
 import { ChannelForm } from "./ChannelForm";
 import { ChannelEditForm } from "./ChannelEditForm";
@@ -14,53 +13,12 @@ export function ChannelList() {
 
   const queryClient = useQueryClient();
 
-  // Tauriイベントリスナー: チャンネル統計更新を監視
-  useEffect(() => {
-    const unlisten = listen<{ channel_id: number; is_live: boolean; viewer_count?: number; title?: string }>(
-      'channel-stats-updated',
-      (event) => {
-        console.log('Channel stats updated:', event.payload);
-        // ライブチャンネルキャッシュを無効化して再取得
-        queryClient.invalidateQueries({ queryKey: ["live-channels"] });
-      }
-    );
-
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [queryClient]);
-
   // チャンネル取得
-  const { data: fetchedChannels = [], isLoading } = useQuery({
+  const { data: channels = [], isLoading } = useQuery({
     queryKey: ["channels"],
     queryFn: () => invoke<Channel[]>("list_channels"),
-  });
-
-  // ライブ状態の取得
-  const { data: liveChannels = [] } = useQuery({
-    queryKey: ["live-channels"],
-    queryFn: async () => {
-      const result = await invoke<ChannelWithStats[]>("get_live_channels");
-      return result;
-    },
     refetchInterval: 30000, // 30秒ごとに更新
   });
-
-  // チャンネルとライブ状態を統合
-  const channelsWithStats = useMemo<ChannelWithStats[]>(() => {
-    return fetchedChannels.map(channel => {
-      const liveData = liveChannels.find(lc => lc.id === channel.id);
-      if (liveData) {
-        return liveData;
-      }
-      return {
-        ...channel,
-        is_live: false,
-        current_viewers: undefined,
-        current_title: undefined,
-      };
-    });
-  }, [fetchedChannels, liveChannels]);
 
   // チャンネル削除ミューテーション
   const deleteMutation = useMutation({
@@ -69,7 +27,6 @@ export function ChannelList() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
-      queryClient.invalidateQueries({ queryKey: ["live-channels"] });
     },
   });
 
@@ -103,7 +60,7 @@ export function ChannelList() {
   };
 
   // フィルタリングされたチャンネル
-  const filteredChannels = channelsWithStats.filter(channel => {
+  const filteredChannels = channels.filter(channel => {
     if (filter === 'all') return true;
     return channel.platform === filter;
   });
@@ -129,7 +86,7 @@ export function ChannelList() {
     setEditingChannel(null);
   };
 
-  if (isLoading && fetchedChannels.length === 0) {
+  if (isLoading && channels.length === 0) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
@@ -166,7 +123,7 @@ export function ChannelList() {
               : 'bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 border border-gray-200 dark:border-slate-600'
           }`}
         >
-          すべて ({fetchedChannels.length})
+          すべて ({channels.length})
         </button>
         <button
           onClick={() => setFilter('twitch')}
@@ -176,7 +133,7 @@ export function ChannelList() {
               : 'bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 border border-gray-200 dark:border-slate-600'
           }`}
         >
-          🎮 Twitch ({fetchedChannels.filter(c => c.platform === 'twitch').length})
+          🎮 Twitch ({channels.filter(c => c.platform === 'twitch').length})
         </button>
         <button
           onClick={() => setFilter('youtube')}
@@ -186,7 +143,7 @@ export function ChannelList() {
               : 'bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 border border-gray-200 dark:border-slate-600'
           }`}
         >
-          ▶️ YouTube ({fetchedChannels.filter(c => c.platform === 'youtube').length})
+          ▶️ YouTube ({channels.filter(c => c.platform === 'youtube').length})
         </button>
       </div>
 
@@ -229,7 +186,7 @@ export function ChannelList() {
           </div>
         ) : (
           filteredChannels.map((channel, index) => (
-            <div key={`${channel.platform}-${channel.channel_id}`} style={{ animationDelay: `${index * 0.05}s` }} className="animate-fade-in">
+            <div key={channel.id ?? `${channel.platform}-${channel.channel_id}-${index}`} style={{ animationDelay: `${index * 0.05}s` }} className="animate-fade-in">
               <ChannelItem
                 channel={channel}
                 onEdit={handleEditChannel}

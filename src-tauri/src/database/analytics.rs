@@ -70,20 +70,21 @@ pub fn get_broadcaster_analytics(
         r#"
         WITH stats_with_interval AS (
             SELECT 
-                s.channel_id,
-                c.channel_name,
+                COALESCE(s.channel_id, c.id) as channel_id,
+                COALESCE(c.channel_name, ss.channel_name) as channel_name,
                 ss.stream_id,
                 ss.viewer_count,
                 ss.category,
                 ss.chat_rate_1min,
                 ss.collected_at,
+                ss.twitch_user_id,
                 EXTRACT(EPOCH FROM (
-                    LEAD(ss.collected_at) OVER (PARTITION BY ss.stream_id ORDER BY ss.collected_at) 
+                    LEAD(ss.collected_at) OVER (PARTITION BY COALESCE(CAST(ss.stream_id AS VARCHAR), ss.twitch_user_id || '_' || CAST(DATE(ss.collected_at) AS VARCHAR)) ORDER BY ss.collected_at) 
                     - ss.collected_at
                 )) / 60.0 AS interval_minutes
             FROM stream_stats ss
-            JOIN streams s ON ss.stream_id = s.id
-            JOIN channels c ON s.channel_id = c.id
+            LEFT JOIN streams s ON ss.stream_id = s.id
+            LEFT JOIN channels c ON (s.channel_id = c.id OR (ss.twitch_user_id = c.channel_id AND c.platform = 'twitch'))
             WHERE 1=1
         "#,
     );
@@ -91,7 +92,7 @@ pub fn get_broadcaster_analytics(
     let mut params: Vec<String> = Vec::new();
 
     if let Some(ch_id) = channel_id {
-        sql.push_str(" AND s.channel_id = ?");
+        sql.push_str(" AND COALESCE(s.channel_id, c.id) = ?");
         params.push(ch_id.to_string());
     }
 
@@ -270,13 +271,16 @@ fn get_category_minutes_watched(
                 ss.category,
                 ss.viewer_count,
                 ss.collected_at,
+                ss.stream_id,
+                ss.twitch_user_id,
                 EXTRACT(EPOCH FROM (
-                    LEAD(ss.collected_at) OVER (PARTITION BY ss.stream_id ORDER BY ss.collected_at) 
+                    LEAD(ss.collected_at) OVER (PARTITION BY COALESCE(CAST(ss.stream_id AS VARCHAR), ss.twitch_user_id || '_' || CAST(DATE(ss.collected_at) AS VARCHAR)) ORDER BY ss.collected_at) 
                     - ss.collected_at
                 )) / 60.0 AS interval_minutes
             FROM stream_stats ss
-            JOIN streams s ON ss.stream_id = s.id
-            WHERE s.channel_id = ?
+            LEFT JOIN streams s ON ss.stream_id = s.id
+            LEFT JOIN channels c ON (s.channel_id = c.id OR (ss.twitch_user_id = c.channel_id AND c.platform = 'twitch'))
+            WHERE COALESCE(s.channel_id, c.id) = ?
         "#,
     );
 
@@ -329,18 +333,20 @@ pub fn get_game_analytics(
         r#"
         WITH stats_with_interval AS (
             SELECT 
-                s.channel_id,
-                c.channel_name,
+                COALESCE(s.channel_id, c.id) as channel_id,
+                COALESCE(c.channel_name, ss.channel_name) as channel_name,
                 ss.category,
                 ss.viewer_count,
                 ss.collected_at,
+                ss.stream_id,
+                ss.twitch_user_id,
                 EXTRACT(EPOCH FROM (
-                    LEAD(ss.collected_at) OVER (PARTITION BY ss.stream_id ORDER BY ss.collected_at) 
+                    LEAD(ss.collected_at) OVER (PARTITION BY COALESCE(CAST(ss.stream_id AS VARCHAR), ss.twitch_user_id || '_' || CAST(DATE(ss.collected_at) AS VARCHAR)) ORDER BY ss.collected_at) 
                     - ss.collected_at
                 )) / 60.0 AS interval_minutes
             FROM stream_stats ss
-            JOIN streams s ON ss.stream_id = s.id
-            JOIN channels c ON s.channel_id = c.id
+            LEFT JOIN streams s ON ss.stream_id = s.id
+            LEFT JOIN channels c ON (s.channel_id = c.id OR (ss.twitch_user_id = c.channel_id AND c.platform = 'twitch'))
             WHERE ss.category IS NOT NULL
         "#,
     );
@@ -429,8 +435,11 @@ pub fn list_categories(
             SELECT 
                 ss.category,
                 ss.viewer_count,
+                ss.stream_id,
+                ss.twitch_user_id,
+                ss.collected_at,
                 EXTRACT(EPOCH FROM (
-                    LEAD(ss.collected_at) OVER (PARTITION BY ss.stream_id ORDER BY ss.collected_at) 
+                    LEAD(ss.collected_at) OVER (PARTITION BY COALESCE(CAST(ss.stream_id AS VARCHAR), ss.twitch_user_id || '_' || CAST(DATE(ss.collected_at) AS VARCHAR)) ORDER BY ss.collected_at) 
                     - ss.collected_at
                 )) / 60.0 AS interval_minutes
             FROM stream_stats ss
@@ -482,15 +491,17 @@ fn get_top_channel_for_category(
         r#"
         WITH stats_with_interval AS (
             SELECT 
-                c.channel_name,
+                COALESCE(c.channel_name, ss.channel_name) as channel_name,
                 ss.viewer_count,
+                ss.stream_id,
+                ss.twitch_user_id,
                 EXTRACT(EPOCH FROM (
-                    LEAD(ss.collected_at) OVER (PARTITION BY ss.stream_id ORDER BY ss.collected_at) 
+                    LEAD(ss.collected_at) OVER (PARTITION BY COALESCE(CAST(ss.stream_id AS VARCHAR), ss.twitch_user_id || '_' || CAST(DATE(ss.collected_at) AS VARCHAR)) ORDER BY ss.collected_at) 
                     - ss.collected_at
                 )) / 60.0 AS interval_minutes
             FROM stream_stats ss
-            JOIN streams s ON ss.stream_id = s.id
-            JOIN channels c ON s.channel_id = c.id
+            LEFT JOIN streams s ON ss.stream_id = s.id
+            LEFT JOIN channels c ON (s.channel_id = c.id OR (ss.twitch_user_id = c.channel_id AND c.platform = 'twitch'))
             WHERE ss.category = ?
         "#,
     );
@@ -582,13 +593,13 @@ pub fn get_game_daily_stats(
                 DATE(ss.collected_at) as date,
                 ss.viewer_count,
                 ss.stream_id,
+                ss.twitch_user_id,
                 EXTRACT(EPOCH FROM (
-                    LEAD(ss.collected_at) OVER (PARTITION BY ss.stream_id ORDER BY ss.collected_at) 
+                    LEAD(ss.collected_at) OVER (PARTITION BY COALESCE(CAST(ss.stream_id AS VARCHAR), ss.twitch_user_id || '_' || CAST(DATE(ss.collected_at) AS VARCHAR)) ORDER BY ss.collected_at) 
                     - ss.collected_at
                 )) / 60.0 AS interval_minutes,
                 ss.collected_at
             FROM stream_stats ss
-            JOIN streams s ON ss.stream_id = s.id
             WHERE ss.category = ?
                 AND ss.collected_at >= ?
                 AND ss.collected_at <= ?
@@ -657,14 +668,16 @@ pub fn get_channel_daily_stats(
                 DATE(ss.collected_at) as date,
                 ss.viewer_count,
                 ss.stream_id,
+                ss.twitch_user_id,
                 EXTRACT(EPOCH FROM (
-                    LEAD(ss.collected_at) OVER (PARTITION BY ss.stream_id ORDER BY ss.collected_at) 
+                    LEAD(ss.collected_at) OVER (PARTITION BY COALESCE(CAST(ss.stream_id AS VARCHAR), ss.twitch_user_id || '_' || CAST(DATE(ss.collected_at) AS VARCHAR)) ORDER BY ss.collected_at) 
                     - ss.collected_at
                 )) / 60.0 AS interval_minutes,
                 ss.collected_at
             FROM stream_stats ss
-            JOIN streams s ON ss.stream_id = s.id
-            WHERE s.channel_id = ?
+            LEFT JOIN streams s ON ss.stream_id = s.id
+            LEFT JOIN channels c ON (s.channel_id = c.id OR (ss.twitch_user_id = c.channel_id AND c.platform = 'twitch'))
+            WHERE COALESCE(s.channel_id, c.id) = ?
                 AND ss.collected_at >= ?
                 AND ss.collected_at <= ?
         ),

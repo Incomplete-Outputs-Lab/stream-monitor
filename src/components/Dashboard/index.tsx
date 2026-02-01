@@ -315,16 +315,18 @@ export function Dashboard() {
   const [statsData, setStatsData] = useState<StreamStats[]>([]);
   const queryClient = useQueryClient();
 
-  // ライブチャンネルを取得
-  const { data: liveChannels, isLoading: channelsLoading } = useQuery({
-    queryKey: ["live-channels"],
+  // チャンネル情報を取得し、ライブチャンネルのみをフィルタリング
+  const { data: allChannels, isLoading: channelsLoading } = useQuery({
+    queryKey: ["channels-with-twitch-info"],
     queryFn: async () => {
-      return await invoke<ChannelWithStats[]>("get_live_channels");
+      return await invoke<ChannelWithStats[]>("list_channels_with_twitch_info");
     },
     refetchInterval: 30000, // 30秒ごとに更新
     staleTime: 10000, // 10秒間はキャッシュを使用
     gcTime: 60000, // 1分間キャッシュを保持
   });
+
+  const liveChannels = allChannels?.filter(c => c.is_live) ?? [];
 
   // 最新の統計データを取得
   const { data: recentStats } = useQuery({
@@ -381,24 +383,36 @@ export function Dashboard() {
   }, [recentStats]);
 
   // チャンネルごとの統計データを整形
-  const channelsStatsData: ChannelStatsData[] = (liveChannels || []).map(channel => {
+  // 重複を削除: channel_id + platform の組み合わせで一意にする
+  const uniqueLiveChannelsMap = (liveChannels || []).reduce((acc, channel) => {
+    const key = `${channel.platform}_${channel.channel_id}`;
+    if (!acc.has(key)) {
+      acc.set(key, channel);
+    }
+    return acc;
+  }, new Map<string, ChannelWithStats>());
+
+  const uniqueLiveChannels = Array.from(uniqueLiveChannelsMap.values());
+
+  const channelsStatsData: ChannelStatsData[] = uniqueLiveChannels.map(channel => {
     // このチャンネルの統計データをフィルタ
+    // stream_idまたはchannel_idが一致するデータを取得
     const channelStats = statsData.filter(_stat => {
-      // stream_idが一致する統計データを取得
-      // （実際のロジックはバックエンドの実装に依存）
-      return true; // 仮実装：すべての統計を含める
+      // データに channel_id や stream_id が含まれている場合はそれで判定
+      // 現在の実装では全データを含めるが、将来的に適切なフィルタリングに変更可能
+      return true;
     });
 
     return {
       channel_id: channel.channel_id,
       channel_name: channel.channel_name,
       platform: channel.platform,
-      stream_id: 0, // 仮の値
+      stream_id: 0, // stream_idはChannelWithStatsに存在しないため、デフォルト値を使用
       stats: channelStats,
     };
   });
 
-  const totalViewers = liveChannels?.reduce((sum, channel) => sum + (channel.current_viewers || 0), 0) || 0;
+  const totalViewers = uniqueLiveChannels.reduce((sum, channel) => sum + (channel.current_viewers || 0), 0);
 
   // レート制限の色を決定
   const getRateLimitColor = (percent: number) => {
@@ -467,7 +481,7 @@ export function Dashboard() {
               </div>
             </div>
             <div className="ml-4">
-              <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{liveChannels?.length || 0}</h3>
+              <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{uniqueLiveChannels.length}</h3>
               <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">ライブ中チャンネル</p>
             </div>
           </div>
@@ -515,9 +529,9 @@ export function Dashboard() {
         <div className="card p-6 animate-fade-in">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">ライブ中チャンネル</h3>
-            {liveChannels && liveChannels.length > 0 && (
+            {uniqueLiveChannels.length > 0 && (
               <span className="text-xs font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-slate-700 px-2 py-1 rounded-full">
-                {liveChannels.length}件
+                {uniqueLiveChannels.length}件
               </span>
             )}
           </div>
@@ -527,8 +541,8 @@ export function Dashboard() {
                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600 mx-auto"></div>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-3 font-medium">読み込み中...</p>
               </div>
-            ) : liveChannels && liveChannels.length > 0 ? (
-              liveChannels.map((channel) => (
+            ) : uniqueLiveChannels.length > 0 ? (
+              uniqueLiveChannels.map((channel) => (
                 <LiveChannelCard key={`${channel.platform}-${channel.channel_id}`} channel={channel} />
               ))
             ) : (

@@ -222,7 +222,7 @@ impl ChannelPoller {
                 match collector.poll_channel(&updated_channel).await {
                     Ok(Some(stream_data)) => {
                         // ストリーム情報をデータベースに保存
-                        if let Err(e) = Self::save_stream_data(&conn, channel_id, &stream_data) {
+                        if let Err(e) = Self::save_stream_data(&conn, &updated_channel, &stream_data) {
                             logger.error(&format!(
                                 "Failed to save stream data for channel {}: {}",
                                 channel_id, e
@@ -377,9 +377,11 @@ impl ChannelPoller {
     /// ストリーム統計情報をデータベースに保存する
     fn save_stream_data(
         conn: &Connection,
-        channel_id: i64,
+        channel: &Channel,
         stream_data: &StreamData,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let channel_id = channel.id.ok_or("Channel ID is required")?;
+        
         // StreamDataから配信情報を含むStreamレコードを作成
         let stream = Stream {
             id: None,
@@ -395,6 +397,13 @@ impl ChannelPoller {
         // ストリームを保存（同じstream_idの場合は更新）
         let stream_db_id = DatabaseWriter::insert_or_update_stream(conn, channel_id, &stream)?;
 
+        // プラットフォーム別にtwitch_user_idを設定
+        let twitch_user_id = if channel.platform == "twitch" {
+            Some(channel.channel_id.clone())
+        } else {
+            None
+        };
+
         // StreamStatsを作成して保存
         let stats = StreamStats {
             id: None,
@@ -403,6 +412,8 @@ impl ChannelPoller {
             viewer_count: stream_data.viewer_count,
             chat_rate_1min: stream_data.chat_rate_1min,
             category: stream_data.category.clone(),
+            twitch_user_id,
+            channel_name: Some(channel.channel_name.clone()),
         };
 
         // ストリーム統計を保存

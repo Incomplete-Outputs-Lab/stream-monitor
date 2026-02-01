@@ -39,6 +39,8 @@ pub struct StreamStats {
     pub viewer_count: Option<i32>,
     pub chat_rate_1min: i32,
     pub category: Option<String>,
+    pub twitch_user_id: Option<String>,
+    pub channel_name: Option<String>,
 }
 
 /// Combined stream data returned by collectors
@@ -125,6 +127,8 @@ mod tests {
             viewer_count: Some(100),
             chat_rate_1min: 10,
             category: Some("Just Chatting".to_string()),
+            twitch_user_id: Some("123456789".to_string()),
+            channel_name: Some("test_channel".to_string()),
         };
 
         let json = serde_json::to_string(&stats).unwrap();
@@ -133,5 +137,7 @@ mod tests {
         assert_eq!(stats.viewer_count, deserialized.viewer_count);
         assert_eq!(stats.chat_rate_1min, deserialized.chat_rate_1min);
         assert_eq!(stats.category, deserialized.category);
+        assert_eq!(stats.twitch_user_id, deserialized.twitch_user_id);
+        assert_eq!(stats.channel_name, deserialized.channel_name);
     }
 }

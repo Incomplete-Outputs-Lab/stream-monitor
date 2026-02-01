@@ -66,11 +66,22 @@ impl Collector for TwitchCollector {
         &self,
         channel: &Channel,
     ) -> Result<Option<StreamData>, Box<dyn std::error::Error>> {
-        // ユーザー情報を取得
-        let user = self
-            .api_client
-            .get_user_by_login(&channel.channel_id)
-            .await?;
+        // channel_idが数値のみ（user ID）か、文字列（login）かを判断
+        let user = if channel.channel_id.chars().all(|c| c.is_ascii_digit()) {
+            // user IDの場合、IDでユーザー情報を取得
+            let users = self
+                .api_client
+                .get_users_by_ids(&[channel.channel_id.as_str()])
+                .await?;
+            users.into_iter().next().ok_or_else(|| {
+                format!("User not found for ID: {}", channel.channel_id)
+            })?
+        } else {
+            // loginの場合、loginでユーザー情報を取得
+            self.api_client
+                .get_user_by_login(&channel.channel_id)
+                .await?
+        };
 
         // 配信情報を取得
         let stream_opt = self
@@ -79,6 +90,7 @@ impl Collector for TwitchCollector {
             .await?;
 
         if let Some(stream) = stream_opt {
+
             // Twitch APIから取得したストリーム情報を構造化して返す
             Ok(Some(StreamData {
                 stream_id: stream.id.to_string(),

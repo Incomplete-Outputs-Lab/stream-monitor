@@ -40,7 +40,7 @@ use commands::{
         delete_sql_template, execute_sql, get_sql_template, list_database_tables,
         list_sql_templates, save_sql_template,
     },
-    stats::{get_channel_stats, get_collector_status, get_live_channels, get_stream_stats},
+    stats::{get_channel_stats, get_collector_status, get_stream_stats},
     twitch::{get_twitch_rate_limit_status, validate_twitch_channel},
 };
 use config::settings::SettingsManager;
@@ -375,7 +375,6 @@ pub fn run() {
             poll_twitch_device_token,
             // Stats commands
             get_stream_stats,
-            get_live_channels,
             get_channel_stats,
             get_collector_status,
             // Export commands

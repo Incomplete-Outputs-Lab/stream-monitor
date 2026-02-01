@@ -294,7 +294,7 @@ export default function GameAnalytics({
             </thead>
             <tbody className="divide-y divide-gray-700">
               {analytics.map((item, index) => (
-                <tr key={index} className="hover:bg-gray-700/30">
+                <tr key={`${item.category}-${index}`} className="hover:bg-gray-700/30">
                   <td className="px-4 py-3 text-sm text-white font-medium">
                     {item.category}
                   </td>

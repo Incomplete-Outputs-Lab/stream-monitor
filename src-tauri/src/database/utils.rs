@@ -31,8 +31,44 @@ pub fn execute_with_params(conn: &Connection, sql: &str, params: &[String]) -> D
                 params[4].as_str(),
             ],
         ),
+        6 => conn.execute(
+            sql,
+            [
+                params[0].as_str(),
+                params[1].as_str(),
+                params[2].as_str(),
+                params[3].as_str(),
+                params[4].as_str(),
+                params[5].as_str(),
+            ],
+        ),
+        7 => conn.execute(
+            sql,
+            [
+                params[0].as_str(),
+                params[1].as_str(),
+                params[2].as_str(),
+                params[3].as_str(),
+                params[4].as_str(),
+                params[5].as_str(),
+                params[6].as_str(),
+            ],
+        ),
+        8 => conn.execute(
+            sql,
+            [
+                params[0].as_str(),
+                params[1].as_str(),
+                params[2].as_str(),
+                params[3].as_str(),
+                params[4].as_str(),
+                params[5].as_str(),
+                params[6].as_str(),
+                params[7].as_str(),
+            ],
+        ),
         _ => Err(duckdb::Error::InvalidParameterName(
-            "Too many parameters (max 5 supported)".to_string(),
+            "Too many parameters (max 8 supported)".to_string(),
         )),
     }
 }
@@ -72,8 +108,44 @@ where
             ],
             f,
         ),
+        6 => stmt.query_map(
+            [
+                params[0].as_str(),
+                params[1].as_str(),
+                params[2].as_str(),
+                params[3].as_str(),
+                params[4].as_str(),
+                params[5].as_str(),
+            ],
+            f,
+        ),
+        7 => stmt.query_map(
+            [
+                params[0].as_str(),
+                params[1].as_str(),
+                params[2].as_str(),
+                params[3].as_str(),
+                params[4].as_str(),
+                params[5].as_str(),
+                params[6].as_str(),
+            ],
+            f,
+        ),
+        8 => stmt.query_map(
+            [
+                params[0].as_str(),
+                params[1].as_str(),
+                params[2].as_str(),
+                params[3].as_str(),
+                params[4].as_str(),
+                params[5].as_str(),
+                params[6].as_str(),
+                params[7].as_str(),
+            ],
+            f,
+        ),
         _ => Err(duckdb::Error::InvalidParameterName(
-            "Too many parameters (max 5 supported)".to_string(),
+            "Too many parameters (max 8 supported)".to_string(),
         )),
     }
 }
@@ -117,8 +189,47 @@ where
             ],
             f,
         ),
+        6 => conn.query_row(
+            sql,
+            [
+                params[0].as_str(),
+                params[1].as_str(),
+                params[2].as_str(),
+                params[3].as_str(),
+                params[4].as_str(),
+                params[5].as_str(),
+            ],
+            f,
+        ),
+        7 => conn.query_row(
+            sql,
+            [
+                params[0].as_str(),
+                params[1].as_str(),
+                params[2].as_str(),
+                params[3].as_str(),
+                params[4].as_str(),
+                params[5].as_str(),
+                params[6].as_str(),
+            ],
+            f,
+        ),
+        8 => conn.query_row(
+            sql,
+            [
+                params[0].as_str(),
+                params[1].as_str(),
+                params[2].as_str(),
+                params[3].as_str(),
+                params[4].as_str(),
+                params[5].as_str(),
+                params[6].as_str(),
+                params[7].as_str(),
+            ],
+            f,
+        ),
         _ => Err(duckdb::Error::InvalidParameterName(
-            "Too many parameters (max 5 supported)".to_string(),
+            "Too many parameters (max 8 supported)".to_string(),
         )),
     }
 }

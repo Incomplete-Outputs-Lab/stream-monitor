@@ -1,10 +1,23 @@
 # CLAUDE.md - Stream Stats Collector 開発ガイド
 
-このファイルは、AIアシスタント（Claude）がこのプロジェクトを理解し、適切に支援するためのガイドラインです。
-
 ## プロジェクト概要
 
-**Stream Stats Collector** は、TwitchとYouTubeの配信統計を定期的に収集し、視聴者数・チャットログ・配信情報を記録・分析するTauriベースのデスクトップアプリケーションです。
+TwitchとYouTubeの配信統計を収集・分析するTauriベースのデスクトップアプリケーション。
+
+### 主な機能
+- マルチプラットフォーム対応（Twitch/YouTube）
+- 自動データ収集と自動発見機能
+- 詳細な統計分析（MW, CCU, エンゲージメント率等）
+- データエクスポート（JSON/CSV）
+- SQLビューア、マルチビュー
+
+### 統計用語（重要）
+| 用語 | 意味 | 計算式 |
+| :--- | :--- | :--- |
+| **MW** | 総視聴時間（分） | `視聴者数 × 経過時間` |
+| **Avg CCU** | 平均同時視聴者数 | 期間内の平均 |
+| **Peak CCU** | 最大同時視聴者数 | 期間内の最大値 |
+| **Engagement** | エンゲージメント率 | `(総チャット数 / MW) × 1000` |
 
 ## 技術スタック
 
@@ -36,66 +49,24 @@
 ## ディレクトリ構造
 
 ```
-stream-monitor/
-├── src/                          # フロントエンド (React + TypeScript)
-│   ├── App.tsx                  # ルートコンポーネント
-│   ├── components/              # React コンポーネント
-│   │   ├── ChannelList/         # チャンネル管理UI
-│   │   ├── Dashboard/           # ダッシュボード
-│   │   ├── Statistics/          # 統計表示
-│   │   ├── Settings/            # 設定画面（APIトークン/OAuth設定）
-│   │   ├── Export/              # エクスポート機能
-│   │   └── common/              # 共通コンポーネント
-│   │       └── charts/          # Recharts ラッパーコンポーネント
-│   ├── stores/                  # Zustand ストア（チャンネル設定・テーマ等）
-│   ├── hooks/                   # カスタムフック
-│   ├── types/                   # TypeScript 型定義
-│   └── utils/                   # ユーティリティ関数
-│
-├── src-tauri/                   # バックエンド (Rust)
-│   ├── src/
-│   │   ├── main.rs              # エントリーポイント
-│   │   ├── lib.rs               # ライブラリルート
-│   │   ├── api/                 # 外部API クライアント
-│   │   │   ├── twitch_api.rs
-│   │   │   ├── youtube_api.rs
-│   │   │   └── youtube_live_chat.rs
-│   │   ├── collectors/          # データ収集モジュール
-│   │   │   ├── mod.rs
-│   │   │   ├── collector_trait.rs
-│   │   │   ├── poller.rs        # 複数チャンネルのポーリング管理
-│   │   │   ├── twitch.rs
-│   │   │   └── youtube.rs
-│   │   ├── database/            # DuckDB 操作
-│   │   │   ├── mod.rs
-│   │   │   ├── models.rs
-│   │   │   ├── schema.rs
-│   │   │   ├── writer.rs
-│   │   │   ├── aggregation.rs   # 集計クエリ・分析用ビュー
-│   │   │   └── utils.rs         # DBユーティリティ
-│   │   ├── commands/            # Tauri コマンド
-│   │   │   ├── channels.rs
-│   │   │   ├── stats.rs
-│   │   │   ├── chat.rs          # チャット関連コマンド
-│   │   │   ├── export.rs
-│   │   │   ├── config.rs
-│   │   │   └── oauth.rs         # OAuth フロー制御
-│   │   ├── config/              # 設定管理
-│   │   │   ├── mod.rs
-│   │   │   ├── credentials.rs   # APIクレデンシャル管理
-│   │   │   └── settings.rs      # アプリ全体の設定
-│   │   ├── websocket/           # WebSocket管理
-│   │   │   ├── mod.rs
-│   │   │   └── twitch_irc.rs
-│   │   └── oauth/               # OAuth コールバックサーバー等
-│   │       ├── mod.rs
-│   │       ├── server.rs
-│   │       ├── twitch.rs
-│   │       └── youtube.rs
-│   ├── Cargo.toml
-│   └── tauri.conf.json
-│
-└── package.json                 # フロントエンド依存関係
+src/                    # フロントエンド (React + TypeScript)
+├── components/
+│   ├── ChannelList/, Dashboard/, Statistics/, Settings/
+│   ├── Export/, Logs/, MultiView/, SQL/
+│   └── common/        # ErrorBoundary, LoadingSpinner, charts等
+├── stores/            # Zustand (channelStore, configStore, themeStore)
+├── types/             # TypeScript型定義
+└── utils/
+
+src-tauri/src/         # バックエンド (Rust)
+├── api/               # twitch_api.rs, youtube_api.rs
+├── collectors/        # poller.rs, twitch.rs, youtube.rs, auto_discovery.rs
+├── database/          # models.rs, schema.rs, writer.rs, analytics.rs
+├── commands/          # channels.rs, stats.rs, analytics.rs, export.rs等
+├── config/            # keyring_store.rs, settings.rs
+├── oauth/             # twitch.rs (Device Code Flow)
+├── websocket/         # twitch_irc.rs (未使用)
+├── main.rs, lib.rs, logger.rs
 ```
 
 ## 開発ガイドライン
@@ -121,193 +92,160 @@ stream-monitor/
   - 型・インターフェース: `PascalCase`
 - **ファイル名**: コンポーネントは `PascalCase.tsx`、その他は `camelCase.ts`
 
-### データベース設計
+### データベース設計（DuckDB）
 
-#### 主要テーブル
-- **channels**: 監視対象チャンネル設定
-- **streams**: 配信基本情報
-- **stream_stats**: 定期収集統計データ
-- **chat_messages**: チャット全ログ
+**主要テーブル:**
+- `channels`: 監視対象チャンネル（platform, channel_id, enabled, is_auto_discovered等）
+- `streams`: 配信情報（stream_id, title, category, started_at, ended_at）
+- `stream_stats`: ポーリング統計（viewer_count, chat_rate_1min, collected_at）
+- `chat_messages`: チャットログ（user_id, message, timestamp）
+- `sql_templates`: SQLテンプレート
 
-#### DuckDB 使用時の注意
-- バッチインサートを活用してパフォーマンスを最適化
-- トランザクションを適切に使用
-- パラメータ化クエリでSQLインジェクション対策
+**重要:**
+- バッチインサート、トランザクション、パラメータ化クエリを使用
+- マイグレーションは`schema.rs`の`migrate_database_schema()`で実行
+- SEQUENCEでID自動採番
 
 ### API統合
 
 #### Twitch API
-- **レート制限**: 800リクエスト/分
-- **認証**: OAuth 2.0 Device Code Grant Flow（推奨）
-  - デスクトップアプリケーション向けの公式推奨フロー
-  - Client Secret不要で安全に認証
-  - リフレッシュトークン対応（30日間有効、1回限り使用）
-  - ユーザーがブラウザでコードを入力して認証
-- **エンドポイント**: Helix API を使用
-- **IRC接続**: WebSocket経由で最大50チャンネル同時接続
-
-**Twitch Device Code Flow の実装詳細:**
-1. `start_twitch_device_auth` コマンドでデバイスコードとユーザーコードを取得
-2. ユーザーがブラウザで `https://www.twitch.tv/activate` にアクセスしてコードを入力
-3. `poll_twitch_device_token` コマンドでポーリングしてトークンを取得
-4. トークンは自動的にkeyringに保存され、30日間有効なリフレッシュトークンも取得
+- **レート制限**: 800req/分
+- **認証**: Device Code Grant Flow（Client Secret不要、リフレッシュトークン30日間有効）
+- **フロー**: `start_twitch_device_auth` → ユーザーがブラウザで認証 → `poll_twitch_device_token`
+- **IRC**: WebSocket実装済みだが未使用
 
 #### YouTube API
-- **クォータ制限**: 10,000ユニット/日
-- **認証**: OAuth 2.0 Authorization Code Grant Flow
-  - Client IDとClient Secretが必要
-  - ローカルコールバックサーバーを使用
-- **Live Chat API**: ポーリング方式でチャット取得
-- **スクレイピング**: 控えめな頻度（5分以上）で使用
+- **クォータ制限**: 10,000units/日
+- **認証**: ❌ OAuth未実装（oauth/youtube.rs存在せず）
+- **現状**: 基本API連携のみ実装
+
+### 自動発見機能（Auto Discovery）
+
+指定ゲームカテゴリの人気配信を自動発見・監視。
+
+**設定項目**: enabled, poll_interval, game_ids, min_viewer_count, max_channels, auto_promote
+
+**フロー**: ゲームIDで検索 → フィルタリング → キャッシュ → `auto-discovery-update`イベント → auto_promote時は自動追加
+
+**コマンド**: `get/save_auto_discovery_settings`, `toggle_auto_discovery`, `get_discovered_streams`, `promote_discovered_channel`
+
+**注意**: ポーリング間隔60秒以上推奨（レート制限対策）
 
 ### セキュリティ
-
-#### APIトークン管理
-- **保存場所**: OSネイティブのキーチェーン（keyring クレート）
-- **メモリ**: 暗号化して保持
-- **ログ**: トークンはマスキングして出力
-
-#### OAuth認証のセキュリティ
-- **Twitch**: Device Code Grant Flow採用によりClient Secretが不要
-  - OSSプロジェクトとして適切なセキュリティプラクティス
-  - ソースコードに機密情報を埋め込むリスクを完全に排除
-- **YouTube**: Authorization Code Grant Flow（Client Secret必須）
-  - Client SecretはOSのキーチェーンに安全に保存
-  - ソースコードには含めない
-
-#### データ保護
-- ローカルストレージのみ使用
-- 外部送信なし
-- チャットログの匿名化オプション（将来実装）
+- **トークン管理**: OS keyring（Win: Credential Manager, macOS: Keychain, Linux: libsecret）
+- **Twitch**: Device Code Flow（Client Secret不要）
+- **データ**: ローカルのみ、外部送信なし、DB暗号化未実装
 
 ### パフォーマンス最適化
-
-#### バックエンド
-- DuckDB のバッチインサート活用
-- チャットメッセージの非同期書き込み
-- 複数チャンネルの並行監視（Tokioタスク）
-
-#### フロントエンド
-- TanStack Query によるキャッシング
-- 大量データ表示時は仮想スクロール検討
-- コンポーネントの適切なメモ化
+- バックエンド: DuckDBバッチインサート、非同期書き込み、Tokio並行処理
+- フロントエンド: TanStack Queryキャッシング、メモ化
 
 ## 実装時の注意点
 
 ### 新機能追加時
-1. **既存機能の確認**: 重複実装を避けるため、類似機能がないか確認
-2. **型定義**: `src/types/index.ts` に型を追加
-3. **エラーハンドリング**: 適切なエラーメッセージとログ出力
-4. **テスト**: 可能な限りユニットテストを追加
+1. **重複チェック**: `Grep`で既存機能を検索（特に`commands/`, `collectors/`, `database/`）
+2. **型定義**: `src/types/index.ts`に追加
+3. **エラー処理**: Rustは`Result<T, String>`、`AppLogger`でログ記録
 
-### Tauriコマンド追加時
-1. `src-tauri/src/commands/` に新しいモジュールを作成
-2. `commands/mod.rs` でモジュールを公開
-3. `main.rs` でコマンドを登録
-4. フロントエンドから `invoke()` で呼び出し
+### Tauriコマンド追加
+1. `commands/<module>.rs`に実装
+2. `commands/mod.rs`で公開
+3. `lib.rs`の`tauri::generate_handler![]`に追加
+4. 状態は`tauri::State`で取得（`DatabaseManager`, `ChannelPoller`等）
 
-### データベーススキーマ変更時
-1. `database/schema.rs` でマイグレーション処理を実装
-2. 既存データの互換性を考慮
+### DBスキーマ変更
+1. `schema.rs`の`migrate_database_schema()`に追加
+2. `pragma_table_info()`で確認してから`ALTER TABLE`
 3. バックアップ推奨
+4. ⚠️ DuckDBはカラム削除等に制限あり
 
-### UIコンポーネント追加時
-1. `src/components/` 配下に適切なディレクトリを作成
-2. Tailwind CSS クラスを使用
-3. アクセシビリティを考慮（aria-label等）
-4. エラーバウンダリでラップ
+### UIコンポーネント追加
+- Tailwind CSS 4使用、`dark:`でダークモード対応
+- TanStack Query（サーバー状態）+ Zustand（グローバル状態）
+- `ErrorBoundary`でラップ
+
+### Collector追加
+1. `StreamCollector`トレイト実装
+2. `ChannelPoller`に登録
+3. エラーハンドリングで他チャンネルに影響させない
 
 ## デバッグ方法
 
 ### フロントエンド
-```bash
-# 開発サーバーのみ起動
-# これはユーザーが行うので、LLM側でこのコマンドは実行せず、ユーザーに実行するように伝える
-npm run dev
-
-# ブラウザの開発者ツールで確認
-# Console, Network, React DevTools を活用
-```
+- **コマンド**: `npm run tauri dev`（ユーザーが実行）
+- **ツール**: React Query Devtools, Zustand DevTools, Network Tab
 
 ### バックエンド
-```bash
-# Tauri開発モード（フロントエンド + バックエンド）
-npm run tauri dev
+- **ログ**: `eprintln!()`または`AppLogger`（`logs.txt`）、アプリ内「ログ」タブで閲覧
+- **注意**: DB初期化は`database-init-success`イベント待ち、レート制限は`get_twitch_rate_limit_status`確認
 
-# Rust のログは標準出力に表示
-# デバッグビルド: cargo build
-# リリースビルド: cargo build --release
-```
+### データベース
+- **パス**: `%APPDATA%\stream-stats-collector\stream_stats.db` (Win)
+- **確認**: DuckDB CLIまたはアプリ内SQLビューア
 
-### データベース確認
-- DuckDB CLI を使用して直接クエリ可能
-- データベースファイル: `src-tauri/data/stream_stats.db` (想定)
+### イベント
+- `database-init-success/error`, `channel-stats-update`, `auto-discovery-update`
+- フロントエンド: `listen('event-name', callback)`
 
-## テスト戦略
+## テスト・ビルド・依存関係
 
-### ユニットテスト
-- **Rust**: `#[cfg(test)]` モジュールでテスト
-- **TypeScript**: Vitest の導入を検討
+### テスト（最小限実装）
+- Rust: `#[cfg(test)]`（一部実装: database/models.rs）
+- TypeScript: Vitest検討中
+- E2E/統合テスト: 未実装
 
-### 統合テスト
-- TauriコマンドのE2Eテスト
-- データ収集フローのテスト
+### ビルド
+- **開発**: `npm install` → `npm run tauri dev`
+- **本番**: `npm run tauri build`
+- **注意**: DuckDB初回ビルド5-10分、CMake必須、スタックサイズ512MB
 
-### 手動テスト
-- 各プラットフォーム（Windows/macOS/Linux）での動作確認
-- 大量データでのパフォーマンステスト
+### 依存関係追加
+- Rust: `Cargo.toml`の`[dependencies]`
+- フロントエンド: `npm install <package>`
 
-## ビルドとデプロイ
+## よくある問題
 
-### 開発環境
-```bash
-# 依存関係インストール
-npm install
+| 問題 | 原因 | 解決 |
+|:---|:---|:---|
+| DuckDBビルドエラー | CMake/C++ツール不足 | README参照、VS Build Tools完全インストール |
+| DB初期化エラー | スタックオーバーフロー | lib.rs内で512MB設定済み |
+| コマンド呼出不可 | `invoke_handler`未登録 | `tauri::generate_handler![]`追加 |
+| レート制限エラー | 頻度高すぎ | 間隔延長、`get_twitch_rate_limit_status`確認 |
+| メモリ使用量高 | チャットログ蓄積 | バッチインサート済み、アーカイブ未実装 |
+| Twitch認証失敗 | Client ID未設定/期限切れ | Device Code Flowで再認証 |
+| チャット未記録 | IRC未統合 | 現在はチャットレートのみ |
 
-# 開発モード起動
-npm run tauri dev
-```
+## 実装状況
 
-### 本番ビルド
-```bash
-# リリースビルド
-npm run tauri build
-```
+### ✅ 実装済み
+**バックエンド:**
+- Twitch: Device Code Flow, Helix API, レート制限管理
+- YouTube: 基本API連携、配信/チャット取得（❌ OAuth未実装）
+- DuckDB: スキーマ、マイグレーション、バッチインサート、バックアップ
+- 収集: ChannelPoller, TwitchCollector, YouTubeCollector, AutoDiscoveryPoller
+- 統計: MW計算、配信者/ゲーム別、日次統計
+- コマンド: チャンネル管理、統計取得、エクスポート、SQL実行、自動発見
+- 設定: keyring、JSON設定
 
-### ビルド時の注意
-- **DuckDB bundled**: 初回ビルド時は5-10分かかる可能性
-- **Windows**: Visual Studio Build Tools と CMake が必要
-- **Linux/macOS**: build-essential (Linux) または Xcode (macOS) と CMake が必要
+**フロントエンド:**
+- UI: Dashboard, Statistics, Settings, Export, SQL, Logs, MultiView
+- 共通: Rechartsラッパー、ErrorBoundary、LoadingSpinner
+- 状態: Zustand + TanStack Query
+- その他: ダークモード、レスポンシブ
 
-## 依存関係の追加
+### ⚠️ 部分実装
+- Twitch IRC WebSocket: コード存在、TwitchCollectorで未使用
 
-### Rust依存関係
-`src-tauri/Cargo.toml` の `[dependencies]` セクションに追加
+### ❌ 未実装
+**高優先度:**
+- YouTube OAuth（oauth/youtube.rs不在）
+- Twitch IRC統合
 
-### フロントエンド依存関係
-```bash
-npm install <package-name>
-# または
-pnpm add <package-name>
-```
+**中優先度:**
+- チャット匿名化、包括的テスト、エラーリカバリー強化
 
-## よくある問題と解決策
-
-### DuckDB ビルドエラー
-- **原因**: CMake または C++ ビルドツールが不足
-- **解決**: 前提条件を確認（README.md参照）
-
-### Tauriコマンドが呼び出せない
-- **原因**: コマンドが `main.rs` で登録されていない
-- **解決**: `tauri::Builder` でコマンドを登録
-
-### APIレート制限エラー
-- **原因**: リクエスト頻度が高すぎる
-- **解決**: レート制限管理ロジックを確認・調整
-
-### メモリ使用量が高い
-- **原因**: チャットログの大量蓄積
-- **解決**: バッチインサート、古いデータのアーカイブ
+**低優先度:**
+- データアーカイブ、通知機能、プラグインシステム
 
 ## 参考リソース
 

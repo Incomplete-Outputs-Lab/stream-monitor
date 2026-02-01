@@ -11,11 +11,7 @@ pub struct AddChannelRequest {
     pub platform: String,
     pub channel_id: String,
     pub channel_name: String,
-    pub display_name: Option<String>,
-    pub profile_image_url: Option<String>,
     pub poll_interval: Option<i32>,
-    pub follower_count: Option<i32>,
-    pub broadcaster_type: Option<String>,
 }
 
 #[tauri::command]
@@ -30,113 +26,20 @@ pub async fn add_channel(
 
     let poll_interval = request.poll_interval.unwrap_or(60);
 
-    let poll_interval_str = poll_interval.to_string();
-
-    // パラメータを準備
-    let mut sql_parts = vec!["platform", "channel_id", "channel_name", "poll_interval"];
-    let mut sql_values = vec!["?", "?", "?", "?"];
-    let mut params: Vec<String> = vec![
-        request.platform.clone(),
-        request.channel_id.clone(),
-        request.channel_name.clone(),
-        poll_interval_str.clone(),
-    ];
-
-    if let Some(ref display_name) = request.display_name {
-        sql_parts.push("display_name");
-        sql_values.push("?");
-        params.push(display_name.clone());
-    }
-
-    if let Some(ref profile_image_url) = request.profile_image_url {
-        sql_parts.push("profile_image_url");
-        sql_values.push("?");
-        params.push(profile_image_url.clone());
-    }
-
-    if let Some(follower_count) = request.follower_count {
-        sql_parts.push("follower_count");
-        sql_values.push("?");
-        params.push(follower_count.to_string());
-    }
-
-    if let Some(ref broadcaster_type) = request.broadcaster_type {
-        sql_parts.push("broadcaster_type");
-        sql_values.push("?");
-        params.push(broadcaster_type.clone());
-    }
-
-    let sql = format!(
-        "INSERT INTO channels ({}) VALUES ({}) RETURNING id",
-        sql_parts.join(", "),
-        sql_values.join(", ")
-    );
-
-    // DuckDBのparamsは固定サイズの配列しか受け付けないため、動的にSQLを実行
-    let channel_id: i64 = match params.len() {
-        4 => conn.query_row(
-            &sql,
-            [
-                params[0].as_str(),
-                params[1].as_str(),
-                params[2].as_str(),
-                params[3].as_str(),
+    // DuckDBではRETURNING句を使用してINSERTと同時にIDを取得
+    let channel_id: i64 = conn
+        .query_row(
+            "INSERT INTO channels (platform, channel_id, channel_name, poll_interval) 
+             VALUES (?, ?, ?, ?) RETURNING id",
+            duckdb::params![
+                &request.platform,
+                &request.channel_id,
+                &request.channel_name,
+                poll_interval,
             ],
             |row| row.get(0),
-        ),
-        5 => conn.query_row(
-            &sql,
-            [
-                params[0].as_str(),
-                params[1].as_str(),
-                params[2].as_str(),
-                params[3].as_str(),
-                params[4].as_str(),
-            ],
-            |row| row.get(0),
-        ),
-        6 => conn.query_row(
-            &sql,
-            [
-                params[0].as_str(),
-                params[1].as_str(),
-                params[2].as_str(),
-                params[3].as_str(),
-                params[4].as_str(),
-                params[5].as_str(),
-            ],
-            |row| row.get(0),
-        ),
-        7 => conn.query_row(
-            &sql,
-            [
-                params[0].as_str(),
-                params[1].as_str(),
-                params[2].as_str(),
-                params[3].as_str(),
-                params[4].as_str(),
-                params[5].as_str(),
-                params[6].as_str(),
-            ],
-            |row| row.get(0),
-        ),
-        8 => conn.query_row(
-            &sql,
-            [
-                params[0].as_str(),
-                params[1].as_str(),
-                params[2].as_str(),
-                params[3].as_str(),
-                params[4].as_str(),
-                params[5].as_str(),
-                params[6].as_str(),
-                params[7].as_str(),
-            ],
-            |row| row.get(0),
-        ),
-        _ => return Err(format!("Invalid number of parameters: {}", params.len())),
-    }
-    .map_err(|e| format!("Failed to insert channel: {}", e))?;
+        )
+        .map_err(|e| format!("Failed to insert channel: {}", e))?;
 
     let channel = get_channel_by_id(&conn, channel_id)
         .ok_or_else(|| "Failed to retrieve created channel".to_string())?;
@@ -190,11 +93,6 @@ pub async fn update_channel(
     poll_interval: Option<i32>,
     enabled: Option<bool>,
 ) -> Result<Channel, String> {
-    println!(
-        "[update_channel] Called with id={}, channel_name={:?}, poll_interval={:?}, enabled={:?}",
-        id, channel_name, poll_interval, enabled
-    );
-
     let conn = db_manager
         .get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
@@ -203,17 +101,12 @@ pub async fn update_channel(
     let old_channel =
         get_channel_by_id(&conn, id).ok_or_else(|| "Channel not found".to_string())?;
 
-    println!(
-        "[update_channel] Old channel: poll_interval={}, enabled={}",
-        old_channel.poll_interval, old_channel.enabled
-    );
-
     let mut updates = Vec::new();
     let mut params: Vec<String> = Vec::new();
 
-    if let Some(ref name) = channel_name {
+    if let Some(name) = channel_name {
         updates.push("channel_name = ?");
-        params.push(name.clone());
+        params.push(name);
     }
 
     if let Some(interval) = poll_interval {
@@ -227,7 +120,6 @@ pub async fn update_channel(
     }
 
     if updates.is_empty() {
-        println!("[update_channel] No updates to apply");
         return get_channel_by_id(&conn, id).ok_or_else(|| "Channel not found".to_string());
     }
 
@@ -235,10 +127,6 @@ pub async fn update_channel(
     params.push(id.to_string());
 
     let query = format!("UPDATE channels SET {} WHERE id = ?", updates.join(", "));
-    println!(
-        "[update_channel] Executing query: {} with params: {:?}",
-        query, params
-    );
 
     utils::execute_with_params(&conn, &query, &params)
         .map_err(|e| format!("Failed to update channel: {}", e))?;
@@ -246,76 +134,20 @@ pub async fn update_channel(
     let updated_channel =
         get_channel_by_id(&conn, id).ok_or_else(|| "Channel not found".to_string())?;
 
-    println!(
-        "[update_channel] Updated channel: poll_interval={}, enabled={}",
-        updated_channel.poll_interval, updated_channel.enabled
-    );
-
-    // poll_intervalが変更されたかチェック
-    let poll_interval_changed = poll_interval
-        .map(|new_interval| new_interval != old_channel.poll_interval)
-        .unwrap_or(false);
-
-    println!(
-        "[update_channel] poll_interval_changed={}, old={}, new={:?}",
-        poll_interval_changed, old_channel.poll_interval, poll_interval
-    );
-
-    // 有効状態が変更された場合、またはpoll_intervalが変更された場合にポーリングを更新
-    if let Some(poller) = app_handle.try_state::<Arc<Mutex<ChannelPoller>>>() {
-        let mut poller = poller.lock().await;
-
-        if let Some(enabled) = enabled {
+    // 有効状態が変更された場合、ポーリングを開始/停止
+    if let Some(enabled) = enabled {
+        if let Some(poller) = app_handle.try_state::<Arc<Mutex<ChannelPoller>>>() {
+            let mut poller = poller.lock().await;
             if enabled && !old_channel.enabled {
                 // 無効→有効になった場合、ポーリングを開始
-                println!("[update_channel] Channel enabled, starting polling");
-                if let Err(e) =
-                    poller.start_polling(updated_channel.clone(), &db_manager, app_handle.clone())
-                {
+                if let Err(e) = poller.start_polling(updated_channel.clone(), &db_manager, app_handle.clone()) {
                     eprintln!("Failed to start polling for updated channel {}: {}", id, e);
                 }
             } else if !enabled && old_channel.enabled {
                 // 有効→無効になった場合、ポーリングを停止
-                println!("[update_channel] Channel disabled, stopping polling");
                 poller.stop_polling(id);
-            } else if enabled && poll_interval_changed {
-                // 有効のままでpoll_intervalが変更された場合、ポーリングを再起動
-                println!(
-                    "[update_channel] poll_interval changed from {} to {:?}, restarting polling",
-                    old_channel.poll_interval, poll_interval
-                );
-                poller.stop_polling(id);
-                if let Err(e) =
-                    poller.start_polling(updated_channel.clone(), &db_manager, app_handle.clone())
-                {
-                    eprintln!(
-                        "Failed to restart polling for updated channel {}: {}",
-                        id, e
-                    );
-                }
-            } else {
-                println!(
-                    "[update_channel] No polling change needed (enabled={}, poll_interval_changed={})",
-                    enabled, poll_interval_changed
-                );
-            }
-        } else if poll_interval_changed && updated_channel.enabled {
-            // enabledの指定がなく、poll_intervalが変更され、チャンネルが有効な場合
-            println!(
-                "[update_channel] poll_interval changed (enabled not specified), restarting polling"
-            );
-            poller.stop_polling(id);
-            if let Err(e) =
-                poller.start_polling(updated_channel.clone(), &db_manager, app_handle.clone())
-            {
-                eprintln!(
-                    "Failed to restart polling for updated channel {}: {}",
-                    id, e
-                );
             }
         }
-    } else {
-        println!("[update_channel] Could not get poller state");
     }
 
     Ok(updated_channel)
@@ -331,7 +163,7 @@ pub async fn list_channels(
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     let mut stmt = conn
-        .prepare("SELECT id, platform, channel_id, channel_name, display_name, profile_image_url, enabled, poll_interval, follower_count, broadcaster_type, view_count, is_auto_discovered, CAST(discovered_at AS VARCHAR) as discovered_at, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels WHERE is_auto_discovered = false OR is_auto_discovered IS NULL ORDER BY created_at DESC")
+        .prepare("SELECT id, platform, channel_id, channel_name, enabled, poll_interval, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels ORDER BY created_at DESC")
         .map_err(|e| format!("Failed to prepare statement: {}", e))?;
 
     let channels: Result<Vec<Channel>, _> = stmt
@@ -341,17 +173,17 @@ pub async fn list_channels(
                 platform: row.get(1)?,
                 channel_id: row.get(2)?,
                 channel_name: row.get(3)?,
-                display_name: row.get(4)?,
-                profile_image_url: row.get(5)?,
-                enabled: row.get(6)?,
-                poll_interval: row.get(7)?,
-                follower_count: row.get(8).ok(),
-                broadcaster_type: row.get(9).ok(),
-                view_count: row.get(10).ok(),
-                is_auto_discovered: row.get(11).ok(),
-                discovered_at: row.get(12).ok(),
-                created_at: Some(row.get(13)?),
-                updated_at: Some(row.get(14)?),
+                display_name: None,
+                profile_image_url: None,
+                enabled: row.get(4)?,
+                poll_interval: row.get(5)?,
+                follower_count: None,
+                broadcaster_type: None,
+                view_count: None,
+                is_auto_discovered: None,
+                discovered_at: None,
+                created_at: Some(row.get(6)?),
+                updated_at: Some(row.get(7)?),
             })
         })
         .map_err(|e| format!("Failed to query channels: {}", e))?
@@ -391,9 +223,7 @@ pub async fn toggle_channel(
         let mut poller = poller.lock().await;
         if new_enabled {
             // 有効化された場合、ポーリングを開始
-            if let Err(e) =
-                poller.start_polling(updated_channel.clone(), &db_manager, app_handle.clone())
-            {
+            if let Err(e) = poller.start_polling(updated_channel.clone(), &db_manager, app_handle.clone()) {
                 eprintln!("Failed to start polling for channel {}: {}", id, e);
             }
         } else {
@@ -407,7 +237,7 @@ pub async fn toggle_channel(
 
 fn get_channel_by_id(conn: &Connection, id: i64) -> Option<Channel> {
     let mut stmt = conn
-        .prepare("SELECT id, platform, channel_id, channel_name, display_name, profile_image_url, enabled, poll_interval, follower_count, broadcaster_type, view_count, is_auto_discovered, CAST(discovered_at AS VARCHAR) as discovered_at, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels WHERE id = ?")
+        .prepare("SELECT id, platform, channel_id, channel_name, enabled, poll_interval, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels WHERE id = ?")
         .ok()?;
 
     let id_str = id.to_string();
@@ -418,17 +248,17 @@ fn get_channel_by_id(conn: &Connection, id: i64) -> Option<Channel> {
                 platform: row.get(1)?,
                 channel_id: row.get(2)?,
                 channel_name: row.get(3)?,
-                display_name: row.get(4)?,
-                profile_image_url: row.get(5)?,
-                enabled: row.get(6)?,
-                poll_interval: row.get(7)?,
-                follower_count: row.get(8).ok(),
-                broadcaster_type: row.get(9).ok(),
-                view_count: row.get(10).ok(),
-                is_auto_discovered: row.get(11).ok(),
-                discovered_at: row.get(12).ok(),
-                created_at: Some(row.get(13)?),
-                updated_at: Some(row.get(14)?),
+                display_name: None, // TODO: データベースから取得
+                profile_image_url: None,
+                enabled: row.get(4)?,
+                poll_interval: row.get(5)?,
+                follower_count: None,
+                broadcaster_type: None,
+                view_count: None,
+                is_auto_discovered: None,
+                discovered_at: None,
+                created_at: Some(row.get(6)?),
+                updated_at: Some(row.get(7)?),
             })
         })
         .ok()?;

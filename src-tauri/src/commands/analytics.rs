@@ -51,10 +51,6 @@ pub async fn list_game_categories(
         .get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
-    analytics::list_categories(
-        &conn,
-        start_time.as_deref(),
-        end_time.as_deref(),
-    )
-    .map_err(|e| format!("Failed to list categories: {}", e))
+    analytics::list_categories(&conn, start_time.as_deref(), end_time.as_deref())
+        .map_err(|e| format!("Failed to list categories: {}", e))
 }

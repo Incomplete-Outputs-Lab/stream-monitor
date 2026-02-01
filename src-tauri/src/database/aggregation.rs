@@ -266,6 +266,7 @@ mod tests {
             collected_at: "2024-01-01T12:00:00Z".to_string(),
             viewer_count: Some(100),
             chat_rate_1min: 10,
+            category: None,
         }];
 
         let result = DataAggregator::aggregate_stream_stats(&stats, 1);
@@ -286,6 +287,7 @@ mod tests {
                 collected_at: "2024-01-01T12:00:00Z".to_string(),
                 viewer_count: Some(100),
                 chat_rate_1min: 10,
+                category: None,
             },
             StreamStats {
                 id: Some(2),
@@ -293,6 +295,7 @@ mod tests {
                 collected_at: "2024-01-01T12:01:00Z".to_string(),
                 viewer_count: Some(150),
                 chat_rate_1min: 15,
+                category: None,
             },
         ];
 

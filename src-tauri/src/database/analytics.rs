@@ -122,15 +122,15 @@ pub fn get_broadcaster_analytics(
     let mut stmt = conn.prepare(&sql)?;
     let channel_stats: Vec<_> = utils::query_map_with_params(&mut stmt, &params, |row| {
         Ok((
-            row.get::<_, i64>(0)?,     // channel_id
-            row.get::<_, String>(1)?,  // channel_name
-            row.get::<_, i64>(2)?,     // minutes_watched
-            row.get::<_, f64>(3)?,     // average_ccu
-            row.get::<_, i32>(4)?,     // peak_ccu
-            row.get::<_, i32>(5)?,     // stream_count
-            row.get::<_, i64>(6)?,     // total_chat_messages
-            row.get::<_, f64>(7)?,     // avg_chat_rate
-            row.get::<_, i32>(8)?,     // category_count
+            row.get::<_, i64>(0)?,    // channel_id
+            row.get::<_, String>(1)?, // channel_name
+            row.get::<_, i64>(2)?,    // minutes_watched
+            row.get::<_, f64>(3)?,    // average_ccu
+            row.get::<_, i32>(4)?,    // peak_ccu
+            row.get::<_, i32>(5)?,    // stream_count
+            row.get::<_, i64>(6)?,    // total_chat_messages
+            row.get::<_, f64>(7)?,    // avg_chat_rate
+            row.get::<_, i32>(8)?,    // category_count
         ))
     })?
     .collect::<Result<Vec<_>, _>>()?;
@@ -147,7 +147,11 @@ pub fn get_broadcaster_analytics(
         WHERE 1=1 {}
         GROUP BY s.channel_id
         "#,
-        if channel_id.is_some() { " AND s.channel_id = ?" } else { "" }
+        if channel_id.is_some() {
+            " AND s.channel_id = ?"
+        } else {
+            ""
+        }
     );
 
     let mut hours_params: Vec<String> = Vec::new();
@@ -203,13 +207,24 @@ pub fn get_broadcaster_analytics(
 
     // カテゴリ別 MinutesWatched を取得してメインタイトルを計算
     let mut results = Vec::new();
-    for (ch_id, ch_name, mw, avg_ccu, peak_ccu, stream_count, total_chat, avg_chat_rate, category_count) in channel_stats {
+    for (
+        ch_id,
+        ch_name,
+        mw,
+        avg_ccu,
+        peak_ccu,
+        stream_count,
+        total_chat,
+        avg_chat_rate,
+        category_count,
+    ) in channel_stats
+    {
         let hours = hours_map.get(&ch_id).copied().unwrap_or(0.0);
         let unique_chatters = chatters_map.get(&ch_id).copied().unwrap_or(0);
 
         // エンゲージメント率を計算 (チャット数 / (視聴者数 * 時間))
         let engagement_rate = if mw > 0 {
-            (total_chat as f64 / mw as f64) * 1000.0  // 1000視聴分あたりのメッセージ数
+            (total_chat as f64 / mw as f64) * 1000.0 // 1000視聴分あたりのメッセージ数
         } else {
             0.0
         };
@@ -217,18 +232,17 @@ pub fn get_broadcaster_analytics(
         // カテゴリ別 MinutesWatched を取得
         let category_mw = get_category_minutes_watched(conn, ch_id, start_time, end_time)?;
 
-        let (main_title, main_mw_percent) = if let Some(max_category) =
-            category_mw.into_iter().max_by_key(|c| c.minutes_watched)
-        {
-            let percent = if mw > 0 {
-                (max_category.minutes_watched as f64 / mw as f64) * 100.0
+        let (main_title, main_mw_percent) =
+            if let Some(max_category) = category_mw.into_iter().max_by_key(|c| c.minutes_watched) {
+                let percent = if mw > 0 {
+                    (max_category.minutes_watched as f64 / mw as f64) * 100.0
+                } else {
+                    0.0
+                };
+                (Some(max_category.category), Some(percent))
             } else {
-                0.0
+                (None, None)
             };
-            (Some(max_category.category), Some(percent))
-        } else {
-            (None, None)
-        };
 
         results.push(BroadcasterAnalytics {
             channel_id: ch_id,
@@ -383,10 +397,10 @@ pub fn get_game_analytics(
     let mut stmt = conn.prepare(&sql)?;
     let game_stats: Vec<_> = utils::query_map_with_params(&mut stmt, &params, |row| {
         Ok((
-            row.get::<_, String>(0)?,  // category
-            row.get::<_, i64>(1)?,     // minutes_watched
-            row.get::<_, f64>(2)?,     // average_ccu
-            row.get::<_, i32>(3)?,     // unique_broadcasters
+            row.get::<_, String>(0)?, // category
+            row.get::<_, i64>(1)?,    // minutes_watched
+            row.get::<_, f64>(2)?,    // average_ccu
+            row.get::<_, i32>(3)?,    // unique_broadcasters
         ))
     })?
     .collect::<Result<Vec<_>, _>>()?;
@@ -492,10 +506,9 @@ pub fn list_categories(
     );
 
     let mut stmt = conn.prepare(&sql)?;
-    let categories: Vec<String> = utils::query_map_with_params(&mut stmt, &params, |row| {
-        Ok(row.get::<_, String>(0)?)
-    })?
-    .collect::<Result<Vec<_>, _>>()?;
+    let categories: Vec<String> =
+        utils::query_map_with_params(&mut stmt, &params, |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
 
     Ok(categories)
 }
@@ -552,7 +565,7 @@ fn get_top_channel_for_category(
 
     let mut stmt = conn.prepare(&sql)?;
     let result: Option<String> =
-        utils::query_map_with_params(&mut stmt, &params, |row| Ok(row.get::<_, String>(0)?))
+        utils::query_map_with_params(&mut stmt, &params, |row| row.get::<_, String>(0))
             .ok()
             .and_then(|mut iter| iter.next())
             .and_then(|r| r.ok());

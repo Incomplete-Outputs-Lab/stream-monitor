@@ -1,4 +1,5 @@
 use crate::config::keyring_store::KeyringStore;
+use crate::constants::{database as db_constants, twitch};
 use crate::oauth::twitch::TwitchOAuth;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -54,7 +55,9 @@ impl TwitchApiClient {
     async fn get_access_token(&self) -> Result<AccessToken, Box<dyn std::error::Error>> {
         // Keyringからトークンを取得を試みる（Device Code Flowで取得したユーザートークン）
         if let Some(ref handle) = self.app_handle {
-            if let Ok(token_str) = KeyringStore::get_token_with_app(handle, "twitch") {
+            if let Ok(token_str) =
+                KeyringStore::get_token_with_app(handle, db_constants::PLATFORM_TWITCH)
+            {
                 return Ok(AccessToken::from(token_str));
             }
         }
@@ -77,7 +80,11 @@ impl TwitchApiClient {
 
             // トークンを保存
             if let Some(ref handle) = self.app_handle {
-                KeyringStore::save_token_with_app(handle, "twitch", &access_token_str)?;
+                KeyringStore::save_token_with_app(
+                    handle,
+                    db_constants::PLATFORM_TWITCH,
+                    &access_token_str,
+                )?;
             }
 
             return Ok(AccessToken::from(access_token_str));
@@ -172,7 +179,10 @@ impl TwitchApiClient {
         let handle = self.app_handle.as_ref().ok_or("No app handle available")?;
 
         // メタデータを取得
-        let metadata = match KeyringStore::get_token_metadata_with_app(handle, "twitch") {
+        let metadata = match KeyringStore::get_token_metadata_with_app(
+            handle,
+            db_constants::PLATFORM_TWITCH,
+        ) {
             Ok(m) => m,
             Err(_) => {
                 // メタデータがない場合は、トークンが古い形式で保存されている可能性
@@ -242,7 +252,9 @@ impl TwitchApiClient {
                 .ok_or_else(|| "User not found".into()),
             Err(e) => {
                 // 401エラーの場合、トークンをリフレッシュして再試行
-                if e.to_string().contains("401") || e.to_string().contains("Unauthorized") {
+                if e.to_string().contains(twitch::ERROR_UNAUTHORIZED)
+                    || e.to_string().contains(twitch::ERROR_UNAUTHORIZED_TEXT)
+                {
                     eprintln!("Token expired, attempting refresh...");
                     let _new_token = self.refresh_token().await?;
                     let refreshed_token = self.get_user_token().await?;
@@ -286,7 +298,9 @@ impl TwitchApiClient {
             Ok(response) => Ok(response.data.into_iter().next()),
             Err(e) => {
                 // 401エラーの場合、トークンをリフレッシュして再試行
-                if e.to_string().contains("401") || e.to_string().contains("Unauthorized") {
+                if e.to_string().contains(twitch::ERROR_UNAUTHORIZED)
+                    || e.to_string().contains(twitch::ERROR_UNAUTHORIZED_TEXT)
+                {
                     eprintln!("Token expired, attempting refresh...");
                     let _new_token = self.refresh_token().await?;
                     let refreshed_token = self.get_user_token().await?;
@@ -307,6 +321,268 @@ impl TwitchApiClient {
             }
         }
     }
+
+    /// 複数のユーザーIDからストリーム情報をバッチ取得
+    pub async fn get_streams_by_user_ids(
+        &self,
+        user_ids: &[&str],
+    ) -> Result<Vec<Stream>, Box<dyn std::error::Error>> {
+        if user_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let token = self.get_user_token().await?;
+
+        let user_id_refs: Vec<&types::UserIdRef> = user_ids.iter().map(|id| (*id).into()).collect();
+        let request = GetStreamsRequest::user_ids(user_id_refs.as_slice());
+
+        // リクエストをトラッキング
+        if let Ok(mut limiter) = self.rate_limiter.lock() {
+            limiter.track_request();
+        }
+
+        match self.client.req_get(request, &token).await {
+            Ok(response) => Ok(response.data),
+            Err(e) => {
+                // 401エラーの場合、トークンをリフレッシュして再試行
+                if e.to_string().contains(twitch::ERROR_UNAUTHORIZED)
+                    || e.to_string().contains(twitch::ERROR_UNAUTHORIZED_TEXT)
+                {
+                    eprintln!("Token expired, attempting refresh...");
+                    let _new_token = self.refresh_token().await?;
+                    let refreshed_token = self.get_user_token().await?;
+
+                    // 再試行もトラッキング
+                    if let Ok(mut limiter) = self.rate_limiter.lock() {
+                        limiter.track_request();
+                    }
+
+                    let response = self
+                        .client
+                        .req_get(
+                            GetStreamsRequest::user_ids(user_id_refs.as_slice()),
+                            &refreshed_token,
+                        )
+                        .await?;
+                    Ok(response.data)
+                } else {
+                    Err(e.into())
+                }
+            }
+        }
+    }
+
+    /// 複数のユーザーIDからユーザー情報を取得
+    pub async fn get_users_by_ids(
+        &self,
+        user_ids: &[&str],
+    ) -> Result<Vec<User>, Box<dyn std::error::Error>> {
+        let token = self.get_user_token().await?;
+
+        let user_id_refs: Vec<&types::UserIdRef> = user_ids.iter().map(|id| (*id).into()).collect();
+        let request = GetUsersRequest::ids(user_id_refs.as_slice());
+
+        // リクエストをトラッキング
+        if let Ok(mut limiter) = self.rate_limiter.lock() {
+            limiter.track_request();
+        }
+
+        match self.client.req_get(request, &token).await {
+            Ok(response) => Ok(response.data),
+            Err(e) => {
+                // 401エラーの場合、トークンをリフレッシュして再試行
+                if e.to_string().contains(twitch::ERROR_UNAUTHORIZED)
+                    || e.to_string().contains(twitch::ERROR_UNAUTHORIZED_TEXT)
+                {
+                    eprintln!("Token expired, attempting refresh...");
+                    let _new_token = self.refresh_token().await?;
+                    let refreshed_token = self.get_user_token().await?;
+
+                    // 再試行もトラッキング
+                    if let Ok(mut limiter) = self.rate_limiter.lock() {
+                        limiter.track_request();
+                    }
+
+                    let response = self
+                        .client
+                        .req_get(
+                            GetUsersRequest::ids(user_id_refs.as_slice()),
+                            &refreshed_token,
+                        )
+                        .await?;
+                    Ok(response.data)
+                } else {
+                    Err(e.into())
+                }
+            }
+        }
+    }
+
+    /// 複数のログイン名からユーザー情報を取得
+    pub async fn get_users_by_logins(
+        &self,
+        logins: &[&str],
+    ) -> Result<Vec<User>, Box<dyn std::error::Error>> {
+        let token = self.get_user_token().await?;
+
+        let login_refs: Vec<&types::UserNameRef> =
+            logins.iter().map(|login| (*login).into()).collect();
+        let request = GetUsersRequest::logins(login_refs.as_slice());
+
+        // リクエストをトラッキング
+        if let Ok(mut limiter) = self.rate_limiter.lock() {
+            limiter.track_request();
+        }
+
+        match self.client.req_get(request, &token).await {
+            Ok(response) => Ok(response.data),
+            Err(e) => {
+                // 401エラーの場合、トークンをリフレッシュして再試行
+                if e.to_string().contains(twitch::ERROR_UNAUTHORIZED)
+                    || e.to_string().contains(twitch::ERROR_UNAUTHORIZED_TEXT)
+                {
+                    eprintln!("Token expired, attempting refresh...");
+                    let _new_token = self.refresh_token().await?;
+                    let refreshed_token = self.get_user_token().await?;
+
+                    // 再試行もトラッキング
+                    if let Ok(mut limiter) = self.rate_limiter.lock() {
+                        limiter.track_request();
+                    }
+
+                    let response = self
+                        .client
+                        .req_get(
+                            GetUsersRequest::logins(login_refs.as_slice()),
+                            &refreshed_token,
+                        )
+                        .await?;
+                    Ok(response.data)
+                } else {
+                    Err(e.into())
+                }
+            }
+        }
+    }
+
+    /// 複数のユーザーIDからフォロワー数をバッチ取得
+    ///
+    /// user_ids: ユーザーIDのリスト
+    /// 戻り値: (user_id, follower_count) のタプルのベクター
+    pub async fn get_followers_batch(
+        &self,
+        user_ids: &[&str],
+    ) -> Result<Vec<(String, i32)>, Box<dyn std::error::Error>> {
+        use twitch_api::helix::channels::GetChannelFollowersRequest;
+
+        if user_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let token = self.get_user_token().await?;
+        let mut results = Vec::new();
+
+        // 各ユーザーIDに対してフォロワー数を取得
+        for user_id in user_ids {
+            let broadcaster_id_ref: &types::UserIdRef = (*user_id).into();
+            let request = GetChannelFollowersRequest::broadcaster_id(broadcaster_id_ref);
+
+            // リクエストをトラッキング
+            if let Ok(mut limiter) = self.rate_limiter.lock() {
+                limiter.track_request();
+            }
+
+            match self.client.req_get(request, &token).await {
+                Ok(response) => {
+                    let follower_count = response.total.unwrap_or(0) as i32;
+                    results.push((user_id.to_string(), follower_count));
+                }
+                Err(e) => {
+                    // エラーの場合は0として扱う（個別のエラーで全体を失敗させない）
+                    eprintln!(
+                        "[TwitchAPI] Failed to get follower count for {}: {}",
+                        user_id, e
+                    );
+                    results.push((user_id.to_string(), 0));
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// 上位配信を取得（自動発見機能用）
+    ///
+    /// game_ids: ゲームIDのリスト（Noneの場合は全ゲーム）
+    /// languages: 言語コードのリスト（Noneの場合は全言語）
+    /// max_results: 最大取得件数（デフォルト100、最大100）
+    pub async fn get_top_streams(
+        &self,
+        game_ids: Option<Vec<String>>,
+        languages: Option<Vec<String>>,
+        max_results: Option<usize>,
+    ) -> Result<Vec<Stream>, Box<dyn std::error::Error>> {
+        let token = self.get_user_token().await?;
+
+        // GetStreamsRequestを構築
+        let mut request = GetStreamsRequest::default();
+
+        // ゲームIDを設定
+        if let Some(ids) = game_ids {
+            let game_id_refs: Vec<types::CategoryId> =
+                ids.into_iter().map(|id| id.into()).collect();
+            request.game_id = game_id_refs.into();
+        }
+
+        // 言語を設定（カンマ区切りで結合）
+        if let Some(langs) = languages {
+            if !langs.is_empty() {
+                request.language = Some(langs.join(",").into());
+            }
+        }
+
+        // 最初の100件を取得（max_resultsは後でフィルタリング）
+        request.first = Some(100);
+
+        // リクエストをトラッキング
+        if let Ok(mut limiter) = self.rate_limiter.lock() {
+            limiter.track_request();
+        }
+
+        let response = match self.client.req_get(request, &token).await {
+            Ok(response) => response,
+            Err(e) => {
+                // 401エラーの場合、トークンをリフレッシュして再試行
+                if e.to_string().contains(twitch::ERROR_UNAUTHORIZED)
+                    || e.to_string().contains(twitch::ERROR_UNAUTHORIZED_TEXT)
+                {
+                    eprintln!("Token expired, attempting refresh...");
+                    let _new_token = self.refresh_token().await?;
+                    let refreshed_token = self.get_user_token().await?;
+
+                    // 再試行もトラッキング
+                    if let Ok(mut limiter) = self.rate_limiter.lock() {
+                        limiter.track_request();
+                    }
+
+                    let mut retry_request = GetStreamsRequest::default();
+                    retry_request.first = Some(100);
+                    self.client.req_get(retry_request, &refreshed_token).await?
+                } else {
+                    return Err(e.into());
+                }
+            }
+        };
+
+        let mut streams = response.data;
+
+        // max_resultsが指定されている場合は制限
+        if let Some(max) = max_results {
+            streams.truncate(max);
+        }
+
+        Ok(streams)
+    }
 }
 
 /// Twitch APIレート制限トラッカー
@@ -315,21 +591,21 @@ impl TwitchApiClient {
 pub struct TwitchRateLimitTracker {
     /// リクエストごとのタイムスタンプとポイント消費を記録
     request_log: VecDeque<(Instant, u32)>,
-    /// バケット容量（デフォルト800ポイント/分）
+    /// バケット容量（Twitch API レート制限）
     bucket_capacity: u32,
-    /// ウィンドウサイズ（60秒）
+    /// ウィンドウサイズ
     window_duration: Duration,
 }
 
 impl TwitchRateLimitTracker {
     /// デフォルトの設定で新しいトラッカーを作成
     ///
-    /// バケット容量: 800ポイント/分（Twitch Developer Forumsの情報に基づく）
+    /// バケット容量: Twitch Developer Forumsの情報に基づく
     pub fn new() -> Self {
         Self {
             request_log: VecDeque::new(),
-            bucket_capacity: 800,
-            window_duration: Duration::from_secs(60),
+            bucket_capacity: twitch::RATE_LIMIT_BUCKET_CAPACITY as u32,
+            window_duration: Duration::from_secs(twitch::RATE_LIMIT_WINDOW_SECS),
         }
     }
 
@@ -414,7 +690,7 @@ impl Default for TwitchRateLimitTracker {
 pub struct TwitchRateLimitStatus {
     /// 直近1分間で消費したポイント数（≒リクエスト数）
     pub points_used: u32,
-    /// バケット容量（800ポイント/分）
+    /// バケット容量（Twitch API レート制限）
     pub bucket_capacity: u32,
     /// 推定残りポイント数
     pub points_remaining: u32,

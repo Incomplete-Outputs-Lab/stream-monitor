@@ -267,6 +267,8 @@ mod tests {
             viewer_count: Some(100),
             chat_rate_1min: 10,
             category: None,
+            twitch_user_id: None,
+            channel_name: None,
         }];
 
         let result = DataAggregator::aggregate_stream_stats(&stats, 1);
@@ -288,6 +290,8 @@ mod tests {
                 viewer_count: Some(100),
                 chat_rate_1min: 10,
                 category: None,
+                twitch_user_id: None,
+                channel_name: None,
             },
             StreamStats {
                 id: Some(2),
@@ -296,6 +300,8 @@ mod tests {
                 viewer_count: Some(150),
                 chat_rate_1min: 15,
                 category: None,
+                twitch_user_id: None,
+                channel_name: None,
             },
         ];
 
@@ -315,7 +321,7 @@ mod tests {
                 id: Some(1),
                 stream_id: 1,
                 timestamp: "2024-01-01T12:00:00Z".to_string(),
-                platform: "twitch".to_string(),
+                platform: crate::constants::database::PLATFORM_TWITCH.to_string(),
                 user_id: Some("user1".to_string()),
                 user_name: "User1".to_string(),
                 message: "Hello".to_string(),
@@ -325,7 +331,7 @@ mod tests {
                 id: Some(2),
                 stream_id: 1,
                 timestamp: "2024-01-01T12:01:00Z".to_string(),
-                platform: "twitch".to_string(),
+                platform: crate::constants::database::PLATFORM_TWITCH.to_string(),
                 user_id: Some("user2".to_string()),
                 user_name: "User2".to_string(),
                 message: "Hi".to_string(),

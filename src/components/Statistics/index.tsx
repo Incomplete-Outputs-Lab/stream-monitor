@@ -206,22 +206,22 @@ export function Statistics() {
           {activeTab === "broadcaster" && (
             <BroadcasterAnalytics
               channelId={selectedChannelId || undefined}
-              startTime={new Date(dateRange.start).toISOString()}
-              endTime={new Date(dateRange.end + 'T23:59:59').toISOString()}
+              startTime={dateRange.start + 'T00:00:00'}
+              endTime={dateRange.end + 'T23:59:59'}
             />
           )}
 
           {activeTab === "game" && (
             <GameAnalytics
-              startTime={new Date(dateRange.start).toISOString()}
-              endTime={new Date(dateRange.end + 'T23:59:59').toISOString()}
+              startTime={dateRange.start + 'T00:00:00'}
+              endTime={dateRange.end + 'T23:59:59'}
             />
           )}
 
           {activeTab === "topGames" && (
             <TopGamesAnalytics
-              startTime={new Date(dateRange.start).toISOString()}
-              endTime={new Date(dateRange.end + 'T23:59:59').toISOString()}
+              startTime={dateRange.start + 'T00:00:00'}
+              endTime={dateRange.end + 'T23:59:59'}
               onGameClick={handleGameClick}
             />
           )}
@@ -229,8 +229,8 @@ export function Statistics() {
           {activeTab === "gameDetail" && selectedGame && (
             <GameDetailAnalytics
               category={selectedGame}
-              startTime={new Date(dateRange.start).toISOString()}
-              endTime={new Date(dateRange.end + 'T23:59:59').toISOString()}
+              startTime={dateRange.start + 'T00:00:00'}
+              endTime={dateRange.end + 'T23:59:59'}
               onBackClick={handleBackToTopGames}
               onChannelClick={handleChannelClick}
             />
@@ -238,8 +238,8 @@ export function Statistics() {
 
           {activeTab === "topChannels" && (
             <TopChannelsAnalytics
-              startTime={new Date(dateRange.start).toISOString()}
-              endTime={new Date(dateRange.end + 'T23:59:59').toISOString()}
+              startTime={dateRange.start + 'T00:00:00'}
+              endTime={dateRange.end + 'T23:59:59'}
               onChannelClick={handleChannelClick}
             />
           )}
@@ -248,8 +248,8 @@ export function Statistics() {
             <ChannelDetailAnalytics
               channelId={selectedChannelId}
               channelName={selectedChannelName}
-              startTime={new Date(dateRange.start).toISOString()}
-              endTime={new Date(dateRange.end + 'T23:59:59').toISOString()}
+              startTime={dateRange.start + 'T00:00:00'}
+              endTime={dateRange.end + 'T23:59:59'}
               onBackClick={handleBackToTopChannels}
               onGameClick={handleGameClick}
             />

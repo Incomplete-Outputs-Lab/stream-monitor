@@ -1,5 +1,6 @@
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { ChannelWithStats } from "../../types";
+import { toast } from "../../utils/toast";
 
 interface ChannelItemProps {
   channel: ChannelWithStats;
@@ -24,7 +25,7 @@ export function ChannelItem({ channel, onEdit, onDelete, onToggle }: ChannelItem
       await openUrl(url);
     } catch (error) {
       console.error("Failed to open URL:", error);
-      alert("URLを開くことができませんでした: " + String(error));
+      toast.error("URLを開くことができませんでした: " + String(error));
     }
   };
 
@@ -97,7 +98,7 @@ export function ChannelItem({ channel, onEdit, onDelete, onToggle }: ChannelItem
               <span>ID: {channel.channel_id}</span>
               <span>•</span>
               <span>{channel.poll_interval}秒間隔</span>
-              {channel.follower_count !== undefined && (
+              {channel.follower_count != null && (
                 <>
                   <span>•</span>
                   <span className="flex items-center space-x-1 text-purple-600 dark:text-purple-400 font-semibold">
@@ -120,7 +121,7 @@ export function ChannelItem({ channel, onEdit, onDelete, onToggle }: ChannelItem
                   </span>
                 </>
               )}
-              {isLive && viewerCount !== undefined && (
+              {isLive && viewerCount != null && (
                 <>
                   <span>•</span>
                   <span className="flex items-center space-x-1 text-red-600 dark:text-red-400 font-semibold">

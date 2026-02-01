@@ -1,10 +1,32 @@
 <!doctype html>
-<html lang="en">
+<html lang="ja">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
     <title>Stream Monitor - ストリーム統計収集ツール</title>
+    <style>
+      /* ネイティブアプリ風の初期スタイル */
+      html, body {
+        overscroll-behavior: none;
+        touch-action: manipulation;
+      }
+      
+      /* ドラッグ&ドロップを無効化 */
+      * {
+        -webkit-user-drag: none;
+        -khtml-user-drag: none;
+        -moz-user-drag: none;
+        -o-user-drag: none;
+        user-drag: none;
+      }
+
+      /* タップハイライトを無効化（モバイル対応） */
+      * {
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+      }
+    </style>
   </head>
 
   <body>

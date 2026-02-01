@@ -1,3 +1,4 @@
+use crate::error::ResultExt;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -36,6 +37,7 @@ pub async fn get_logs(app_handle: AppHandle, query: GetLogsQuery) -> Result<Vec<
 
     // ログファイルを読み込み
     let content = fs::read_to_string(&log_path)
+        .io_context("read log file")
         .map_err(|e| format!("ログファイルの読み込みに失敗しました: {}", e))?;
 
     // ログをパースしてフィルタリング

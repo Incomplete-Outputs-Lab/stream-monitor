@@ -1,6 +1,8 @@
 use crate::api::twitch_api::TwitchRateLimitStatus;
 use crate::collectors::poller::ChannelPoller;
 use crate::config::settings::SettingsManager;
+use crate::constants::twitch;
+use crate::error::ResultExt;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::{AppHandle, State};
@@ -13,7 +15,8 @@ use twitch_api::{
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TwitchChannelInfo {
-    pub channel_id: String,
+    pub channel_id: String,  // login (表示用)
+    pub twitch_user_id: i64, // 不変なuser ID
     pub display_name: String,
     pub profile_image_url: String,
     pub description: String,
@@ -31,6 +34,7 @@ pub async fn validate_twitch_channel(
 ) -> Result<TwitchChannelInfo, String> {
     // Load settings to get client_id
     let settings = SettingsManager::load_settings(&app_handle)
+        .config_context("load settings")
         .map_err(|e| format!("設定の読み込みに失敗しました: {}", e))?;
 
     let _client_id = settings.twitch.client_id.ok_or_else(|| {
@@ -83,8 +87,16 @@ pub async fn validate_twitch_channel(
         .broadcaster_type
         .map(|bt| format!("{:?}", bt).to_lowercase());
 
+    // Parse user_id as i64
+    let twitch_user_id = user
+        .id
+        .as_str()
+        .parse::<i64>()
+        .map_err(|e| format!("Failed to parse Twitch user ID: {}", e))?;
+
     Ok(TwitchChannelInfo {
         channel_id: user.login.to_string(),
+        twitch_user_id,
         display_name: user.display_name.to_string(),
         profile_image_url: user
             .profile_image_url
@@ -120,8 +132,8 @@ pub async fn get_twitch_rate_limit_status(
         // TwitchCollectorが初期化されていない場合、デフォルト値を返す
         Ok(TwitchRateLimitStatus {
             points_used: 0,
-            bucket_capacity: 800,
-            points_remaining: 800,
+            bucket_capacity: twitch::RATE_LIMIT_BUCKET_CAPACITY as u32,
+            points_remaining: twitch::RATE_LIMIT_BUCKET_CAPACITY as u32,
             oldest_entry_expires_in_seconds: None,
             usage_percent: 0.0,
             request_count: 0,

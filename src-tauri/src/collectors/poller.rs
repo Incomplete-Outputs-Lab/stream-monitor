@@ -1,5 +1,6 @@
 use crate::collectors::collector_trait::Collector;
 use crate::collectors::twitch::TwitchCollector;
+use crate::constants::database as db_constants;
 use crate::database::{
     models::{Channel, ChannelStatsEvent, Stream, StreamData, StreamStats},
     writer::DatabaseWriter,
@@ -63,7 +64,8 @@ impl ChannelPoller {
     /// Register Twitch collector specifically for token management
     pub fn register_twitch_collector(&mut self, collector: Arc<TwitchCollector>) {
         self.twitch_collector = Some(collector.clone());
-        self.collectors.insert("twitch".to_string(), collector);
+        self.collectors
+            .insert(db_constants::PLATFORM_TWITCH.to_string(), collector);
     }
 
     /// Get Twitch collector for rate limit tracking
@@ -163,7 +165,7 @@ impl ChannelPoller {
                 };
 
                 // Twitch プラットフォームの場合、10回のポーリングごとにトークン有効期限をチェック
-                if channel.platform == "twitch" && poll_count % 10 == 0 {
+                if channel.platform == db_constants::PLATFORM_TWITCH && poll_count % 10 == 0 {
                     if let Some(ref twitch_collector) = twitch_collector_for_task {
                         match twitch_collector.check_and_refresh_token_if_needed().await {
                             Ok(true) => {
@@ -222,7 +224,9 @@ impl ChannelPoller {
                 match collector.poll_channel(&updated_channel).await {
                     Ok(Some(stream_data)) => {
                         // ストリーム情報をデータベースに保存
-                        if let Err(e) = Self::save_stream_data(&conn, channel_id, &stream_data) {
+                        if let Err(e) =
+                            Self::save_stream_data(&conn, &updated_channel, &stream_data)
+                        {
                             logger.error(&format!(
                                 "Failed to save stream data for channel {}: {}",
                                 channel_id, e
@@ -343,7 +347,7 @@ impl ChannelPoller {
     }
 
     fn get_channel(conn: &Connection, channel_id: i64) -> Result<Option<Channel>, duckdb::Error> {
-        let mut stmt = conn.prepare("SELECT id, platform, channel_id, channel_name, display_name, profile_image_url, enabled, poll_interval, follower_count, broadcaster_type, view_count, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels WHERE id = ?")?;
+        let mut stmt = conn.prepare("SELECT id, platform, channel_id, channel_name, enabled, poll_interval, is_auto_discovered, CAST(discovered_at AS VARCHAR) as discovered_at, twitch_user_id, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels WHERE id = ?")?;
 
         let channel_id_str = channel_id.to_string();
         let rows: Result<Vec<_>, _> = stmt
@@ -353,15 +357,18 @@ impl ChannelPoller {
                     platform: row.get(1)?,
                     channel_id: row.get(2)?,
                     channel_name: row.get(3)?,
-                    display_name: row.get(4)?,
-                    profile_image_url: row.get(5)?,
-                    enabled: row.get(6)?,
-                    poll_interval: row.get(7)?,
-                    follower_count: row.get(8).ok(),
-                    broadcaster_type: row.get(9).ok(),
-                    view_count: row.get(10).ok(),
-                    created_at: Some(row.get(11)?),
-                    updated_at: Some(row.get(12)?),
+                    display_name: None,
+                    profile_image_url: None,
+                    enabled: row.get(4)?,
+                    poll_interval: row.get(5)?,
+                    follower_count: None,
+                    broadcaster_type: None,
+                    view_count: None,
+                    is_auto_discovered: row.get(6).ok(),
+                    discovered_at: row.get(7).ok(),
+                    twitch_user_id: row.get(8).ok(),
+                    created_at: Some(row.get(9)?),
+                    updated_at: Some(row.get(10)?),
                 })
             })?
             .collect();
@@ -375,9 +382,11 @@ impl ChannelPoller {
     /// ストリーム統計情報をデータベースに保存する
     fn save_stream_data(
         conn: &Connection,
-        channel_id: i64,
+        channel: &Channel,
         stream_data: &StreamData,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let channel_id = channel.id.ok_or("Channel ID is required")?;
+
         // StreamDataから配信情報を含むStreamレコードを作成
         let stream = Stream {
             id: None,
@@ -393,6 +402,13 @@ impl ChannelPoller {
         // ストリームを保存（同じstream_idの場合は更新）
         let stream_db_id = DatabaseWriter::insert_or_update_stream(conn, channel_id, &stream)?;
 
+        // プラットフォーム別にtwitch_user_idを設定
+        let twitch_user_id = if channel.platform == db_constants::PLATFORM_TWITCH {
+            Some(channel.channel_id.clone())
+        } else {
+            None
+        };
+
         // StreamStatsを作成して保存
         let stats = StreamStats {
             id: None,
@@ -401,6 +417,8 @@ impl ChannelPoller {
             viewer_count: stream_data.viewer_count,
             chat_rate_1min: stream_data.chat_rate_1min,
             category: stream_data.category.clone(),
+            twitch_user_id,
+            channel_name: Some(channel.channel_name.clone()),
         };
 
         // ストリーム統計を保存

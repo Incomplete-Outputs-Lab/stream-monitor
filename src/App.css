@@ -15,11 +15,32 @@
   /* ネイティブアプリ風にカーソルをデフォルトに設定 */
   body {
     cursor: default;
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+  }
+
+  /* テキストの選択を基本的に無効化 */
+  * {
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+  }
+
+  /* 入力フィールドとテキストエリアでは選択を許可 */
+  input, textarea, [contenteditable="true"] {
+    user-select: text;
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    cursor: text;
   }
 
   /* インタラクティブ要素には適切なカーソルを設定 */
-  input, textarea, select, button {
-    cursor: auto;
+  button, select {
+    cursor: pointer;
   }
 
   /* クリック可能な要素 */
@@ -28,12 +49,17 @@
   }
 
   /* Tauri風のスクロールバー - ネイティブアプリ風に非表示 */
-  ::-webkit-scrollbar {
-    display: none;
+  * {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE and Edge */
   }
 
-  /* 選択テキストのスタイル */
-  ::selection {
+  *::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Opera */
+  }
+
+  /* 選択テキストのスタイル（入力フィールド用） */
+  input::selection, textarea::selection, [contenteditable="true"]::selection {
     background-color: rgba(99, 102, 241, 0.3);
     color: inherit;
   }
@@ -61,6 +87,15 @@
 }
 
 @layer utilities {
+  /* テキスト選択を許可するユーティリティクラス */
+  .select-text {
+    user-select: text !important;
+    -webkit-user-select: text !important;
+    -moz-user-select: text !important;
+    -ms-user-select: text !important;
+    cursor: text !important;
+  }
+
   /* フェードインアニメーション */
   @keyframes fade-in {
     from {

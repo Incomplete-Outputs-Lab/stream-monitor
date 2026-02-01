@@ -1,40 +1,71 @@
 use crate::database::models::ChatMessage;
 use duckdb::{Connection, Result as DuckResult, Row};
 
+/// 動的パラメータ数に対応したマクロ
+/// DuckDBのパラメータを処理し、適切な数のパラメータで実行する
+macro_rules! dispatch_params {
+    ($method:expr, $params:expr) => {{
+        let params_slice = $params;
+        match params_slice.len() {
+            0 => $method([]),
+            1 => $method([params_slice[0].as_str()]),
+            2 => $method([params_slice[0].as_str(), params_slice[1].as_str()]),
+            3 => $method([
+                params_slice[0].as_str(),
+                params_slice[1].as_str(),
+                params_slice[2].as_str(),
+            ]),
+            4 => $method([
+                params_slice[0].as_str(),
+                params_slice[1].as_str(),
+                params_slice[2].as_str(),
+                params_slice[3].as_str(),
+            ]),
+            5 => $method([
+                params_slice[0].as_str(),
+                params_slice[1].as_str(),
+                params_slice[2].as_str(),
+                params_slice[3].as_str(),
+                params_slice[4].as_str(),
+            ]),
+            6 => $method([
+                params_slice[0].as_str(),
+                params_slice[1].as_str(),
+                params_slice[2].as_str(),
+                params_slice[3].as_str(),
+                params_slice[4].as_str(),
+                params_slice[5].as_str(),
+            ]),
+            7 => $method([
+                params_slice[0].as_str(),
+                params_slice[1].as_str(),
+                params_slice[2].as_str(),
+                params_slice[3].as_str(),
+                params_slice[4].as_str(),
+                params_slice[5].as_str(),
+                params_slice[6].as_str(),
+            ]),
+            8 => $method([
+                params_slice[0].as_str(),
+                params_slice[1].as_str(),
+                params_slice[2].as_str(),
+                params_slice[3].as_str(),
+                params_slice[4].as_str(),
+                params_slice[5].as_str(),
+                params_slice[6].as_str(),
+                params_slice[7].as_str(),
+            ]),
+            _ => Err(duckdb::Error::InvalidParameterName(
+                "Too many parameters (max 8 supported)".to_string(),
+            )),
+        }
+    }};
+}
+
 /// DuckDBの動的パラメータを処理するヘルパー関数
-/// パラメータが0-15個の場合にのみサポート
+/// パラメータが0-8個の場合にのみサポート
 pub fn execute_with_params(conn: &Connection, sql: &str, params: &[String]) -> DuckResult<usize> {
-    match params.len() {
-        0 => conn.execute(sql, []),
-        1 => conn.execute(sql, [params[0].as_str()]),
-        2 => conn.execute(sql, [params[0].as_str(), params[1].as_str()]),
-        3 => conn.execute(
-            sql,
-            [params[0].as_str(), params[1].as_str(), params[2].as_str()],
-        ),
-        4 => conn.execute(
-            sql,
-            [
-                params[0].as_str(),
-                params[1].as_str(),
-                params[2].as_str(),
-                params[3].as_str(),
-            ],
-        ),
-        5 => conn.execute(
-            sql,
-            [
-                params[0].as_str(),
-                params[1].as_str(),
-                params[2].as_str(),
-                params[3].as_str(),
-                params[4].as_str(),
-            ],
-        ),
-        _ => Err(duckdb::Error::InvalidParameterName(
-            "Too many parameters (max 5 supported)".to_string(),
-        )),
-    }
+    dispatch_params!(|p| conn.execute(sql, p), params)
 }
 
 pub fn query_map_with_params<'stmt, T, F>(
@@ -45,37 +76,7 @@ pub fn query_map_with_params<'stmt, T, F>(
 where
     F: FnMut(&duckdb::Row) -> DuckResult<T>,
 {
-    match params.len() {
-        0 => stmt.query_map([], f),
-        1 => stmt.query_map([params[0].as_str()], f),
-        2 => stmt.query_map([params[0].as_str(), params[1].as_str()], f),
-        3 => stmt.query_map(
-            [params[0].as_str(), params[1].as_str(), params[2].as_str()],
-            f,
-        ),
-        4 => stmt.query_map(
-            [
-                params[0].as_str(),
-                params[1].as_str(),
-                params[2].as_str(),
-                params[3].as_str(),
-            ],
-            f,
-        ),
-        5 => stmt.query_map(
-            [
-                params[0].as_str(),
-                params[1].as_str(),
-                params[2].as_str(),
-                params[3].as_str(),
-                params[4].as_str(),
-            ],
-            f,
-        ),
-        _ => Err(duckdb::Error::InvalidParameterName(
-            "Too many parameters (max 5 supported)".to_string(),
-        )),
-    }
+    dispatch_params!(|p| stmt.query_map(p, f), params)
 }
 
 pub fn query_row_with_params<T, F>(
@@ -87,40 +88,7 @@ pub fn query_row_with_params<T, F>(
 where
     F: FnOnce(&duckdb::Row) -> DuckResult<T>,
 {
-    match params.len() {
-        0 => conn.query_row(sql, [], f),
-        1 => conn.query_row(sql, [params[0].as_str()], f),
-        2 => conn.query_row(sql, [params[0].as_str(), params[1].as_str()], f),
-        3 => conn.query_row(
-            sql,
-            [params[0].as_str(), params[1].as_str(), params[2].as_str()],
-            f,
-        ),
-        4 => conn.query_row(
-            sql,
-            [
-                params[0].as_str(),
-                params[1].as_str(),
-                params[2].as_str(),
-                params[3].as_str(),
-            ],
-            f,
-        ),
-        5 => conn.query_row(
-            sql,
-            [
-                params[0].as_str(),
-                params[1].as_str(),
-                params[2].as_str(),
-                params[3].as_str(),
-                params[4].as_str(),
-            ],
-            f,
-        ),
-        _ => Err(duckdb::Error::InvalidParameterName(
-            "Too many parameters (max 5 supported)".to_string(),
-        )),
-    }
+    dispatch_params!(|p| conn.query_row(sql, p, f), params)
 }
 
 /// RowからChatMessageを作成するヘルパー関数

@@ -9,6 +9,8 @@ import { Logs } from "./components/Logs";
 import { MultiView } from "./components/MultiView";
 import { ErrorBoundary } from "./components/common/ErrorBoundary";
 import { SplashScreen } from "./components/common/SplashScreen";
+import { ToastContainer } from "./components/common/Toast";
+import { ConfirmDialog } from "./components/common/ConfirmDialog";
 import { useThemeStore } from "./stores/themeStore";
 import "./App.css";
 import { SQLViewer } from "./components/SQL";
@@ -35,6 +37,46 @@ function App() {
       root.classList.remove('dark');
     }
   }, [theme]);
+
+  // ネイティブアプリらしい動作を設定
+  useEffect(() => {
+    // コンテキストメニューを無効化（右クリックメニュー）
+    const handleContextMenu = (e: MouseEvent) => {
+      // 開発モードでは許可（Ctrl/Cmdキーを押しながらの場合のみ）
+      if (!e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+      }
+    };
+
+    // ドラッグ開始を無効化（画像やリンクのドラッグ防止）
+    const handleDragStart = (e: DragEvent) => {
+      e.preventDefault();
+    };
+
+    // 選択開始を制御（ダブルクリックでの選択を防止）
+    const handleSelectStart = (e: Event) => {
+      const target = e.target as HTMLElement;
+      // 入力フィールド、テキストエリア、contenteditable要素では許可
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+      e.preventDefault();
+    };
+
+    document.addEventListener('contextmenu', handleContextMenu);
+    document.addEventListener('dragstart', handleDragStart);
+    document.addEventListener('selectstart', handleSelectStart);
+
+    return () => {
+      document.removeEventListener('contextmenu', handleContextMenu);
+      document.removeEventListener('dragstart', handleDragStart);
+      document.removeEventListener('selectstart', handleSelectStart);
+    };
+  }, []);
 
   const tabs: { id: Tab; label: string; component: React.ReactNode }[] = [
     {
@@ -92,6 +134,8 @@ function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
+        <ToastContainer />
+        <ConfirmDialog />
         <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
           {/* ナビゲーションバー */}
           <nav className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl shadow-sm border-b border-gray-200/50 dark:border-slate-700/50 sticky top-0 z-40">

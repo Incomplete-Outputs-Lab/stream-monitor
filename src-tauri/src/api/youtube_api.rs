@@ -1,4 +1,5 @@
 // Keyring is not used in this file as it doesn't have AppHandle access
+use crate::constants::youtube;
 use google_youtube3::{hyper_rustls, hyper_util, yup_oauth2, YouTube};
 use hyper_util::client::legacy::connect::HttpConnector;
 use std::sync::Arc;
@@ -20,8 +21,8 @@ impl YouTubeApiClient {
         let secret = yup_oauth2::ApplicationSecret {
             client_id,
             client_secret,
-            auth_uri: "https://accounts.google.com/o/oauth2/v2/auth".to_string(),
-            token_uri: "https://oauth2.googleapis.com/token".to_string(),
+            auth_uri: youtube::OAUTH_AUTH_URL.to_string(),
+            token_uri: youtube::OAUTH_TOKEN_URL.to_string(),
             ..Default::default()
         };
 
@@ -62,9 +63,9 @@ impl YouTubeApiClient {
     ) -> Result<Option<google_youtube3::api::Channel>, Box<dyn std::error::Error>> {
         // 認証はhubに組み込まれているため、直接呼び出す
         let part = vec![
-            "id".to_string(),
-            "snippet".to_string(),
-            "contentDetails".to_string(),
+            youtube::PART_ID.to_string(),
+            youtube::PART_SNIPPET.to_string(),
+            youtube::PART_CONTENT_DETAILS.to_string(),
         ];
         let (_, response) = self
             .hub
@@ -83,8 +84,8 @@ impl YouTubeApiClient {
     ) -> Result<Option<google_youtube3::api::Video>, Box<dyn std::error::Error>> {
         // チャンネルのライブストリームを検索
         let part = vec![
-            "id".to_string(),
-            "snippet".to_string(),
+            youtube::PART_ID.to_string(),
+            youtube::PART_SNIPPET.to_string(),
             "liveStreamingDetails".to_string(),
             "statistics".to_string(),
         ];
@@ -94,9 +95,9 @@ impl YouTubeApiClient {
             .search()
             .list(&part)
             .channel_id(channel_id)
-            .event_type("live")
-            .add_type("video")
-            .max_results(1)
+            .event_type(youtube::EVENT_TYPE_LIVE)
+            .add_type(youtube::TYPE_VIDEO)
+            .max_results(youtube::MAX_RESULTS_DEFAULT)
             .doit()
             .await?;
 

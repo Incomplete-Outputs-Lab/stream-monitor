@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 pub struct Channel {
     pub id: Option<i64>,
     pub platform: String,
-    pub channel_id: String,
+    pub channel_id: String, // Twitch: login (変更可能), YouTube: channel_id
     pub channel_name: String,
     pub display_name: Option<String>,
     pub profile_image_url: Option<String>,
@@ -13,6 +13,9 @@ pub struct Channel {
     pub follower_count: Option<i32>,
     pub broadcaster_type: Option<String>,
     pub view_count: Option<i32>,
+    pub is_auto_discovered: Option<bool>,
+    pub discovered_at: Option<String>,
+    pub twitch_user_id: Option<i64>, // Twitchの不変なuser ID（内部識別子）
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
 }
@@ -37,6 +40,8 @@ pub struct StreamStats {
     pub viewer_count: Option<i32>,
     pub chat_rate_1min: i32,
     pub category: Option<String>,
+    pub twitch_user_id: Option<String>,
+    pub channel_name: Option<String>,
 }
 
 /// Combined stream data returned by collectors
@@ -89,7 +94,7 @@ mod tests {
     fn test_channel_serialization() {
         let channel = Channel {
             id: Some(1),
-            platform: "twitch".to_string(),
+            platform: crate::constants::database::PLATFORM_TWITCH.to_string(),
             channel_id: "test_channel".to_string(),
             channel_name: "Test Channel".to_string(),
             display_name: None,
@@ -97,6 +102,9 @@ mod tests {
             follower_count: None,
             broadcaster_type: None,
             view_count: None,
+            is_auto_discovered: None,
+            discovered_at: None,
+            twitch_user_id: Some(123456789),
             enabled: true,
             poll_interval: 60,
             created_at: Some("2024-01-01T00:00:00Z".to_string()),
@@ -110,6 +118,7 @@ mod tests {
         assert_eq!(channel.platform, deserialized.platform);
         assert_eq!(channel.channel_id, deserialized.channel_id);
         assert_eq!(channel.channel_name, deserialized.channel_name);
+        assert_eq!(channel.twitch_user_id, deserialized.twitch_user_id);
     }
 
     #[test]
@@ -121,6 +130,8 @@ mod tests {
             viewer_count: Some(100),
             chat_rate_1min: 10,
             category: Some("Just Chatting".to_string()),
+            twitch_user_id: Some("123456789".to_string()),
+            channel_name: Some("test_channel".to_string()),
         };
 
         let json = serde_json::to_string(&stats).unwrap();
@@ -129,5 +140,7 @@ mod tests {
         assert_eq!(stats.viewer_count, deserialized.viewer_count);
         assert_eq!(stats.chat_rate_1min, deserialized.chat_rate_1min);
         assert_eq!(stats.category, deserialized.category);
+        assert_eq!(stats.twitch_user_id, deserialized.twitch_user_id);
+        assert_eq!(stats.channel_name, deserialized.channel_name);
     }
 }

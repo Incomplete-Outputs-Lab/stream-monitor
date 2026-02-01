@@ -33,13 +33,6 @@ pub struct GameAnalytics {
     pub top_channel: Option<String>,
 }
 
-/// カテゴリ別 MinutesWatched 中間データ
-#[derive(Debug)]
-struct CategoryMinutesWatched {
-    category: String,
-    minutes_watched: i64,
-}
-
 /// データ可用性情報
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DataAvailability {
@@ -70,29 +63,42 @@ pub fn get_broadcaster_analytics(
         r#"
         WITH stats_with_interval AS (
             SELECT 
-                s.channel_id,
-                c.channel_name,
+                COALESCE(s.channel_id, c.id) as channel_id,
+                COALESCE(c.channel_name, ss.channel_name) as channel_name,
                 ss.stream_id,
                 ss.viewer_count,
                 ss.category,
                 ss.chat_rate_1min,
                 ss.collected_at,
+                ss.twitch_user_id,
                 EXTRACT(EPOCH FROM (
-                    LEAD(ss.collected_at) OVER (PARTITION BY ss.stream_id ORDER BY ss.collected_at) 
+                    LEAD(ss.collected_at) OVER (PARTITION BY COALESCE(CAST(ss.stream_id AS VARCHAR), ss.channel_name || '_' || CAST(DATE(ss.collected_at) AS VARCHAR)) ORDER BY ss.collected_at) 
                     - ss.collected_at
                 )) / 60.0 AS interval_minutes
             FROM stream_stats ss
-            JOIN streams s ON ss.stream_id = s.id
-            JOIN channels c ON s.channel_id = c.id
+            LEFT JOIN streams s ON ss.stream_id = s.id
+            LEFT JOIN channels c ON (s.channel_id = c.id OR (ss.channel_name = c.channel_id AND c.platform = 'twitch'))
             WHERE 1=1
         "#,
     );
 
     let mut params: Vec<String> = Vec::new();
 
-    if let Some(ch_id) = channel_id {
-        sql.push_str(" AND s.channel_id = ?");
-        params.push(ch_id.to_string());
+    // channel_id が指定されている場合、channel_name を取得してフィルター
+    let filter_channel_name = if let Some(ch_id) = channel_id {
+        conn.query_row(
+            "SELECT channel_id FROM channels WHERE id = ? AND platform = 'twitch'",
+            [ch_id.to_string()],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+    } else {
+        None
+    };
+
+    if let Some(ref ch_name) = filter_channel_name {
+        sql.push_str(" AND ss.channel_name = ?");
+        params.push(ch_name.clone());
     }
 
     if let Some(start) = start_time {
@@ -110,7 +116,6 @@ pub fn get_broadcaster_analytics(
         ),
         channel_stats AS (
             SELECT 
-                channel_id,
                 channel_name,
                 COALESCE(SUM(viewer_count * COALESCE(interval_minutes, 1)), 0)::BIGINT AS minutes_watched,
                 COALESCE(SUM(COALESCE(interval_minutes, 1)) / 60.0, 0) AS hours_broadcasted,
@@ -122,37 +127,64 @@ pub fn get_broadcaster_analytics(
                 COUNT(DISTINCT category) AS category_count
             FROM stats_with_interval
             WHERE viewer_count IS NOT NULL
-            GROUP BY channel_id, channel_name
+                AND channel_name IS NOT NULL
+            GROUP BY channel_name
+        ),
+        category_mw AS (
+            SELECT 
+                channel_name,
+                category,
+                COALESCE(SUM(viewer_count * COALESCE(interval_minutes, 1)), 0)::BIGINT AS minutes_watched,
+                ROW_NUMBER() OVER (PARTITION BY channel_name ORDER BY SUM(viewer_count * COALESCE(interval_minutes, 1)) DESC) as rn
+            FROM stats_with_interval
+            WHERE viewer_count IS NOT NULL 
+                AND category IS NOT NULL
+                AND channel_name IS NOT NULL
+            GROUP BY channel_name, category
+        ),
+        main_category AS (
+            SELECT 
+                channel_name,
+                category as main_title,
+                minutes_watched as main_mw
+            FROM category_mw
+            WHERE rn = 1
         )
         SELECT 
-            channel_id,
-            channel_name,
-            minutes_watched,
-            hours_broadcasted,
-            average_ccu,
-            peak_ccu,
-            stream_count,
-            total_chat_messages,
-            avg_chat_rate,
-            category_count
-        FROM channel_stats
-        ORDER BY minutes_watched DESC
+            COALESCE(c.id, 0) as channel_id,
+            cs.channel_name,
+            cs.minutes_watched,
+            cs.hours_broadcasted,
+            cs.average_ccu,
+            cs.peak_ccu,
+            cs.stream_count,
+            cs.total_chat_messages,
+            cs.avg_chat_rate,
+            cs.category_count,
+            mc.main_title,
+            mc.main_mw
+        FROM channel_stats cs
+        LEFT JOIN main_category mc ON cs.channel_name = mc.channel_name
+        LEFT JOIN channels c ON (cs.channel_name = c.channel_id AND c.platform = 'twitch')
+        ORDER BY cs.minutes_watched DESC
         "#,
     );
 
     let mut stmt = conn.prepare(&sql)?;
     let channel_stats: Vec<_> = utils::query_map_with_params(&mut stmt, &params, |row| {
         Ok((
-            row.get::<_, i64>(0)?,    // channel_id
-            row.get::<_, String>(1)?, // channel_name
-            row.get::<_, i64>(2)?,    // minutes_watched
-            row.get::<_, f64>(3)?,    // hours_broadcasted
-            row.get::<_, f64>(4)?,    // average_ccu
-            row.get::<_, i32>(5)?,    // peak_ccu
-            row.get::<_, i32>(6)?,    // stream_count
-            row.get::<_, i64>(7)?,    // total_chat_messages
-            row.get::<_, f64>(8)?,    // avg_chat_rate
-            row.get::<_, i32>(9)?,    // category_count
+            row.get::<_, i64>(0)?,             // channel_id
+            row.get::<_, String>(1)?,          // channel_name
+            row.get::<_, i64>(2)?,             // minutes_watched
+            row.get::<_, f64>(3)?,             // hours_broadcasted
+            row.get::<_, f64>(4)?,             // average_ccu
+            row.get::<_, i32>(5)?,             // peak_ccu
+            row.get::<_, i32>(6)?,             // stream_count
+            row.get::<_, i64>(7)?,             // total_chat_messages
+            row.get::<_, f64>(8)?,             // avg_chat_rate
+            row.get::<_, i32>(9)?,             // category_count
+            row.get::<_, Option<String>>(10)?, // main_title
+            row.get::<_, Option<i64>>(11)?,    // main_mw
         ))
     })?
     .collect::<Result<Vec<_>, _>>()?;
@@ -196,7 +228,7 @@ pub fn get_broadcaster_analytics(
         })?
         .collect::<Result<_, _>>()?;
 
-    // カテゴリ別 MinutesWatched を取得してメインタイトルを計算
+    // 結果を構築
     let mut results = Vec::new();
     for (
         ch_id,
@@ -209,6 +241,8 @@ pub fn get_broadcaster_analytics(
         total_chat,
         avg_chat_rate,
         category_count,
+        main_title,
+        main_mw,
     ) in channel_stats
     {
         let unique_chatters = chatters_map.get(&ch_id).copied().unwrap_or(0);
@@ -220,20 +254,16 @@ pub fn get_broadcaster_analytics(
             0.0
         };
 
-        // カテゴリ別 MinutesWatched を取得
-        let category_mw = get_category_minutes_watched(conn, ch_id, start_time, end_time)?;
-
-        let (main_title, main_mw_percent) =
-            if let Some(max_category) = category_mw.into_iter().max_by_key(|c| c.minutes_watched) {
-                let percent = if mw > 0 {
-                    (max_category.minutes_watched as f64 / mw as f64) * 100.0
-                } else {
-                    0.0
-                };
-                (Some(max_category.category), Some(percent))
+        // メインタイトルのMW割合を計算
+        let main_mw_percent = if let Some(main_mw_val) = main_mw {
+            if mw > 0 {
+                Some((main_mw_val as f64 / mw as f64) * 100.0)
             } else {
-                (None, None)
-            };
+                Some(0.0)
+            }
+        } else {
+            None
+        };
 
         results.push(BroadcasterAnalytics {
             channel_id: ch_id,
@@ -256,68 +286,6 @@ pub fn get_broadcaster_analytics(
     Ok(results)
 }
 
-/// カテゴリ別 MinutesWatched を取得（配信者ごとのメインタイトル計算用）
-fn get_category_minutes_watched(
-    conn: &Connection,
-    channel_id: i64,
-    start_time: Option<&str>,
-    end_time: Option<&str>,
-) -> Result<Vec<CategoryMinutesWatched>, duckdb::Error> {
-    let mut sql = String::from(
-        r#"
-        WITH stats_with_interval AS (
-            SELECT 
-                ss.category,
-                ss.viewer_count,
-                ss.collected_at,
-                EXTRACT(EPOCH FROM (
-                    LEAD(ss.collected_at) OVER (PARTITION BY ss.stream_id ORDER BY ss.collected_at) 
-                    - ss.collected_at
-                )) / 60.0 AS interval_minutes
-            FROM stream_stats ss
-            JOIN streams s ON ss.stream_id = s.id
-            WHERE s.channel_id = ?
-        "#,
-    );
-
-    let mut params: Vec<String> = vec![channel_id.to_string()];
-
-    if let Some(start) = start_time {
-        sql.push_str(" AND ss.collected_at >= ?");
-        params.push(start.to_string());
-    }
-
-    if let Some(end) = end_time {
-        sql.push_str(" AND ss.collected_at <= ?");
-        params.push(end.to_string());
-    }
-
-    sql.push_str(
-        r#"
-        )
-        SELECT 
-            COALESCE(category, 'Unknown') AS category,
-            COALESCE(SUM(viewer_count * COALESCE(interval_minutes, 1)), 0)::BIGINT AS minutes_watched
-        FROM stats_with_interval
-        WHERE viewer_count IS NOT NULL
-        GROUP BY category
-        ORDER BY minutes_watched DESC
-        "#,
-    );
-
-    let mut stmt = conn.prepare(&sql)?;
-    let results: Vec<CategoryMinutesWatched> =
-        utils::query_map_with_params(&mut stmt, &params, |row| {
-            Ok(CategoryMinutesWatched {
-                category: row.get(0)?,
-                minutes_watched: row.get(1)?,
-            })
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
-
-    Ok(results)
-}
-
 /// ゲームタイトル別統計を取得
 pub fn get_game_analytics(
     conn: &Connection,
@@ -329,18 +297,20 @@ pub fn get_game_analytics(
         r#"
         WITH stats_with_interval AS (
             SELECT 
-                s.channel_id,
-                c.channel_name,
+                COALESCE(s.channel_id, c.id) as channel_id,
+                COALESCE(c.channel_name, ss.channel_name) as channel_name,
                 ss.category,
                 ss.viewer_count,
                 ss.collected_at,
+                ss.stream_id,
+                ss.twitch_user_id,
                 EXTRACT(EPOCH FROM (
-                    LEAD(ss.collected_at) OVER (PARTITION BY ss.stream_id ORDER BY ss.collected_at) 
+                    LEAD(ss.collected_at) OVER (PARTITION BY COALESCE(CAST(ss.stream_id AS VARCHAR), ss.channel_name || '_' || CAST(DATE(ss.collected_at) AS VARCHAR)) ORDER BY ss.collected_at) 
                     - ss.collected_at
                 )) / 60.0 AS interval_minutes
             FROM stream_stats ss
-            JOIN streams s ON ss.stream_id = s.id
-            JOIN channels c ON s.channel_id = c.id
+            LEFT JOIN streams s ON ss.stream_id = s.id
+            LEFT JOIN channels c ON (s.channel_id = c.id OR (ss.channel_name = c.channel_id AND c.platform = 'twitch'))
             WHERE ss.category IS NOT NULL
         "#,
     );
@@ -371,48 +341,55 @@ pub fn get_game_analytics(
                 COALESCE(SUM(viewer_count * COALESCE(interval_minutes, 1)), 0)::BIGINT AS minutes_watched,
                 COALESCE(SUM(COALESCE(interval_minutes, 1)) / 60.0, 0) AS hours_broadcasted,
                 COALESCE(AVG(viewer_count), 0) AS average_ccu,
-                COUNT(DISTINCT channel_id) AS unique_broadcasters
+                COUNT(DISTINCT channel_name) AS unique_broadcasters
             FROM stats_with_interval
             WHERE viewer_count IS NOT NULL
+                AND channel_name IS NOT NULL
             GROUP BY category
+        ),
+        channel_by_category AS (
+            SELECT 
+                category,
+                channel_name,
+                COALESCE(SUM(viewer_count * COALESCE(interval_minutes, 1)), 0)::BIGINT AS channel_mw,
+                ROW_NUMBER() OVER (PARTITION BY category ORDER BY SUM(viewer_count * COALESCE(interval_minutes, 1)) DESC) as rn
+            FROM stats_with_interval
+            WHERE viewer_count IS NOT NULL 
+                AND channel_name IS NOT NULL
+            GROUP BY category, channel_name
+        ),
+        top_channels AS (
+            SELECT 
+                category,
+                channel_name as top_channel
+            FROM channel_by_category
+            WHERE rn = 1
         )
         SELECT 
-            category,
-            minutes_watched,
-            hours_broadcasted,
-            average_ccu,
-            unique_broadcasters
-        FROM game_stats
-        ORDER BY minutes_watched DESC
+            gs.category,
+            gs.minutes_watched,
+            gs.hours_broadcasted,
+            gs.average_ccu,
+            gs.unique_broadcasters,
+            tc.top_channel
+        FROM game_stats gs
+        LEFT JOIN top_channels tc ON gs.category = tc.category
+        ORDER BY gs.minutes_watched DESC
         "#,
     );
 
     let mut stmt = conn.prepare(&sql)?;
-    let game_stats: Vec<_> = utils::query_map_with_params(&mut stmt, &params, |row| {
-        Ok((
-            row.get::<_, String>(0)?, // category
-            row.get::<_, i64>(1)?,    // minutes_watched
-            row.get::<_, f64>(2)?,    // hours_broadcasted
-            row.get::<_, f64>(3)?,    // average_ccu
-            row.get::<_, i32>(4)?,    // unique_broadcasters
-        ))
+    let results: Vec<GameAnalytics> = utils::query_map_with_params(&mut stmt, &params, |row| {
+        Ok(GameAnalytics {
+            category: row.get::<_, String>(0)?,
+            minutes_watched: row.get::<_, i64>(1)?,
+            hours_broadcasted: row.get::<_, f64>(2)?,
+            average_ccu: row.get::<_, f64>(3)?,
+            unique_broadcasters: row.get::<_, i32>(4)?,
+            top_channel: row.get::<_, Option<String>>(5)?,
+        })
     })?
     .collect::<Result<Vec<_>, _>>()?;
-
-    // トップチャンネルを取得
-    let mut results = Vec::new();
-    for (cat, mw, hours, avg_ccu, unique_bc) in game_stats {
-        let top_channel = get_top_channel_for_category(conn, &cat, start_time, end_time)?;
-
-        results.push(GameAnalytics {
-            category: cat,
-            minutes_watched: mw,
-            hours_broadcasted: hours,
-            average_ccu: avg_ccu,
-            unique_broadcasters: unique_bc,
-            top_channel,
-        });
-    }
 
     Ok(results)
 }
@@ -429,8 +406,11 @@ pub fn list_categories(
             SELECT 
                 ss.category,
                 ss.viewer_count,
+                ss.stream_id,
+                ss.twitch_user_id,
+                ss.collected_at,
                 EXTRACT(EPOCH FROM (
-                    LEAD(ss.collected_at) OVER (PARTITION BY ss.stream_id ORDER BY ss.collected_at) 
+                    LEAD(ss.collected_at) OVER (PARTITION BY COALESCE(CAST(ss.stream_id AS VARCHAR), ss.twitch_user_id || '_' || CAST(DATE(ss.collected_at) AS VARCHAR)) ORDER BY ss.collected_at) 
                     - ss.collected_at
                 )) / 60.0 AS interval_minutes
             FROM stream_stats ss
@@ -469,66 +449,6 @@ pub fn list_categories(
             .collect::<Result<Vec<_>, _>>()?;
 
     Ok(categories)
-}
-
-/// カテゴリごとのトップチャンネルを取得
-fn get_top_channel_for_category(
-    conn: &Connection,
-    category: &str,
-    start_time: Option<&str>,
-    end_time: Option<&str>,
-) -> Result<Option<String>, duckdb::Error> {
-    let mut sql = String::from(
-        r#"
-        WITH stats_with_interval AS (
-            SELECT 
-                c.channel_name,
-                ss.viewer_count,
-                EXTRACT(EPOCH FROM (
-                    LEAD(ss.collected_at) OVER (PARTITION BY ss.stream_id ORDER BY ss.collected_at) 
-                    - ss.collected_at
-                )) / 60.0 AS interval_minutes
-            FROM stream_stats ss
-            JOIN streams s ON ss.stream_id = s.id
-            JOIN channels c ON s.channel_id = c.id
-            WHERE ss.category = ?
-        "#,
-    );
-
-    let mut params: Vec<String> = vec![category.to_string()];
-
-    if let Some(start) = start_time {
-        sql.push_str(" AND ss.collected_at >= ?");
-        params.push(start.to_string());
-    }
-
-    if let Some(end) = end_time {
-        sql.push_str(" AND ss.collected_at <= ?");
-        params.push(end.to_string());
-    }
-
-    sql.push_str(
-        r#"
-        )
-        SELECT 
-            channel_name,
-            COALESCE(SUM(viewer_count * COALESCE(interval_minutes, 1)), 0)::BIGINT AS minutes_watched
-        FROM stats_with_interval
-        WHERE viewer_count IS NOT NULL
-        GROUP BY channel_name
-        ORDER BY minutes_watched DESC
-        LIMIT 1
-        "#,
-    );
-
-    let mut stmt = conn.prepare(&sql)?;
-    let result: Option<String> =
-        utils::query_map_with_params(&mut stmt, &params, |row| row.get::<_, String>(0))
-            .ok()
-            .and_then(|mut iter| iter.next())
-            .and_then(|r| r.ok());
-
-    Ok(result)
 }
 
 /// データ可用性情報を取得
@@ -582,13 +502,13 @@ pub fn get_game_daily_stats(
                 DATE(ss.collected_at) as date,
                 ss.viewer_count,
                 ss.stream_id,
+                ss.channel_name,
                 EXTRACT(EPOCH FROM (
-                    LEAD(ss.collected_at) OVER (PARTITION BY ss.stream_id ORDER BY ss.collected_at) 
+                    LEAD(ss.collected_at) OVER (PARTITION BY COALESCE(CAST(ss.stream_id AS VARCHAR), ss.channel_name || '_' || CAST(DATE(ss.collected_at) AS VARCHAR)) ORDER BY ss.collected_at) 
                     - ss.collected_at
                 )) / 60.0 AS interval_minutes,
                 ss.collected_at
             FROM stream_stats ss
-            JOIN streams s ON ss.stream_id = s.id
             WHERE ss.category = ?
                 AND ss.collected_at >= ?
                 AND ss.collected_at <= ?
@@ -652,19 +572,24 @@ pub fn get_channel_daily_stats(
     end_time: &str,
 ) -> Result<Vec<DailyStats>, duckdb::Error> {
     let sql = r#"
-        WITH stats_with_interval AS (
+        WITH channel_lookup AS (
+            SELECT channel_id FROM channels WHERE id = ? AND platform = 'twitch'
+        ),
+        stats_with_interval AS (
             SELECT 
                 DATE(ss.collected_at) as date,
                 ss.viewer_count,
                 ss.stream_id,
+                ss.channel_name,
                 EXTRACT(EPOCH FROM (
-                    LEAD(ss.collected_at) OVER (PARTITION BY ss.stream_id ORDER BY ss.collected_at) 
+                    LEAD(ss.collected_at) OVER (PARTITION BY COALESCE(CAST(ss.stream_id AS VARCHAR), ss.channel_name || '_' || CAST(DATE(ss.collected_at) AS VARCHAR)) ORDER BY ss.collected_at) 
                     - ss.collected_at
                 )) / 60.0 AS interval_minutes,
                 ss.collected_at
             FROM stream_stats ss
-            JOIN streams s ON ss.stream_id = s.id
-            WHERE s.channel_id = ?
+            LEFT JOIN streams s ON ss.stream_id = s.id
+            LEFT JOIN channels c ON (s.channel_id = c.id OR (ss.channel_name = c.channel_id AND c.platform = 'twitch'))
+            WHERE (COALESCE(s.channel_id, c.id) = ? OR ss.channel_name = (SELECT channel_id FROM channel_lookup))
                 AND ss.collected_at >= ?
                 AND ss.collected_at <= ?
         ),

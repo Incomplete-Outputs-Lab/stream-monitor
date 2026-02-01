@@ -140,7 +140,7 @@ export function Logs() {
                         {log.timestamp}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-700 dark:text-gray-300 break-words">
+                    <p className="text-sm text-gray-700 dark:text-gray-300 break-words select-text">
                       {log.message}
                     </p>
                   </div>

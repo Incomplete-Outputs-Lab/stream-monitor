@@ -1,4 +1,5 @@
 use crate::config::settings::SettingsManager;
+use crate::error::ResultExt;
 use crate::oauth::twitch::{DeviceAuthStatus, TwitchOAuth};
 use tauri::AppHandle;
 
@@ -7,7 +8,8 @@ use tauri::AppHandle;
 pub async fn start_twitch_device_auth(app_handle: AppHandle) -> Result<DeviceAuthStatus, String> {
     // 設定ファイルからClient IDを取得
     let settings = SettingsManager::load_settings(&app_handle)
-        .map_err(|e| format!("Failed to load settings: {}", e))?;
+        .config_context("load settings")
+        .map_err(|e| e.to_string())?;
 
     let client_id = settings.twitch.client_id.ok_or_else(|| {
         "Twitch Client ID is not configured. Please set it in settings first.".to_string()
@@ -25,7 +27,7 @@ pub async fn start_twitch_device_auth(app_handle: AppHandle) -> Result<DeviceAut
     oauth
         .start_device_flow(scopes)
         .await
-        .map_err(|e| format!("Failed to start device flow: {}", e))
+        .map_err(|e| format!("Device flow initialization failed: {}", e))
 }
 
 /// Twitch Device Code でトークンをポーリング取得

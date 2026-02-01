@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "../../utils/toast";
 
 interface DatabaseErrorDialogProps {
   isOpen: boolean;
@@ -27,11 +28,11 @@ export function DatabaseErrorDialog({
       if (result.success) {
         onSuccess();
       } else {
-        alert(`データベースの再作成に失敗しました: ${result.message}`);
+        toast.error(`データベースの再作成に失敗しました: ${result.message}`);
       }
     } catch (error) {
       console.error("Failed to recreate database:", error);
-      alert(`データベースの再作成中にエラーが発生しました: ${error}`);
+      toast.error(`データベースの再作成中にエラーが発生しました: ${error}`);
     } finally {
       setIsProcessing(false);
     }
@@ -67,7 +68,7 @@ export function DatabaseErrorDialog({
 
         {/* エラーメッセージ */}
         <div className="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-lg p-4">
-          <p className="text-sm text-red-800 dark:text-red-200 whitespace-pre-wrap">
+          <p className="text-sm text-red-800 dark:text-red-200 whitespace-pre-wrap select-text">
             {errorMessage}
           </p>
         </div>

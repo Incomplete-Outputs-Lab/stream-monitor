@@ -1,4 +1,5 @@
 use crate::database::{analytics, DatabaseManager};
+use crate::error::ResultExt;
 use tauri::State;
 
 #[tauri::command]
@@ -10,7 +11,8 @@ pub async fn get_broadcaster_analytics(
 ) -> Result<Vec<analytics::BroadcasterAnalytics>, String> {
     let conn = db_manager
         .get_connection()
-        .map_err(|e| format!("Failed to get database connection: {}", e))?;
+        .db_context("get database connection")
+        .map_err(|e| e.to_string())?;
 
     analytics::get_broadcaster_analytics(
         &conn,
@@ -18,7 +20,8 @@ pub async fn get_broadcaster_analytics(
         start_time.as_deref(),
         end_time.as_deref(),
     )
-    .map_err(|e| format!("Failed to get broadcaster analytics: {}", e))
+    .db_context("get broadcaster analytics")
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -30,7 +33,8 @@ pub async fn get_game_analytics(
 ) -> Result<Vec<analytics::GameAnalytics>, String> {
     let conn = db_manager
         .get_connection()
-        .map_err(|e| format!("Failed to get database connection: {}", e))?;
+        .db_context("get database connection")
+        .map_err(|e| e.to_string())?;
 
     analytics::get_game_analytics(
         &conn,
@@ -38,7 +42,8 @@ pub async fn get_game_analytics(
         start_time.as_deref(),
         end_time.as_deref(),
     )
-    .map_err(|e| format!("Failed to get game analytics: {}", e))
+    .db_context("get game analytics")
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -49,10 +54,11 @@ pub async fn list_game_categories(
 ) -> Result<Vec<String>, String> {
     let conn = db_manager
         .get_connection()
-        .map_err(|e| format!("Failed to get database connection: {}", e))?;
+        .db_context("get database connection")?;
 
     analytics::list_categories(&conn, start_time.as_deref(), end_time.as_deref())
-        .map_err(|e| format!("Failed to list categories: {}", e))
+        .db_context("list categories")
+        .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -61,10 +67,12 @@ pub async fn get_data_availability(
 ) -> Result<analytics::DataAvailability, String> {
     let conn = db_manager
         .get_connection()
-        .map_err(|e| format!("Failed to get database connection: {}", e))?;
+        .db_context("get database connection")
+        .map_err(|e| e.to_string())?;
 
     analytics::get_data_availability(&conn)
-        .map_err(|e| format!("Failed to get data availability: {}", e))
+        .db_context("get data availability")
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -76,10 +84,11 @@ pub async fn get_game_daily_stats(
 ) -> Result<Vec<analytics::DailyStats>, String> {
     let conn = db_manager
         .get_connection()
-        .map_err(|e| format!("Failed to get database connection: {}", e))?;
+        .db_context("get database connection")?;
 
     analytics::get_game_daily_stats(&conn, &category, &start_time, &end_time)
-        .map_err(|e| format!("Failed to get game daily stats: {}", e))
+        .db_context("get game daily stats")
+        .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -91,8 +100,10 @@ pub async fn get_channel_daily_stats(
 ) -> Result<Vec<analytics::DailyStats>, String> {
     let conn = db_manager
         .get_connection()
-        .map_err(|e| format!("Failed to get database connection: {}", e))?;
+        .db_context("get database connection")
+        .map_err(|e| e.to_string())?;
 
     analytics::get_channel_daily_stats(&conn, channel_id, &start_time, &end_time)
-        .map_err(|e| format!("Failed to get channel daily stats: {}", e))
+        .db_context("get channel daily stats")
+        .map_err(|e| e.to_string())
 }

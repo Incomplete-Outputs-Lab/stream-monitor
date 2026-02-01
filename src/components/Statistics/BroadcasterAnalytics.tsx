@@ -1,8 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { BroadcasterAnalytics as BroadcasterAnalyticsType } from '../../types';
 import { BarChart } from '../common/charts/BarChart';
 import { Tooltip } from '../common/Tooltip';
+import { useSortableData } from '../../hooks/useSortableData';
+import { SortableTableHeader } from '../common/SortableTableHeader';
 
 interface BroadcasterAnalyticsProps {
   channelId?: number;
@@ -29,6 +32,21 @@ export default function BroadcasterAnalytics({
       return result;
     },
   });
+
+  // ソート機能
+  const { sortedItems, sortConfig, requestSort } = useSortableData(
+    analytics || [],
+    { key: 'minutes_watched', direction: 'desc' }
+  );
+
+  // チャンネルページを開く
+  const handleOpenChannel = async (channelName: string) => {
+    try {
+      await openUrl(`https://www.twitch.tv/${channelName}`);
+    } catch (err) {
+      console.error('Failed to open channel:', err);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -73,37 +91,37 @@ export default function BroadcasterAnalytics({
   };
 
   // MinutesWatched チャート用データ
-  const mwChartData = analytics.map((item) => ({
+  const mwChartData = sortedItems.map((item) => ({
     name: item.channel_name,
     value: item.minutes_watched,
   }));
 
   // Average CCU チャート用データ
-  const ccuChartData = analytics.map((item) => ({
+  const ccuChartData = sortedItems.map((item) => ({
     name: item.channel_name,
     value: Math.round(item.average_ccu),
   }));
 
   // Hours Broadcasted チャート用データ
-  const hoursChartData = analytics.map((item) => ({
+  const hoursChartData = sortedItems.map((item) => ({
     name: item.channel_name,
     value: parseFloat(item.hours_broadcasted.toFixed(1)),
   }));
 
   // Peak CCU チャート用データ
-  const peakCcuChartData = analytics.map((item) => ({
+  const peakCcuChartData = sortedItems.map((item) => ({
     name: item.channel_name,
     value: item.peak_ccu,
   }));
 
   // Peak to Average Ratio チャート用データ
-  const peakToAvgRatioData = analytics.map((item) => ({
+  const peakToAvgRatioData = sortedItems.map((item) => ({
     name: item.channel_name,
     value: item.average_ccu > 0 ? parseFloat((item.peak_ccu / item.average_ccu).toFixed(2)) : 0,
   }));
 
   // Engagement Rate チャート用データ
-  const engagementChartData = analytics.map((item) => ({
+  const engagementChartData = sortedItems.map((item) => ({
     name: item.channel_name,
     value: parseFloat(item.engagement_rate.toFixed(2)),
   }));
@@ -261,66 +279,117 @@ export default function BroadcasterAnalytics({
           <table className="w-full">
             <thead className="bg-gray-900/50">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                <SortableTableHeader
+                  sortKey="channel_name"
+                  currentSortKey={sortConfig.key as string}
+                  currentDirection={sortConfig.direction}
+                  onSort={requestSort}
+                  align="left"
+                >
                   Broadcaster
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  <Tooltip content="Minutes Watched: 総視聴時間">
-                    <span className="cursor-help">MW</span>
-                  </Tooltip>
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  <Tooltip content="配信時間（時間）">
-                    <span className="cursor-help">Hours</span>
-                  </Tooltip>
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  <Tooltip content="平均同時視聴者数">
-                    <span className="cursor-help">Avg CCU</span>
-                  </Tooltip>
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  <Tooltip content="ピーク同時視聴者数">
-                    <span className="cursor-help">Peak CCU</span>
-                  </Tooltip>
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  <Tooltip content="配信回数">
-                    <span className="cursor-help">Streams</span>
-                  </Tooltip>
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  <Tooltip content="ピーク集中度 (Peak/Avg): 視聴者の安定性を示す">
-                    <span className="cursor-help">P/A Ratio</span>
-                  </Tooltip>
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  <Tooltip content="チャットメッセージ総数">
-                    <span className="cursor-help">Chat Msgs</span>
-                  </Tooltip>
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  <Tooltip content="エンゲージメント率: 1000分視聴あたりのチャット数">
-                    <span className="cursor-help">Engagement</span>
-                  </Tooltip>
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  <Tooltip content="最も多く配信したゲーム/カテゴリ">
-                    <span className="cursor-help">Main Title</span>
-                  </Tooltip>
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  <Tooltip content="メインタイトルのMW割合">
-                    <span className="cursor-help">MW%</span>
-                  </Tooltip>
-                </th>
+                </SortableTableHeader>
+                <SortableTableHeader
+                  sortKey="minutes_watched"
+                  currentSortKey={sortConfig.key as string}
+                  currentDirection={sortConfig.direction}
+                  onSort={requestSort}
+                  align="right"
+                >
+                  MW
+                </SortableTableHeader>
+                <SortableTableHeader
+                  sortKey="hours_broadcasted"
+                  currentSortKey={sortConfig.key as string}
+                  currentDirection={sortConfig.direction}
+                  onSort={requestSort}
+                  align="right"
+                >
+                  Hours
+                </SortableTableHeader>
+                <SortableTableHeader
+                  sortKey="average_ccu"
+                  currentSortKey={sortConfig.key as string}
+                  currentDirection={sortConfig.direction}
+                  onSort={requestSort}
+                  align="right"
+                >
+                  Avg CCU
+                </SortableTableHeader>
+                <SortableTableHeader
+                  sortKey="peak_ccu"
+                  currentSortKey={sortConfig.key as string}
+                  currentDirection={sortConfig.direction}
+                  onSort={requestSort}
+                  align="right"
+                >
+                  Peak CCU
+                </SortableTableHeader>
+                <SortableTableHeader
+                  sortKey="stream_count"
+                  currentSortKey={sortConfig.key as string}
+                  currentDirection={sortConfig.direction}
+                  onSort={requestSort}
+                  align="right"
+                >
+                  Streams
+                </SortableTableHeader>
+                <SortableTableHeader
+                  sortKey="peak_ccu / average_ccu"
+                  currentSortKey={sortConfig.key as string}
+                  currentDirection={sortConfig.direction}
+                  onSort={requestSort}
+                  align="right"
+                >
+                  P/A Ratio
+                </SortableTableHeader>
+                <SortableTableHeader
+                  sortKey="total_chat_messages"
+                  currentSortKey={sortConfig.key as string}
+                  currentDirection={sortConfig.direction}
+                  onSort={requestSort}
+                  align="right"
+                >
+                  Chat Msgs
+                </SortableTableHeader>
+                <SortableTableHeader
+                  sortKey="engagement_rate"
+                  currentSortKey={sortConfig.key as string}
+                  currentDirection={sortConfig.direction}
+                  onSort={requestSort}
+                  align="right"
+                >
+                  Engagement
+                </SortableTableHeader>
+                <SortableTableHeader
+                  sortKey="main_played_title"
+                  currentSortKey={sortConfig.key as string}
+                  currentDirection={sortConfig.direction}
+                  onSort={requestSort}
+                  align="left"
+                >
+                  Main Title
+                </SortableTableHeader>
+                <SortableTableHeader
+                  sortKey="main_title_mw_percent"
+                  currentSortKey={sortConfig.key as string}
+                  currentDirection={sortConfig.direction}
+                  onSort={requestSort}
+                  align="right"
+                >
+                  MW%
+                </SortableTableHeader>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700">
-              {analytics.map((item) => (
+              {sortedItems.map((item) => (
                 <tr key={item.channel_id} className="hover:bg-gray-700/30">
                   <td className="px-4 py-3 text-sm text-white font-medium">
-                    {item.channel_name}
+                    <button
+                      onClick={() => handleOpenChannel(item.channel_name)}
+                      className="text-blue-400 hover:text-blue-300 hover:underline transition-colors text-left"
+                    >
+                      {item.channel_name}
+                    </button>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-300 text-right">
                     {formatNumber(item.minutes_watched)}

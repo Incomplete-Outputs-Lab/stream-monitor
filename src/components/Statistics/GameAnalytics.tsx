@@ -1,9 +1,12 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { GameAnalytics as GameAnalyticsType } from '../../types';
 import { BarChart } from '../common/charts/BarChart';
 import { Tooltip } from '../common/Tooltip';
+import { useSortableData } from '../../hooks/useSortableData';
+import { SortableTableHeader } from '../common/SortableTableHeader';
 
 interface GameAnalyticsProps {
   startTime?: string;
@@ -40,6 +43,21 @@ export default function GameAnalytics({
       return result;
     },
   });
+
+  // ソート機能
+  const { sortedItems, sortConfig, requestSort } = useSortableData(
+    analytics || [],
+    { key: 'minutes_watched', direction: 'desc' }
+  );
+
+  // チャンネルページを開く
+  const handleOpenChannel = async (channelName: string) => {
+    try {
+      await openUrl(`https://www.twitch.tv/${channelName}`);
+    } catch (err) {
+      console.error('Failed to open channel:', err);
+    }
+  };
 
   // 検索フィルター
   const filteredCategories = categories?.filter((cat) =>
@@ -80,7 +98,7 @@ export default function GameAnalytics({
   };
 
   // MinutesWatched チャート用データ（上位10件）
-  const mwChartData = analytics
+  const mwChartData = sortedItems
     .slice(0, 10)
     .map((item) => ({
       name: item.category,
@@ -88,7 +106,7 @@ export default function GameAnalytics({
     }));
 
   // Average CCU チャート用データ（上位10件）
-  const ccuChartData = analytics
+  const ccuChartData = sortedItems
     .slice(0, 10)
     .map((item) => ({
       name: item.category,
@@ -96,7 +114,7 @@ export default function GameAnalytics({
     }));
 
   // Hours Broadcasted チャート用データ（上位10件）
-  const hoursChartData = analytics
+  const hoursChartData = sortedItems
     .slice(0, 10)
     .map((item) => ({
       name: item.category,
@@ -104,7 +122,7 @@ export default function GameAnalytics({
     }));
 
   // Unique Broadcasters チャート用データ（上位10件）
-  const broadcastersChartData = analytics
+  const broadcastersChartData = sortedItems
     .slice(0, 10)
     .map((item) => ({
       name: item.category,
@@ -262,39 +280,65 @@ export default function GameAnalytics({
           <table className="w-full">
             <thead className="bg-gray-900/50">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                <SortableTableHeader
+                  sortKey="category"
+                  currentSortKey={sortConfig.key as string}
+                  currentDirection={sortConfig.direction}
+                  onSort={requestSort}
+                  align="left"
+                >
                   Game / Category
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  <Tooltip content="総視聴時間（視聴者数×時間）">
-                    <span className="cursor-help">Minutes Watched</span>
-                  </Tooltip>
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  <Tooltip content="配信時間（時間）">
-                    <span className="cursor-help">Hours Broadcasted</span>
-                  </Tooltip>
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  <Tooltip content="平均同時視聴者数">
-                    <span className="cursor-help">Avg CCU</span>
-                  </Tooltip>
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  <Tooltip content="このゲームを配信したユニークな配信者数">
-                    <span className="cursor-help">Unique Broadcasters</span>
-                  </Tooltip>
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  <Tooltip content="このゲームで最も視聴されたチャンネル">
-                    <span className="cursor-help">Top Channel</span>
-                  </Tooltip>
-                </th>
+                </SortableTableHeader>
+                <SortableTableHeader
+                  sortKey="minutes_watched"
+                  currentSortKey={sortConfig.key as string}
+                  currentDirection={sortConfig.direction}
+                  onSort={requestSort}
+                  align="right"
+                >
+                  Minutes Watched
+                </SortableTableHeader>
+                <SortableTableHeader
+                  sortKey="hours_broadcasted"
+                  currentSortKey={sortConfig.key as string}
+                  currentDirection={sortConfig.direction}
+                  onSort={requestSort}
+                  align="right"
+                >
+                  Hours Broadcasted
+                </SortableTableHeader>
+                <SortableTableHeader
+                  sortKey="average_ccu"
+                  currentSortKey={sortConfig.key as string}
+                  currentDirection={sortConfig.direction}
+                  onSort={requestSort}
+                  align="right"
+                >
+                  Avg CCU
+                </SortableTableHeader>
+                <SortableTableHeader
+                  sortKey="unique_broadcasters"
+                  currentSortKey={sortConfig.key as string}
+                  currentDirection={sortConfig.direction}
+                  onSort={requestSort}
+                  align="right"
+                >
+                  Unique Broadcasters
+                </SortableTableHeader>
+                <SortableTableHeader
+                  sortKey="top_channel"
+                  currentSortKey={sortConfig.key as string}
+                  currentDirection={sortConfig.direction}
+                  onSort={requestSort}
+                  align="left"
+                >
+                  Top Channel
+                </SortableTableHeader>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700">
-              {analytics.map((item, index) => (
-                <tr key={index} className="hover:bg-gray-700/30">
+              {sortedItems.map((item, index) => (
+                <tr key={`${item.category}-${index}`} className="hover:bg-gray-700/30">
                   <td className="px-4 py-3 text-sm text-white font-medium">
                     {item.category}
                   </td>
@@ -311,7 +355,16 @@ export default function GameAnalytics({
                     {item.unique_broadcasters}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-300">
-                    {item.top_channel || 'N/A'}
+                    {item.top_channel ? (
+                      <button
+                        onClick={() => handleOpenChannel(item.top_channel!)}
+                        className="text-blue-400 hover:text-blue-300 hover:underline transition-colors text-left"
+                      >
+                        {item.top_channel}
+                      </button>
+                    ) : (
+                      'N/A'
+                    )}
                   </td>
                 </tr>
               ))}

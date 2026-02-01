@@ -1,4 +1,5 @@
 use crate::database::DatabaseManager;
+use crate::error::ResultExt;
 use chrono::{TimeZone, Utc};
 use duckdb::{params, types::TimeUnit, types::ValueRef};
 use serde::{Deserialize, Serialize};
@@ -41,7 +42,8 @@ pub async fn execute_sql(
 
     let conn = db_manager
         .get_connection()
-        .map_err(|e| format!("Failed to get database connection: {}", e))?;
+        .db_context("get database connection")
+        .map_err(|e| e.to_string())?;
 
     eprintln!(
         "[SQL] Database path: {}",
@@ -76,7 +78,7 @@ pub async fn execute_sql(
         // SELECT系クエリの処理
         let mut stmt = conn.prepare(query).map_err(|e| {
             eprintln!("[SQL ERROR] Failed to prepare: {}", e);
-            format!("Failed to prepare query: {}", e)
+            e.to_string()
         })?;
 
         eprintln!("[SQL] Statement prepared successfully");
@@ -84,7 +86,7 @@ pub async fn execute_sql(
         // クエリを実行してRowsを取得
         let mut rows = stmt.query([]).map_err(|e| {
             eprintln!("[SQL ERROR] Failed to execute query: {}", e);
-            format!("Failed to execute query: {}", e)
+            e.to_string()
         })?;
 
         eprintln!("[SQL] Query executed, collecting rows...");
@@ -97,7 +99,7 @@ pub async fn execute_sql(
         // 最初の行からカラム情報を取得
         if let Some(first_row) = rows.next().map_err(|e| {
             eprintln!("[SQL ERROR] Failed to fetch first row: {}", e);
-            format!("Failed to fetch first row: {}", e)
+            e.to_string()
         })? {
             column_count = first_row.as_ref().column_count();
             eprintln!("[SQL] Column count: {}", column_count);
@@ -210,7 +212,7 @@ pub async fn execute_sql(
         // 残りの行データを収集
         while let Some(row) = rows.next().map_err(|e| {
             eprintln!("[SQL ERROR] Failed to fetch row: {}", e);
-            format!("Failed to fetch row: {}", e)
+            e.to_string()
         })? {
             let mut row_values = Vec::new();
             for i in 0..column_count {
@@ -323,7 +325,8 @@ pub async fn execute_sql(
         // INSERT/UPDATE/DELETE/CREATE/DROP等の処理
         let affected = conn
             .execute(query, &[] as &[&dyn duckdb::ToSql])
-            .map_err(|e| format!("Failed to execute query: {}", e))?;
+            .db_context("execute query")
+            .map_err(|e| e.to_string())?;
 
         let execution_time = start_time.elapsed().as_millis();
 
@@ -345,7 +348,8 @@ pub async fn list_sql_templates(
 ) -> Result<Vec<SqlTemplate>, String> {
     let conn = db_manager
         .get_connection()
-        .map_err(|e| format!("Failed to get database connection: {}", e))?;
+        .db_context("get database connection")
+        .map_err(|e| e.to_string())?;
 
     let mut stmt = conn
         .prepare(
@@ -355,7 +359,8 @@ pub async fn list_sql_templates(
              FROM sql_templates 
              ORDER BY updated_at DESC",
         )
-        .map_err(|e| format!("Failed to prepare query: {}", e))?;
+        .db_context("prepare query")
+        .map_err(|e| e.to_string())?;
 
     let templates = stmt
         .query_map([], |row| {
@@ -368,9 +373,11 @@ pub async fn list_sql_templates(
                 updated_at: Some(row.get(5)?),
             })
         })
-        .map_err(|e| format!("Failed to query templates: {}", e))?
+        .db_context("query templates")
+        .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("Failed to fetch templates: {}", e))?;
+        .db_context("fetch templates")
+        .map_err(|e| e.to_string())?;
 
     Ok(templates)
 }
@@ -383,7 +390,8 @@ pub async fn get_sql_template(
 ) -> Result<SqlTemplate, String> {
     let conn = db_manager
         .get_connection()
-        .map_err(|e| format!("Failed to get database connection: {}", e))?;
+        .db_context("get database connection")
+        .map_err(|e| e.to_string())?;
 
     let mut stmt = conn
         .prepare(
@@ -393,7 +401,8 @@ pub async fn get_sql_template(
              FROM sql_templates 
              WHERE id = ?",
         )
-        .map_err(|e| format!("Failed to prepare query: {}", e))?;
+        .db_context("prepare query")
+        .map_err(|e| e.to_string())?;
 
     let template = stmt
         .query_row(params![id], |row| {
@@ -420,7 +429,8 @@ pub async fn save_sql_template(
     let id = {
         let conn = db_manager
             .get_connection()
-            .map_err(|e| format!("Failed to get database connection: {}", e))?;
+            .db_context("get database connection")
+            .map_err(|e| e.to_string())?;
 
         if let Some(id) = request.id {
             // 更新
@@ -430,7 +440,8 @@ pub async fn save_sql_template(
                  WHERE id = ?",
                 params![&request.name, &request.description, &request.query, id],
             )
-            .map_err(|e| format!("Failed to update template: {}", e))?;
+            .db_context("update template")
+            .map_err(|e| e.to_string())?;
 
             id
         } else {
@@ -440,15 +451,18 @@ pub async fn save_sql_template(
                  VALUES (?, ?, ?)",
                 params![&request.name, &request.description, &request.query],
             )
-            .map_err(|e| format!("Failed to insert template: {}", e))?;
+            .db_context("insert template")
+            .map_err(|e| e.to_string())?;
 
             // 最後に挿入されたIDを取得
             let mut stmt = conn
                 .prepare("SELECT currval('sql_templates_id_seq')")
-                .map_err(|e| format!("Failed to get last insert id: {}", e))?;
+                .db_context("get last insert id")
+                .map_err(|e| e.to_string())?;
 
             stmt.query_row([], |row| row.get(0))
-                .map_err(|e| format!("Failed to fetch last insert id: {}", e))?
+                .db_context("fetch last insert id")
+                .map_err(|e| e.to_string())?
         }
     };
 
@@ -463,11 +477,13 @@ pub async fn delete_sql_template(
 ) -> Result<(), String> {
     let conn = db_manager
         .get_connection()
-        .map_err(|e| format!("Failed to get database connection: {}", e))?;
+        .db_context("get database connection")
+        .map_err(|e| e.to_string())?;
 
     let affected = conn
         .execute("DELETE FROM sql_templates WHERE id = ?", params![id])
-        .map_err(|e| format!("Failed to delete template: {}", e))?;
+        .db_context("delete template")
+        .map_err(|e| e.to_string())?;
 
     if affected == 0 {
         return Err("Template not found".to_string());
@@ -489,7 +505,8 @@ pub async fn list_database_tables(
 ) -> Result<Vec<TableInfo>, String> {
     let conn = db_manager
         .get_connection()
-        .map_err(|e| format!("Failed to get database connection: {}", e))?;
+        .db_context("get database connection")
+        .map_err(|e| e.to_string())?;
 
     let mut stmt = conn
         .prepare(
@@ -498,13 +515,16 @@ pub async fn list_database_tables(
              WHERE table_schema = 'main' 
              ORDER BY table_name",
         )
-        .map_err(|e| format!("Failed to prepare query: {}", e))?;
+        .db_context("prepare query")
+        .map_err(|e| e.to_string())?;
 
     let table_names: Vec<String> = stmt
         .query_map([], |row| row.get(0))
-        .map_err(|e| format!("Failed to query tables: {}", e))?
+        .db_context("query tables")
+        .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("Failed to fetch tables: {}", e))?;
+        .db_context("fetch tables")
+        .map_err(|e| e.to_string())?;
 
     eprintln!("[SQL] Found {} tables in database", table_names.len());
 
@@ -516,21 +536,25 @@ pub async fn list_database_tables(
             format!("SELECT COUNT(*) FROM pragma_table_info('{}')", table_name);
         let mut stmt = conn
             .prepare(&column_count_query)
-            .map_err(|e| format!("Failed to prepare column count query: {}", e))?;
+            .db_context("prepare column count query")
+            .map_err(|e| e.to_string())?;
 
         let column_count: i64 = stmt
             .query_row([], |row| row.get(0))
-            .map_err(|e| format!("Failed to get column count: {}", e))?;
+            .db_context("get column count")
+            .map_err(|e| e.to_string())?;
 
         // 行数を取得
         let row_count_query = format!("SELECT COUNT(*) FROM {}", table_name);
         let mut stmt = conn
             .prepare(&row_count_query)
-            .map_err(|e| format!("Failed to prepare row count query: {}", e))?;
+            .db_context("prepare row count query")
+            .map_err(|e| e.to_string())?;
 
         let row_count: i64 = stmt
             .query_row([], |row| row.get(0))
-            .map_err(|e| format!("Failed to get row count: {}", e))?;
+            .db_context("get row count")
+            .map_err(|e| e.to_string())?;
 
         eprintln!(
             "[SQL] Table '{}': {} columns, {} rows",

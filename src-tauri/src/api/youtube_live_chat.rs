@@ -1,3 +1,4 @@
+use crate::constants::youtube;
 use crate::database::models::ChatMessage;
 use google_youtube3::api::LiveChatMessage;
 use google_youtube3::{hyper_rustls, hyper_util, YouTube};
@@ -73,7 +74,10 @@ impl YouTubeLiveChatClient {
         }
 
         let live_chat_id = self.live_chat_id.as_ref().unwrap();
-        let part = vec!["snippet".to_string(), "authorDetails".to_string()];
+        let part = vec![
+            youtube::PART_SNIPPET.to_string(),
+            youtube::PART_AUTHOR_DETAILS.to_string(),
+        ];
 
         let mut request = self.hub.live_chat_messages().list(live_chat_id, &part);
 
@@ -117,7 +121,7 @@ impl YouTubeLiveChatClient {
             id: None,
             stream_id: self.stream_id,
             timestamp: timestamp.to_string(),
-            platform: "youtube".to_string(),
+            platform: youtube::PLATFORM_NAME.to_string(),
             user_id,
             user_name,
             message: message_text,
@@ -131,13 +135,13 @@ impl YouTubeLiveChatClient {
         snippet: &google_youtube3::api::LiveChatMessageSnippet,
     ) -> String {
         if snippet.super_chat_details.is_some() {
-            "superchat".to_string()
+            youtube::MESSAGE_TYPE_SUPERCHAT.to_string()
         } else if snippet.fan_funding_event_details.is_some() {
-            "fanfunding".to_string()
+            youtube::MESSAGE_TYPE_FAN_FUNDING.to_string()
         } else if snippet.new_sponsor_details.is_some() {
-            "sponsor".to_string()
+            youtube::MESSAGE_TYPE_SPONSOR.to_string()
         } else {
-            "normal".to_string()
+            youtube::MESSAGE_TYPE_NORMAL.to_string()
         }
     }
 

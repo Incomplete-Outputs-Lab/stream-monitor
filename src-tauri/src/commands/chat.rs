@@ -1,4 +1,5 @@
 use crate::database::{models::ChatMessage, utils, DatabaseManager};
+use crate::error::ResultExt;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
@@ -72,7 +73,8 @@ pub async fn get_chat_messages(
 ) -> Result<Vec<ChatMessage>, String> {
     let conn = db_manager
         .get_connection()
-        .map_err(|e| format!("Failed to get database connection: {}", e))?;
+        .db_context("get database connection")
+        .map_err(|e| e.to_string())?;
 
     let mut sql = String::from(
         r#"
@@ -120,7 +122,8 @@ pub async fn get_chat_messages(
     }
 
     utils::query_chat_messages(&conn, &sql, &params)
-        .map_err(|e| format!("Failed to query chat messages: {}", e))
+        .db_context("query chat messages")
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -131,7 +134,8 @@ pub async fn get_chat_stats(
 ) -> Result<ChatStats, String> {
     let conn = db_manager
         .get_connection()
-        .map_err(|e| format!("Failed to get database connection: {}", e))?;
+        .db_context("get database connection")
+        .map_err(|e| e.to_string())?;
 
     // 基本的なWHERE条件を構築
     let mut where_conditions = Vec::new();
@@ -176,7 +180,8 @@ pub async fn get_chat_stats(
 
     let total_messages: i64 =
         utils::query_row_with_params(&conn, &total_sql, &params, |row| row.get(0))
-            .map_err(|e| format!("Failed to get total messages: {}", e))?;
+            .db_context("get total messages")
+            .map_err(|e| e.to_string())?;
 
     // ユニークユーザー数を取得
     let unique_users_sql = format!(
@@ -191,7 +196,8 @@ pub async fn get_chat_stats(
 
     let unique_users: i64 =
         utils::query_row_with_params(&conn, &unique_users_sql, &params, |row| row.get(0))
-            .map_err(|e| format!("Failed to get unique users: {}", e))?;
+            .db_context("get unique users")
+            .map_err(|e| e.to_string())?;
 
     // 1分あたりのメッセージ数を計算（期間内の総メッセージ数 ÷ 期間の分数）
     let messages_per_minute = if total_messages > 0 {
@@ -251,7 +257,8 @@ pub async fn get_chat_stats(
 
     let mut top_users_stmt = conn
         .prepare(&top_users_sql)
-        .map_err(|e| format!("Failed to prepare top users query: {}", e))?;
+        .db_context("prepare top users query")
+        .map_err(|e| e.to_string())?;
 
     let top_users: Result<Vec<UserMessageCount>, _> =
         utils::query_map_with_params(&mut top_users_stmt, &params, |row| {
@@ -260,10 +267,13 @@ pub async fn get_chat_stats(
                 message_count: row.get(1)?,
             })
         })
-        .map_err(|e| format!("Failed to query top users: {}", e))?
+        .db_context("query top users")
+        .map_err(|e| e.to_string())?
         .collect();
 
-    let top_users = top_users.map_err(|e| format!("Failed to collect top users: {}", e))?;
+    let top_users = top_users
+        .db_context("collect top users")
+        .map_err(|e| e.to_string())?;
 
     // メッセージタイプ別集計
     let message_types_sql = format!(
@@ -280,7 +290,8 @@ pub async fn get_chat_stats(
 
     let mut message_types_stmt = conn
         .prepare(&message_types_sql)
-        .map_err(|e| format!("Failed to prepare message types query: {}", e))?;
+        .db_context("prepare message types query")
+        .map_err(|e| e.to_string())?;
 
     let message_types: Result<Vec<MessageTypeCount>, _> =
         utils::query_map_with_params(&mut message_types_stmt, &params, |row| {
@@ -289,11 +300,13 @@ pub async fn get_chat_stats(
                 count: row.get(1)?,
             })
         })
-        .map_err(|e| format!("Failed to query message types: {}", e))?
+        .db_context("query message types")
+        .map_err(|e| e.to_string())?
         .collect();
 
-    let message_types =
-        message_types.map_err(|e| format!("Failed to collect message types: {}", e))?;
+    let message_types = message_types
+        .db_context("collect message types")
+        .map_err(|e| e.to_string())?;
 
     // 時間帯別分布
     let hourly_sql = format!(
@@ -312,7 +325,8 @@ pub async fn get_chat_stats(
 
     let mut hourly_stmt = conn
         .prepare(&hourly_sql)
-        .map_err(|e| format!("Failed to prepare hourly query: {}", e))?;
+        .db_context("prepare hourly query")
+        .map_err(|e| e.to_string())?;
 
     let hourly_distribution: Result<Vec<HourlyStats>, _> =
         utils::query_map_with_params(&mut hourly_stmt, &params, |row| {
@@ -321,11 +335,13 @@ pub async fn get_chat_stats(
                 message_count: row.get(1)?,
             })
         })
-        .map_err(|e| format!("Failed to query hourly distribution: {}", e))?
+        .db_context("query hourly distribution")
+        .map_err(|e| e.to_string())?
         .collect();
 
-    let hourly_distribution =
-        hourly_distribution.map_err(|e| format!("Failed to collect hourly distribution: {}", e))?;
+    let hourly_distribution = hourly_distribution
+        .db_context("collect hourly distribution")
+        .map_err(|e| e.to_string())?;
 
     Ok(ChatStats {
         total_messages,
@@ -345,7 +361,8 @@ pub async fn get_chat_rate(
 ) -> Result<Vec<ChatRateData>, String> {
     let conn = db_manager
         .get_connection()
-        .map_err(|e| format!("Failed to get database connection: {}", e))?;
+        .db_context("get database connection")
+        .map_err(|e| e.to_string())?;
 
     let interval_minutes = query.interval_minutes.unwrap_or(1);
 
@@ -396,7 +413,8 @@ pub async fn get_chat_rate(
 
     let mut stmt = conn
         .prepare(&sql)
-        .map_err(|e| format!("Failed to prepare chat rate query: {}", e))?;
+        .db_context("prepare chat rate query")
+        .map_err(|e| e.to_string())?;
 
     let chat_rates: Result<Vec<ChatRateData>, _> =
         utils::query_map_with_params(&mut stmt, &params, |row| {
@@ -406,8 +424,11 @@ pub async fn get_chat_rate(
                 interval_minutes,
             })
         })
-        .map_err(|e| format!("Failed to query chat rates: {}", e))?
+        .db_context("query chat rates")
+        .map_err(|e| e.to_string())?
         .collect();
 
-    chat_rates.map_err(|e| format!("Failed to collect chat rates: {}", e))
+    chat_rates
+        .db_context("collect chat rates")
+        .map_err(|e| e.to_string())
 }

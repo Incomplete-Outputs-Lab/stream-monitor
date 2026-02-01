@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Channel } from "../../types";
 import { useState } from "react";
 import { getToken } from "../../utils/keyring";
+import { toast } from "../../utils/toast";
 
 interface ChannelFormData {
   platform: 'twitch' | 'youtube';
@@ -19,6 +20,7 @@ interface ChannelFormProps {
 
 interface TwitchChannelInfo {
   channel_id: string;
+  twitch_user_id: number;
   display_name: string;
   profile_image_url: string;
   description: string;
@@ -41,7 +43,7 @@ export function ChannelForm({ onSuccess, onCancel }: ChannelFormProps) {
   });
 
   const addMutation = useMutation({
-    mutationFn: async (data: ChannelFormData & { display_name?: string; profile_image_url?: string; follower_count?: number; broadcaster_type?: string }) => {
+    mutationFn: async (data: ChannelFormData & { display_name?: string; profile_image_url?: string; follower_count?: number; broadcaster_type?: string; twitch_user_id?: number }) => {
       return await invoke<Channel>("add_channel", {
         request: {
           platform: data.platform,
@@ -52,6 +54,7 @@ export function ChannelForm({ onSuccess, onCancel }: ChannelFormProps) {
           poll_interval: data.poll_interval,
           follower_count: data.follower_count,
           broadcaster_type: data.broadcaster_type,
+          twitch_user_id: data.twitch_user_id,
         },
       });
     },
@@ -140,6 +143,7 @@ export function ChannelForm({ onSuccess, onCancel }: ChannelFormProps) {
           profile_image_url: validatedInfo.profile_image_url,
           follower_count: validatedInfo.follower_count,
           broadcaster_type: validatedInfo.broadcaster_type,
+          twitch_user_id: validatedInfo.twitch_user_id,
         } : {}),
       };
 
@@ -148,9 +152,9 @@ export function ChannelForm({ onSuccess, onCancel }: ChannelFormProps) {
       const errorMessage = String(error);
       // 重複エラーの場合、より分かりやすいメッセージを表示
       if (errorMessage.includes('Duplicate key') || errorMessage.includes('unique constraint')) {
-        alert(`このチャンネルは既に登録されています。\nプラットフォーム: ${data.platform}\nチャンネルID: ${data.channel_id}`);
+        toast.error(`このチャンネルは既に登録されています。\nプラットフォーム: ${data.platform}\nチャンネルID: ${data.channel_id}`);
       } else {
-        alert(`チャンネルの追加に失敗しました: ${errorMessage}`);
+        toast.error(`チャンネルの追加に失敗しました: ${errorMessage}`);
       }
     }
   };

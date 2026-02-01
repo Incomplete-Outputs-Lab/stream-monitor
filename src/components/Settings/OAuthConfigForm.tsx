@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useConfigStore } from '../../stores/configStore';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { confirm } from '../../utils/confirm';
 
 interface OAuthConfigFormProps {
   platform: 'twitch' | 'youtube';
@@ -72,7 +73,14 @@ export function OAuthConfigForm({ platform, onClose }: OAuthConfigFormProps) {
   };
 
   const handleDelete = async () => {
-    if (!confirm(`${platformName}のOAuth設定を削除しますか？\n\n注意: この操作により、保存されたClient IDとClient Secretが完全に削除されます。`)) {
+    const confirmed = await confirm({
+      title: 'OAuth設定の削除',
+      message: `${platformName}のOAuth設定を削除しますか？\n\n注意: この操作により、保存されたClient IDとClient Secretが完全に削除されます。`,
+      confirmText: '削除',
+      type: 'danger',
+    });
+    
+    if (!confirmed) {
       return;
     }
 

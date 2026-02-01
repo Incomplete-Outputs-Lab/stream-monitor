@@ -5,6 +5,7 @@ pub mod schema;
 pub mod utils;
 pub mod writer;
 
+use crate::error::ResultExt;
 use duckdb::Connection;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -22,7 +23,8 @@ impl DatabaseManager {
         // データベースファイルパスの取得
         let db_path = if let Ok(app_data_dir) = app_handle.path().app_data_dir() {
             std::fs::create_dir_all(&app_data_dir)
-                .map_err(|e| format!("Failed to create app data directory: {}", e))?;
+                .io_context("create app data directory")
+                .map_err(|e| e.to_string())?;
             app_data_dir.join("stream_stats.db")
         } else {
             eprintln!("Warning: Using current directory for database");
@@ -33,10 +35,13 @@ impl DatabaseManager {
         let conn = if cfg!(debug_assertions) {
             eprintln!("Development mode: Using in-memory database (hot-reload safe)");
             Connection::open_in_memory()
-                .map_err(|e| format!("Failed to open in-memory database: {}", e))?
+                .db_context("open in-memory database")
+                .map_err(|e| e.to_string())?
         } else {
             eprintln!("Production mode: Opening DuckDB at: {}", db_path.display());
-            Connection::open(&db_path).map_err(|e| format!("Failed to open database: {}", e))?
+            Connection::open(&db_path)
+                .db_context("open database")
+                .map_err(|e| e.to_string())?
         };
 
         // DuckDBの設定
@@ -59,9 +64,10 @@ impl DatabaseManager {
         let conn = self
             .conn
             .lock()
-            .map_err(|e| format!("Failed to lock connection: {}", e))?;
+            .map_err(|e| format!("Database connection lock failed: {}", e))?;
         conn.try_clone()
-            .map_err(|e| format!("Failed to clone connection: {}", e).into())
+            .db_context("clone connection")
+            .map_err(|e| e.to_string().into())
     }
 
     /// 手動バックアップを作成
@@ -84,7 +90,8 @@ impl DatabaseManager {
         }
 
         std::fs::copy(&self.db_path, &backup_path)
-            .map_err(|e| format!("Failed to create backup: {}", e))?;
+            .io_context("create backup")
+            .map_err(|e| e.to_string())?;
 
         eprintln!("Backup created at: {}", backup_path.display());
         Ok(backup_path)
@@ -102,16 +109,20 @@ pub fn get_connection(app_handle: &AppHandle) -> Result<Connection, Box<dyn std:
     db_manager.get_connection()
 }
 
-#[allow(dead_code)]
-pub fn get_connection_with_path(path: PathBuf) -> Result<Connection, Box<dyn std::error::Error>> {
-    let conn = Connection::open(&path).map_err(|e| format!("Failed to open database: {}", e))?;
-    Ok(conn)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    // テスト用のヘルパー関数
+    fn get_connection_with_path(
+        db_path: PathBuf,
+    ) -> Result<Connection, Box<dyn std::error::Error>> {
+        let conn = Connection::open(&db_path)
+            .db_context("open test database")
+            .map_err(|e| e.to_string())?;
+        Ok(conn)
+    }
 
     #[test]
     #[cfg_attr(

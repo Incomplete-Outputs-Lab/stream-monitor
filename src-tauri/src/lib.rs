@@ -3,7 +3,9 @@ mod api;
 mod collectors;
 mod commands;
 mod config;
+mod constants;
 mod database;
+mod error;
 mod logger;
 mod oauth;
 mod websocket;
@@ -11,13 +13,19 @@ mod websocket;
 use tauri::{Emitter, Manager};
 use tokio::sync::Mutex;
 
-use collectors::{poller::ChannelPoller, twitch::TwitchCollector, youtube::YouTubeCollector};
+use collectors::{
+    auto_discovery::AutoDiscoveryPoller, poller::ChannelPoller, twitch::TwitchCollector,
+    youtube::YouTubeCollector,
+};
 use commands::{
     analytics::{
         get_broadcaster_analytics, get_channel_daily_stats, get_data_availability,
         get_game_analytics, get_game_daily_stats, list_game_categories,
     },
-    channels::{add_channel, list_channels, remove_channel, toggle_channel, update_channel},
+    channels::{
+        add_channel, list_channels, migrate_twitch_user_ids, remove_channel, toggle_channel,
+        update_channel,
+    },
     chat::{get_chat_messages, get_chat_rate, get_chat_stats},
     config::{
         delete_oauth_config, delete_token, get_build_info, get_database_init_status,
@@ -25,6 +33,11 @@ use commands::{
         recreate_database, save_oauth_config, save_token, verify_token,
     },
     database::{create_database_backup, get_database_info},
+    discovery::{
+        get_auto_discovery_settings, get_discovered_streams, promote_discovered_channel,
+        save_auto_discovery_settings, search_twitch_games, toggle_auto_discovery,
+        DiscoveredStreamInfo,
+    },
     export::{export_to_csv, export_to_json},
     logs::get_logs,
     oauth::{poll_twitch_device_token, start_twitch_device_auth},
@@ -32,13 +45,18 @@ use commands::{
         delete_sql_template, execute_sql, get_sql_template, list_database_tables,
         list_sql_templates, save_sql_template,
     },
-    stats::{get_channel_stats, get_collector_status, get_live_channels, get_stream_stats},
+    stats::{get_channel_stats, get_collector_status, get_stream_stats},
     twitch::{get_twitch_rate_limit_status, validate_twitch_channel},
 };
 use config::settings::SettingsManager;
 use database::DatabaseManager;
 use logger::AppLogger;
 use std::sync::Arc;
+
+/// メモリキャッシュ: 自動発見された配信の最新結果
+pub struct DiscoveredStreamsCache {
+    pub streams: Mutex<Vec<DiscoveredStreamInfo>>,
+}
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -55,8 +73,8 @@ fn start_existing_channels_polling(
 
     // Get all enabled channels
     let mut stmt = conn.prepare(
-        "SELECT id, platform, channel_id, channel_name, display_name, profile_image_url, enabled, poll_interval, follower_count, broadcaster_type, view_count, \
-         CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at \
+        "SELECT id, platform, channel_id, channel_name, enabled, poll_interval, \
+         is_auto_discovered, discovered_at, twitch_user_id, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at \
          FROM channels WHERE enabled = true"
     )?;
 
@@ -67,15 +85,18 @@ fn start_existing_channels_polling(
                 platform: row.get(1)?,
                 channel_id: row.get(2)?,
                 channel_name: row.get(3)?,
-                display_name: row.get(4)?,
-                profile_image_url: row.get(5)?,
-                enabled: row.get(6)?,
-                poll_interval: row.get(7)?,
-                follower_count: row.get(8).ok(),
-                broadcaster_type: row.get(9).ok(),
-                view_count: row.get(10).ok(),
-                created_at: Some(row.get(11)?),
-                updated_at: Some(row.get(12)?),
+                display_name: None,
+                profile_image_url: None,
+                enabled: row.get(4)?,
+                poll_interval: row.get(5)?,
+                follower_count: None,
+                broadcaster_type: None,
+                view_count: None,
+                is_auto_discovered: row.get(6).ok(),
+                discovered_at: row.get(7).ok(),
+                twitch_user_id: row.get(8).ok(),
+                created_at: Some(row.get(9)?),
+                updated_at: Some(row.get(10)?),
             })
         })?
         .collect();
@@ -129,6 +150,17 @@ pub fn run() {
             let poller = ChannelPoller::new();
             let poller_arc = Arc::new(Mutex::new(poller));
             app.manage(poller_arc.clone());
+
+            // Initialize AutoDiscoveryPoller state (will be populated later)
+            let auto_discovery_poller: Arc<tokio::sync::Mutex<Option<AutoDiscoveryPoller>>> =
+                Arc::new(tokio::sync::Mutex::new(None));
+            app.manage(auto_discovery_poller.clone());
+
+            // Initialize DiscoveredStreamsCache
+            let discovered_streams_cache = Arc::new(DiscoveredStreamsCache {
+                streams: Mutex::new(Vec::new()),
+            });
+            app.manage(discovered_streams_cache);
 
             // データベース初期化を起動時に実行
             logger.info("Starting database initialization on startup...");
@@ -202,7 +234,7 @@ pub fn run() {
                                     let db_conn = Arc::new(Mutex::new(yt_conn));
                                     match YouTubeCollector::new(client_id.clone(), client_secret.clone(), "http://localhost:8081/callback".to_string(), Arc::clone(&db_conn)).await {
                                         Ok(collector) => {
-                                            poller.register_collector("youtube".to_string(), Arc::new(collector));
+                                            poller.register_collector(crate::constants::database::PLATFORM_YOUTUBE.to_string(), Arc::new(collector));
                                             logger_for_init.info("YouTube collector initialized successfully");
                                         }
                                         Err(e) => {
@@ -228,6 +260,55 @@ pub fn run() {
                                 logger_for_init.error(&format!("Failed to start polling for existing channels: {}", e));
                             }
                         }
+
+                        // Unlock poller before initializing AutoDiscoveryPoller
+                        drop(poller);
+
+                        // Initialize AutoDiscoveryPoller
+                        logger_for_init.info("Initializing AutoDiscoveryPoller...");
+                        let twitch_api_client = if settings.twitch.client_id.is_some() {
+                            // Get Twitch API client from the registered collector
+                            let poller = poller_for_init.lock().await;
+                            poller
+                                .get_twitch_collector()
+                                .map(|tc| Arc::clone(tc.get_api_client()))
+                        } else {
+                            None
+                        };
+
+                        // Use DatabaseManager for AutoDiscoveryPoller
+                        let discovery_poller = AutoDiscoveryPoller::new(
+                            twitch_api_client,
+                            Arc::new(db_manager.inner().clone()),
+                            app_handle.clone(),
+                        );
+
+                        // Start AutoDiscoveryPoller if enabled
+                        if let Some(auto_discovery_settings) = &settings.auto_discovery {
+                            if auto_discovery_settings.enabled {
+                                match discovery_poller.start().await {
+                                    Ok(_) => {
+                                        logger_for_init.info("AutoDiscoveryPoller started successfully");
+                                    }
+                                    Err(e) => {
+                                        logger_for_init.error(&format!(
+                                            "Failed to start AutoDiscoveryPoller: {}",
+                                            e
+                                        ));
+                                    }
+                                }
+                            } else {
+                                logger_for_init.info("AutoDiscovery is disabled in settings");
+                            }
+                        } else {
+                            logger_for_init.info("AutoDiscovery settings not configured");
+                        }
+
+                        // Store the AutoDiscoveryPoller in app state
+                        let auto_discovery_state: tauri::State<'_, Arc<tokio::sync::Mutex<Option<AutoDiscoveryPoller>>>> =
+                            app_handle.state();
+                        let mut state = auto_discovery_state.lock().await;
+                        *state = Some(discovery_poller);
                     });
 
                     logger_for_init.info("Application daemon initialization completed");
@@ -260,6 +341,7 @@ pub fn run() {
             update_channel,
             list_channels,
             toggle_channel,
+            migrate_twitch_user_ids,
             // Chat commands
             get_chat_messages,
             get_chat_stats,
@@ -281,6 +363,13 @@ pub fn run() {
             // Database commands
             create_database_backup,
             get_database_info,
+            // Discovery commands
+            get_auto_discovery_settings,
+            save_auto_discovery_settings,
+            toggle_auto_discovery,
+            get_discovered_streams,
+            search_twitch_games,
+            promote_discovered_channel,
             // SQL commands
             execute_sql,
             list_sql_templates,
@@ -293,7 +382,6 @@ pub fn run() {
             poll_twitch_device_token,
             // Stats commands
             get_stream_stats,
-            get_live_channels,
             get_channel_stats,
             get_collector_status,
             // Export commands

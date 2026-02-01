@@ -2,6 +2,7 @@ import { useForm } from "react-hook-form";
 import { useMutation } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { Channel } from "../../types";
+import { toast } from "../../utils/toast";
 
 interface ChannelEditFormData {
   channel_name: string;
@@ -42,7 +43,7 @@ export function ChannelEditForm({ channel, onSuccess, onCancel }: ChannelEditFor
       await onSuccess();
     },
     onError: (error) => {
-      alert(`チャンネルの更新に失敗しました: ${String(error)}`);
+      toast.error(`チャンネルの更新に失敗しました: ${String(error)}`);
     },
   });
 

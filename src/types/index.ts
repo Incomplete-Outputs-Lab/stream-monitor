@@ -1,7 +1,7 @@
 export interface Channel {
   id?: number;
   platform: 'twitch' | 'youtube';
-  channel_id: string;
+  channel_id: string; // Twitch: login, YouTube: channel_id
   channel_name: string;
   display_name?: string;
   profile_image_url?: string;
@@ -10,6 +10,9 @@ export interface Channel {
   follower_count?: number;
   broadcaster_type?: string;
   view_count?: number;
+  is_auto_discovered?: boolean;
+  discovered_at?: string;
+  twitch_user_id?: number; // Twitchの不変なuser ID（内部識別子）
   created_at?: string;
   updated_at?: string;
 }
@@ -238,4 +241,38 @@ export interface TwitchRateLimitStatus {
   usage_percent: number;
   /** 直近1分間のリクエスト数 */
   request_count: number;
+}
+
+export interface AutoDiscoveryFilters {
+  game_ids: string[];
+  languages: string[];
+  min_viewers?: number;
+}
+
+export interface AutoDiscoverySettings {
+  enabled: boolean;
+  poll_interval: number;
+  max_streams: number;
+  filters: AutoDiscoveryFilters;
+}
+
+export interface DiscoveredStreamInfo {
+  id: number;
+  twitch_user_id: number;  // 不変なTwitch user ID（内部識別子）
+  channel_id: string;       // login（表示用）
+  channel_name: string;
+  display_name?: string;
+  profile_image_url?: string;
+  discovered_at?: string;
+  title?: string;
+  category?: string;
+  viewer_count?: number;
+  follower_count?: number;
+  broadcaster_type?: string;
+}
+
+export interface TwitchGame {
+  id: string;
+  name: string;
+  box_art_url: string;
 }

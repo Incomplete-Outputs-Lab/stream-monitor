@@ -8,6 +8,8 @@ import type {
   SaveTemplateRequest,
   TableInfo,
 } from "../../types";
+import { toast } from "../../utils/toast";
+import { confirm } from "../../utils/confirm";
 
 export function SQLViewer() {
   const [query, setQuery] = useState<string>(
@@ -91,7 +93,7 @@ export function SQLViewer() {
   // テンプレートを保存
   const saveTemplate = async () => {
     if (!templateName.trim()) {
-      alert("テンプレート名を入力してください");
+      toast.warning("テンプレート名を入力してください");
       return;
     }
 
@@ -109,13 +111,20 @@ export function SQLViewer() {
       setSelectedTemplate(null);
       await loadTemplates();
     } catch (err) {
-      alert(`テンプレートの保存に失敗しました: ${err}`);
+      toast.error(`テンプレートの保存に失敗しました: ${err}`);
     }
   };
 
   // テンプレートを削除
   const deleteTemplate = async (id: number) => {
-    if (!confirm("このテンプレートを削除しますか？")) {
+    const confirmed = await confirm({
+      title: 'テンプレートの削除',
+      message: 'このテンプレートを削除しますか？',
+      confirmText: '削除',
+      type: 'danger',
+    });
+    
+    if (!confirmed) {
       return;
     }
 
@@ -126,7 +135,7 @@ export function SQLViewer() {
         setSelectedTemplate(null);
       }
     } catch (err) {
-      alert(`テンプレートの削除に失敗しました: ${err}`);
+      toast.error(`テンプレートの削除に失敗しました: ${err}`);
     }
   };
 
@@ -158,7 +167,7 @@ export function SQLViewer() {
           DuckDBデータベースにSQLクエリを実行
         </p>
         {dbInfo && (
-          <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 font-mono">
+          <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 font-mono select-text">
             📁 {dbInfo.path} ({(dbInfo.size_bytes / 1024 / 1024).toFixed(2)} MB)
           </div>
         )}
@@ -395,7 +404,7 @@ export function SQLViewer() {
                   <h4 className="text-sm font-semibold text-red-900 dark:text-red-200">
                     エラー
                   </h4>
-                  <pre className="text-xs text-red-700 dark:text-red-300 mt-1 whitespace-pre-wrap font-mono">
+                  <pre className="text-xs text-red-700 dark:text-red-300 mt-1 whitespace-pre-wrap font-mono select-text">
                     {error}
                   </pre>
                 </div>
@@ -442,7 +451,7 @@ export function SQLViewer() {
                           {row.map((cell, j) => (
                             <td
                               key={j}
-                              className="px-3 py-2 text-gray-900 dark:text-gray-100 font-mono text-xs"
+                              className="px-3 py-2 text-gray-900 dark:text-gray-100 font-mono text-xs select-text"
                             >
                               {cell === null ? (
                                 <span className="text-gray-400 dark:text-gray-600 italic">

@@ -80,7 +80,7 @@ impl TwitchIrcClient {
                                                 id: None,
                                                 stream_id,
                                                 timestamp: Utc::now().to_rfc3339(),
-                                                platform: "twitch".to_string(),
+                                                platform: crate::constants::database::PLATFORM_TWITCH.to_string(),
                                                 user_id: None,
                                                 user_name,
                                                 message: message_content,
@@ -159,7 +159,7 @@ impl TwitchIrcClient {
                         id: None,
                         stream_id: self.stream_id,
                         timestamp: Utc::now().to_rfc3339(),
-                        platform: "twitch".to_string(),
+                        platform: crate::constants::database::PLATFORM_TWITCH.to_string(),
                         user_id: None, // Twitch IRCではユーザーIDを取得できない
                         user_name,
                         message: message_content,

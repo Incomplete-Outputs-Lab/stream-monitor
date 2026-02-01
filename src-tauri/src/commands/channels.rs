@@ -331,7 +331,7 @@ pub async fn list_channels(
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     let mut stmt = conn
-        .prepare("SELECT id, platform, channel_id, channel_name, display_name, profile_image_url, enabled, poll_interval, follower_count, broadcaster_type, view_count, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels ORDER BY created_at DESC")
+        .prepare("SELECT id, platform, channel_id, channel_name, display_name, profile_image_url, enabled, poll_interval, follower_count, broadcaster_type, view_count, is_auto_discovered, CAST(discovered_at AS VARCHAR) as discovered_at, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels ORDER BY created_at DESC")
         .map_err(|e| format!("Failed to prepare statement: {}", e))?;
 
     let channels: Result<Vec<Channel>, _> = stmt
@@ -348,8 +348,10 @@ pub async fn list_channels(
                 follower_count: row.get(8).ok(),
                 broadcaster_type: row.get(9).ok(),
                 view_count: row.get(10).ok(),
-                created_at: Some(row.get(11)?),
-                updated_at: Some(row.get(12)?),
+                is_auto_discovered: row.get(11).ok(),
+                discovered_at: row.get(12).ok(),
+                created_at: Some(row.get(13)?),
+                updated_at: Some(row.get(14)?),
             })
         })
         .map_err(|e| format!("Failed to query channels: {}", e))?
@@ -405,7 +407,7 @@ pub async fn toggle_channel(
 
 fn get_channel_by_id(conn: &Connection, id: i64) -> Option<Channel> {
     let mut stmt = conn
-        .prepare("SELECT id, platform, channel_id, channel_name, display_name, profile_image_url, enabled, poll_interval, follower_count, broadcaster_type, view_count, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels WHERE id = ?")
+        .prepare("SELECT id, platform, channel_id, channel_name, display_name, profile_image_url, enabled, poll_interval, follower_count, broadcaster_type, view_count, is_auto_discovered, CAST(discovered_at AS VARCHAR) as discovered_at, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels WHERE id = ?")
         .ok()?;
 
     let id_str = id.to_string();
@@ -423,8 +425,10 @@ fn get_channel_by_id(conn: &Connection, id: i64) -> Option<Channel> {
                 follower_count: row.get(8).ok(),
                 broadcaster_type: row.get(9).ok(),
                 view_count: row.get(10).ok(),
-                created_at: Some(row.get(11)?),
-                updated_at: Some(row.get(12)?),
+                is_auto_discovered: row.get(11).ok(),
+                discovered_at: row.get(12).ok(),
+                created_at: Some(row.get(13)?),
+                updated_at: Some(row.get(14)?),
             })
         })
         .ok()?;

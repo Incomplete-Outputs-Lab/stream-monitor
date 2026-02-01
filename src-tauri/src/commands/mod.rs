@@ -3,6 +3,7 @@ pub mod channels;
 pub mod chat;
 pub mod config;
 pub mod database;
+pub mod discovery;
 pub mod export;
 pub mod logs;
 pub mod oauth;

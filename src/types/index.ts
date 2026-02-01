@@ -10,6 +10,8 @@ export interface Channel {
   follower_count?: number;
   broadcaster_type?: string;
   view_count?: number;
+  is_auto_discovered?: boolean;
+  discovered_at?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -238,4 +240,35 @@ export interface TwitchRateLimitStatus {
   usage_percent: number;
   /** 直近1分間のリクエスト数 */
   request_count: number;
+}
+
+export interface AutoDiscoveryFilters {
+  game_ids: string[];
+  languages: string[];
+  min_viewers?: number;
+}
+
+export interface AutoDiscoverySettings {
+  enabled: boolean;
+  poll_interval: number;
+  max_streams: number;
+  filters: AutoDiscoveryFilters;
+}
+
+export interface DiscoveredStreamInfo {
+  id: number;
+  channel_id: string;
+  channel_name: string;
+  display_name?: string;
+  profile_image_url?: string;
+  discovered_at?: string;
+  title?: string;
+  category?: string;
+  viewer_count?: number;
+}
+
+export interface TwitchGame {
+  id: string;
+  name: string;
+  box_art_url: string;
 }

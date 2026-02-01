@@ -268,5 +268,32 @@ fn migrate_database_schema(conn: &Connection) -> Result<(), duckdb::Error> {
         conn.execute("ALTER TABLE stream_stats ADD COLUMN category TEXT", [])?;
     }
 
+    // channelsテーブルにis_auto_discoveredフィールドを追加
+    let mut channels_has_is_auto_discovered = conn.prepare(
+        "SELECT COUNT(*) FROM pragma_table_info('channels') WHERE name = 'is_auto_discovered'",
+    )?;
+    let channels_has_is_auto_discovered_count: i64 =
+        channels_has_is_auto_discovered.query_row([], |row| row.get(0))?;
+
+    if channels_has_is_auto_discovered_count == 0 {
+        eprintln!("[Migration] Adding is_auto_discovered column to channels table");
+        conn.execute(
+            "ALTER TABLE channels ADD COLUMN is_auto_discovered BOOLEAN DEFAULT FALSE",
+            [],
+        )?;
+    }
+
+    // channelsテーブルにdiscovered_atフィールドを追加
+    let mut channels_has_discovered_at = conn.prepare(
+        "SELECT COUNT(*) FROM pragma_table_info('channels') WHERE name = 'discovered_at'",
+    )?;
+    let channels_has_discovered_at_count: i64 =
+        channels_has_discovered_at.query_row([], |row| row.get(0))?;
+
+    if channels_has_discovered_at_count == 0 {
+        eprintln!("[Migration] Adding discovered_at column to channels table");
+        conn.execute("ALTER TABLE channels ADD COLUMN discovered_at TIMESTAMP", [])?;
+    }
+
     Ok(())
 }

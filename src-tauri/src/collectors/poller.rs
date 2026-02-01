@@ -343,7 +343,7 @@ impl ChannelPoller {
     }
 
     fn get_channel(conn: &Connection, channel_id: i64) -> Result<Option<Channel>, duckdb::Error> {
-        let mut stmt = conn.prepare("SELECT id, platform, channel_id, channel_name, display_name, profile_image_url, enabled, poll_interval, follower_count, broadcaster_type, view_count, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels WHERE id = ?")?;
+        let mut stmt = conn.prepare("SELECT id, platform, channel_id, channel_name, display_name, profile_image_url, enabled, poll_interval, follower_count, broadcaster_type, view_count, is_auto_discovered, CAST(discovered_at AS VARCHAR) as discovered_at, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels WHERE id = ?")?;
 
         let channel_id_str = channel_id.to_string();
         let rows: Result<Vec<_>, _> = stmt
@@ -360,8 +360,10 @@ impl ChannelPoller {
                     follower_count: row.get(8).ok(),
                     broadcaster_type: row.get(9).ok(),
                     view_count: row.get(10).ok(),
-                    created_at: Some(row.get(11)?),
-                    updated_at: Some(row.get(12)?),
+                    is_auto_discovered: row.get(11).ok(),
+                    discovered_at: row.get(12).ok(),
+                    created_at: Some(row.get(13)?),
+                    updated_at: Some(row.get(14)?),
                 })
             })?
             .collect();

@@ -13,6 +13,8 @@ pub struct Channel {
     pub follower_count: Option<i32>,
     pub broadcaster_type: Option<String>,
     pub view_count: Option<i32>,
+    pub is_auto_discovered: Option<bool>,
+    pub discovered_at: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
 }
@@ -97,6 +99,8 @@ mod tests {
             follower_count: None,
             broadcaster_type: None,
             view_count: None,
+            is_auto_discovered: None,
+            discovered_at: None,
             enabled: true,
             poll_interval: 60,
             created_at: Some("2024-01-01T00:00:00Z".to_string()),

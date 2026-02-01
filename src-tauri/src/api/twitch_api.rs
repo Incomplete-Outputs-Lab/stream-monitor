@@ -307,6 +307,75 @@ impl TwitchApiClient {
             }
         }
     }
+
+    /// 視聴者数順にソートされた上位配信を取得
+    ///
+    /// # Arguments
+    /// * `game_ids` - フィルターするゲームID（最大100件）
+    /// * `languages` - フィルターする言語コード（最大100件）
+    /// * `first` - 取得する配信数（最大100件、デフォルト20件）
+    ///
+    /// # Returns
+    /// 視聴者数の降順でソートされた配信のリスト
+    pub async fn get_top_streams(
+        &self,
+        game_ids: Option<Vec<String>>,
+        languages: Option<Vec<String>>,
+        first: Option<usize>,
+    ) -> Result<Vec<Stream>, Box<dyn std::error::Error>> {
+        let token = self.get_user_token().await?;
+
+        // GetStreamsRequestを作成
+        let mut request = GetStreamsRequest::default();
+
+        // game_idsを設定
+        if let Some(ids) = &game_ids {
+            let game_id_refs: Vec<&types::CategoryIdRef> = ids
+                .iter()
+                .map(|id| id.as_str().into())
+                .collect();
+            request.game_id = game_id_refs.into();
+        }
+
+        // languagesを設定
+        if let Some(langs) = &languages {
+            if !langs.is_empty() {
+                request.language = Some(std::borrow::Cow::Borrowed(langs[0].as_str()));
+            }
+        }
+
+        // firstを設定（最大100）
+        if let Some(count) = first {
+            request.first = Some(count.min(100));
+        }
+
+        // リクエストをトラッキング
+        if let Ok(mut limiter) = self.rate_limiter.lock() {
+            limiter.track_request();
+        }
+
+        match self.client.req_get(request.clone(), &token).await {
+            Ok(response) => Ok(response.data),
+            Err(e) => {
+                // 401エラーの場合、トークンをリフレッシュして再試行
+                if e.to_string().contains("401") || e.to_string().contains("Unauthorized") {
+                    eprintln!("Token expired, attempting refresh...");
+                    let _new_token = self.refresh_token().await?;
+                    let refreshed_token = self.get_user_token().await?;
+
+                    // 再試行もトラッキング
+                    if let Ok(mut limiter) = self.rate_limiter.lock() {
+                        limiter.track_request();
+                    }
+
+                    let response = self.client.req_get(request, &refreshed_token).await?;
+                    Ok(response.data)
+                } else {
+                    Err(e.into())
+                }
+            }
+        }
+    }
 }
 
 /// Twitch APIレート制限トラッカー

@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { OAuthConfigForm } from './OAuthConfigForm';
 import { TokenForm } from './TokenForm';
 import { TwitchAuthPanel } from './TwitchAuthPanel';
+import { AutoDiscoveryForm } from './AutoDiscoveryForm';
 import { useConfigStore } from '../../stores/configStore';
 import { useThemeStore } from '../../stores/themeStore';
 
@@ -196,8 +197,15 @@ export function Settings() {
             />
           )}
         </section>
+      </div>
 
-        {/* ビルド情報 */}
+      {/* Twitch自動発見設定 */}
+      <div className="mt-6">
+        <AutoDiscoveryForm />
+      </div>
+
+      {/* ビルド情報 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
         {buildInfo && (
           <section className="card p-4 space-y-3">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">ビルド情報</h2>

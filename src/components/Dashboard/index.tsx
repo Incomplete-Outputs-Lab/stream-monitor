@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { ChannelWithStats, TwitchRateLimitStatus } from "../../types";
+import { ChannelWithStats, TwitchRateLimitStatus, DiscoveredStreamInfo } from "../../types";
 import { Tooltip as CustomTooltip } from "../common/Tooltip";
 
 interface StreamStats {
@@ -26,6 +26,8 @@ interface LiveChannelCardProps {
 }
 
 function LiveChannelCard({ channel }: LiveChannelCardProps) {
+  const isAutoDiscovered = channel.is_auto_discovered;
+
   return (
     <div className="card p-6 hover:shadow-md transition-all duration-200 animate-fade-in">
       <div className="flex items-center justify-between">
@@ -34,6 +36,11 @@ function LiveChannelCard({ channel }: LiveChannelCardProps) {
             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">
               {channel.channel_name}
             </h3>
+            {isAutoDiscovered && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300">
+                自動発見
+              </span>
+            )}
           </div>
           <p className="text-sm text-gray-500 dark:text-gray-400 capitalize">
             {channel.platform === 'twitch' ? '🎮 Twitch' : '▶️ YouTube'}
@@ -55,11 +62,69 @@ function LiveChannelCard({ channel }: LiveChannelCardProps) {
         </div>
       )}
 
-      <div className="mt-4 flex items-center">
+      <div className="mt-4 flex items-center justify-between">
         <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gradient-to-r from-green-400 to-emerald-500 text-white shadow-sm">
           <span className="w-2 h-2 bg-white rounded-full mr-2 animate-pulse"></span>
           ライブ中
         </span>
+        {isAutoDiscovered && (
+          <button
+            onClick={async () => {
+              if (confirm('このチャンネルを手動登録に昇格しますか？')) {
+                try {
+                  await invoke('promote_discovered_channel', { channelId: channel.id });
+                  window.location.reload();
+                } catch (err) {
+                  alert(`エラー: ${err}`);
+                }
+              }
+            }}
+            className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+          >
+            手動登録に昇格
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface DiscoveredStreamCardProps {
+  stream: DiscoveredStreamInfo;
+  onPromote: (id: number) => void;
+}
+
+function DiscoveredStreamCard({ stream, onPromote }: DiscoveredStreamCardProps) {
+  return (
+    <div className="card p-4 hover:shadow-md transition-all duration-200">
+      <div className="flex items-center justify-between">
+        <div className="flex-1 min-w-0">
+          <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
+            {stream.display_name || stream.channel_name}
+          </h4>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            {stream.category || 'カテゴリ不明'}
+          </p>
+        </div>
+        <div className="text-right ml-4">
+          <div className="text-lg font-bold text-blue-600 dark:text-blue-400">
+            {stream.viewer_count?.toLocaleString() || 0}
+          </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">視聴者</div>
+        </div>
+      </div>
+      {stream.title && (
+        <p className="text-xs text-gray-600 dark:text-gray-400 mt-2 truncate" title={stream.title}>
+          {stream.title}
+        </p>
+      )}
+      <div className="mt-3 flex justify-end">
+        <button
+          onClick={() => onPromote(stream.id)}
+          className="text-xs px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors"
+        >
+          手動登録に昇格
+        </button>
       </div>
     </div>
   );
@@ -211,6 +276,24 @@ export function Dashboard() {
     queryFn: () => invoke<TwitchRateLimitStatus>("get_twitch_rate_limit_status"),
     refetchInterval: 5000, // 5秒ごとに更新
   });
+
+  // 自動発見された配信を取得
+  const { data: discoveredStreams, refetch: refetchDiscovered } = useQuery({
+    queryKey: ["discovered-streams"],
+    queryFn: () => invoke<DiscoveredStreamInfo[]>("get_discovered_streams"),
+    refetchInterval: 30000, // 30秒ごとに更新
+  });
+
+  const handlePromote = async (streamId: number) => {
+    if (confirm('このチャンネルを手動登録に昇格しますか？\n配信終了後も監視を継続します。')) {
+      try {
+        await invoke('promote_discovered_channel', { channelId: streamId });
+        refetchDiscovered();
+      } catch (err) {
+        alert(`エラー: ${err}`);
+      }
+    }
+  };
 
   useEffect(() => {
     if (recentStats) {
@@ -382,6 +465,34 @@ export function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* 自動発見された配信 */}
+      {discoveredStreams && discoveredStreams.length > 0 && (
+        <div className="card p-6 animate-fade-in mt-6">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                自動発見された配信
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                条件に合致する上位配信を自動的に監視しています
+              </p>
+            </div>
+            <span className="text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-3 py-1 rounded-full">
+              {discoveredStreams.length}件
+            </span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {discoveredStreams.map((stream) => (
+              <DiscoveredStreamCard
+                key={stream.id}
+                stream={stream}
+                onPromote={handlePromote}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

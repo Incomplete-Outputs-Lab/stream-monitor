@@ -11,7 +11,10 @@ mod websocket;
 use tauri::{Emitter, Manager};
 use tokio::sync::Mutex;
 
-use collectors::{poller::ChannelPoller, twitch::TwitchCollector, youtube::YouTubeCollector};
+use collectors::{
+    auto_discovery::AutoDiscoveryPoller, poller::ChannelPoller, twitch::TwitchCollector,
+    youtube::YouTubeCollector,
+};
 use commands::{
     analytics::{
         get_broadcaster_analytics, get_channel_daily_stats, get_data_availability,
@@ -25,6 +28,10 @@ use commands::{
         recreate_database, save_oauth_config, save_token, verify_token,
     },
     database::{create_database_backup, get_database_info},
+    discovery::{
+        get_auto_discovery_settings, get_discovered_streams, promote_discovered_channel,
+        save_auto_discovery_settings, search_twitch_games, toggle_auto_discovery,
+    },
     export::{export_to_csv, export_to_json},
     logs::get_logs,
     oauth::{poll_twitch_device_token, start_twitch_device_auth},
@@ -56,7 +63,7 @@ fn start_existing_channels_polling(
     // Get all enabled channels
     let mut stmt = conn.prepare(
         "SELECT id, platform, channel_id, channel_name, display_name, profile_image_url, enabled, poll_interval, follower_count, broadcaster_type, view_count, \
-         CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at \
+         is_auto_discovered, discovered_at, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at \
          FROM channels WHERE enabled = true"
     )?;
 
@@ -74,8 +81,10 @@ fn start_existing_channels_polling(
                 follower_count: row.get(8).ok(),
                 broadcaster_type: row.get(9).ok(),
                 view_count: row.get(10).ok(),
-                created_at: Some(row.get(11)?),
-                updated_at: Some(row.get(12)?),
+                is_auto_discovered: row.get(11).ok(),
+                discovered_at: row.get(12).ok(),
+                created_at: Some(row.get(13)?),
+                updated_at: Some(row.get(14)?),
             })
         })?
         .collect();
@@ -129,6 +138,11 @@ pub fn run() {
             let poller = ChannelPoller::new();
             let poller_arc = Arc::new(Mutex::new(poller));
             app.manage(poller_arc.clone());
+
+            // Initialize AutoDiscoveryPoller state (will be populated later)
+            let auto_discovery_poller: Arc<tokio::sync::Mutex<Option<AutoDiscoveryPoller>>> =
+                Arc::new(tokio::sync::Mutex::new(None));
+            app.manage(auto_discovery_poller.clone());
 
             // データベース初期化を起動時に実行
             logger.info("Starting database initialization on startup...");
@@ -228,6 +242,55 @@ pub fn run() {
                                 logger_for_init.error(&format!("Failed to start polling for existing channels: {}", e));
                             }
                         }
+
+                        // Unlock poller before initializing AutoDiscoveryPoller
+                        drop(poller);
+
+                        // Initialize AutoDiscoveryPoller
+                        logger_for_init.info("Initializing AutoDiscoveryPoller...");
+                        let twitch_api_client = if settings.twitch.client_id.is_some() {
+                            // Get Twitch API client from the registered collector
+                            let poller = poller_for_init.lock().await;
+                            poller
+                                .get_twitch_collector()
+                                .map(|tc| Arc::clone(tc.get_api_client()))
+                        } else {
+                            None
+                        };
+
+                        // Use DatabaseManager for AutoDiscoveryPoller
+                        let discovery_poller = AutoDiscoveryPoller::new(
+                            twitch_api_client,
+                            Arc::new(db_manager.inner().clone()),
+                            app_handle.clone(),
+                        );
+
+                        // Start AutoDiscoveryPoller if enabled
+                        if let Some(auto_discovery_settings) = &settings.auto_discovery {
+                            if auto_discovery_settings.enabled {
+                                match discovery_poller.start().await {
+                                    Ok(_) => {
+                                        logger_for_init.info("AutoDiscoveryPoller started successfully");
+                                    }
+                                    Err(e) => {
+                                        logger_for_init.error(&format!(
+                                            "Failed to start AutoDiscoveryPoller: {}",
+                                            e
+                                        ));
+                                    }
+                                }
+                            } else {
+                                logger_for_init.info("AutoDiscovery is disabled in settings");
+                            }
+                        } else {
+                            logger_for_init.info("AutoDiscovery settings not configured");
+                        }
+
+                        // Store the AutoDiscoveryPoller in app state
+                        let auto_discovery_state: tauri::State<'_, Arc<tokio::sync::Mutex<Option<AutoDiscoveryPoller>>>> =
+                            app_handle.state();
+                        let mut state = auto_discovery_state.lock().await;
+                        *state = Some(discovery_poller);
                     });
 
                     logger_for_init.info("Application daemon initialization completed");
@@ -281,6 +344,13 @@ pub fn run() {
             // Database commands
             create_database_backup,
             get_database_info,
+            // Discovery commands
+            get_auto_discovery_settings,
+            save_auto_discovery_settings,
+            toggle_auto_discovery,
+            get_discovered_streams,
+            search_twitch_games,
+            promote_discovered_channel,
             // SQL commands
             execute_sql,
             list_sql_templates,

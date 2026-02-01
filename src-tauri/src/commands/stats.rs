@@ -95,7 +95,8 @@ pub async fn get_live_channels(
         )
         SELECT 
             c.id, c.platform, c.channel_id, c.channel_name, c.display_name, c.profile_image_url, c.enabled, c.poll_interval, 
-            c.follower_count, c.broadcaster_type, c.view_count,
+            c.follower_count, c.broadcaster_type, c.view_count, c.is_auto_discovered,
+            CAST(c.discovered_at AS VARCHAR) as discovered_at,
             CAST(c.created_at AS VARCHAR) as created_at, CAST(c.updated_at AS VARCHAR) as updated_at,
             TRUE as is_live,
             ls.viewer_count as current_viewers,
@@ -126,12 +127,14 @@ pub async fn get_live_channels(
                     follower_count: row.get(8).ok(),
                     broadcaster_type: row.get(9).ok(),
                     view_count: row.get(10).ok(),
-                    created_at: Some(row.get(11)?),
-                    updated_at: Some(row.get(12)?),
+                    is_auto_discovered: row.get(11).ok(),
+                    discovered_at: row.get(12).ok(),
+                    created_at: Some(row.get(13)?),
+                    updated_at: Some(row.get(14)?),
                 },
-                is_live: row.get(13)?,
-                current_viewers: row.get(14)?,
-                current_title: row.get(15)?,
+                is_live: row.get(15)?,
+                current_viewers: row.get(16)?,
+                current_title: row.get(17)?,
             })
         })
         .map_err(|e| format!("Failed to query channels: {}", e))?

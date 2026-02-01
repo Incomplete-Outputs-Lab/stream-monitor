@@ -9,6 +9,9 @@ pub struct AppSettings {
     // 将来の機能: YouTubeスクレイピング設定（設定ファイルを直接編集しないと有効化できない）
     #[serde(default = "default_scraping_settings")]
     pub youtube_scraping: Option<YouTubeScrapingSettings>,
+    // Twitch自動発見機能設定
+    #[serde(default)]
+    pub auto_discovery: Option<AutoDiscoverySettings>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,6 +40,54 @@ pub struct YouTubeScrapingSettings {
     pub timeout_seconds: Option<u64>,
 }
 
+/// Twitch自動発見機能設定
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutoDiscoverySettings {
+    /// 自動発見機能を有効化するか
+    pub enabled: bool,
+    /// ポーリング間隔（秒）
+    #[serde(default = "default_poll_interval")]
+    pub poll_interval: u32,
+    /// 取得する最大配信数（1-100）
+    #[serde(default = "default_max_streams")]
+    pub max_streams: u32,
+    /// フィルター設定
+    #[serde(default)]
+    pub filters: AutoDiscoveryFilters,
+}
+
+/// 自動発見フィルター設定
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AutoDiscoveryFilters {
+    /// フィルターするゲームID（最大100件）
+    #[serde(default)]
+    pub game_ids: Vec<String>,
+    /// フィルターする言語コード（例: ja, en）（最大100件）
+    #[serde(default)]
+    pub languages: Vec<String>,
+    /// 最小視聴者数
+    pub min_viewers: Option<u32>,
+}
+
+impl Default for AutoDiscoverySettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            poll_interval: default_poll_interval(),
+            max_streams: default_max_streams(),
+            filters: AutoDiscoveryFilters::default(),
+        }
+    }
+}
+
+fn default_poll_interval() -> u32 {
+    300 // 5分
+}
+
+fn default_max_streams() -> u32 {
+    20 // デフォルト20件
+}
+
 fn default_scraping_settings() -> Option<YouTubeScrapingSettings> {
     None // デフォルトでは無効
 }
@@ -50,6 +101,7 @@ impl Default for AppSettings {
                 client_secret: None,
             },
             youtube_scraping: None,
+            auto_discovery: None,
         }
     }
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
+import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
 import { OAuthConfigForm } from './OAuthConfigForm';
 import { TokenForm } from './TokenForm';
 import { TwitchAuthPanel } from './TwitchAuthPanel';
@@ -22,6 +23,27 @@ export function Settings() {
 
   const { hasTwitchToken, hasYouTubeToken, hasTwitchOAuth, checkTokens } = useConfigStore();
   const { theme, setTheme } = useThemeStore();
+  const queryClient = useQueryClient();
+
+  // 自動起動状態を取得
+  const { data: autostartEnabled, isLoading: autostartLoading } = useQuery({
+    queryKey: ['autostart-enabled'],
+    queryFn: isEnabled,
+  });
+
+  // 自動起動トグル
+  const autostartMutation = useMutation({
+    mutationFn: async () => {
+      if (await isEnabled()) {
+        await disable();
+      } else {
+        await enable();
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['autostart-enabled'] });
+    },
+  });
 
   // デバッグ: 状態変化を監視
   useEffect(() => {
@@ -99,6 +121,38 @@ export function Settings() {
                 システム
               </button>
             </div>
+          </div>
+        </section>
+
+        {/* アプリ設定 */}
+        <section className="card p-4 space-y-3">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">アプリ設定</h2>
+          <div>
+            <label className="flex items-center justify-between cursor-pointer">
+              <div>
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  OS起動時に自動起動
+                </span>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  システムトレイに常駐します
+                </p>
+              </div>
+              <button
+                onClick={() => autostartMutation.mutate()}
+                disabled={autostartLoading || autostartMutation.isPending}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+                  autostartEnabled
+                    ? 'bg-purple-600'
+                    : 'bg-gray-200 dark:bg-slate-600'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    autostartEnabled ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </label>
           </div>
         </section>
 

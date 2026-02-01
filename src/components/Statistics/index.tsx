@@ -3,10 +3,14 @@ import { useQuery } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import BroadcasterAnalytics from "./BroadcasterAnalytics";
 import GameAnalytics from "./GameAnalytics";
+import TopGamesAnalytics from "./TopGamesAnalytics";
+import GameDetailAnalytics from "./GameDetailAnalytics";
+import TopChannelsAnalytics from "./TopChannelsAnalytics";
+import ChannelDetailAnalytics from "./ChannelDetailAnalytics";
 import { DateRangePicker } from "./DateRangePicker";
 import { Channel } from "../../types";
 
-type TabType = "overview" | "broadcaster" | "game";
+type TabType = "overview" | "broadcaster" | "game" | "topGames" | "gameDetail" | "topChannels" | "channelDetail";
 
 export function Statistics() {
   const [activeTab, setActiveTab] = useState<TabType>("overview");
@@ -24,6 +28,10 @@ export function Statistics() {
 
   const [dateRange, setDateRange] = useState(getInitialDateRange());
   const [selectedChannelId, setSelectedChannelId] = useState<number | null>(null);
+  
+  // ドリルダウン用のstate
+  const [selectedGame, setSelectedGame] = useState<string>("");
+  const [selectedChannelName, setSelectedChannelName] = useState<string>("");
 
   // チャンネル一覧取得
   const { data: channels } = useQuery({
@@ -41,7 +49,35 @@ export function Statistics() {
     { id: "overview" as TabType, label: "概要", icon: "📊" },
     { id: "broadcaster" as TabType, label: "配信者分析", icon: "👤" },
     { id: "game" as TabType, label: "ゲーム分析", icon: "🎮" },
+    { id: "topGames" as TabType, label: "トップゲーム", icon: "🏆" },
+    { id: "topChannels" as TabType, label: "トップチャンネル", icon: "⭐" },
   ];
+  
+  // ドリルダウンナビゲーションハンドラー
+  const handleGameClick = (category: string) => {
+    setSelectedGame(category);
+    setActiveTab("gameDetail");
+  };
+  
+  const handleChannelClick = (channelId: number) => {
+    const channel = channels?.find(ch => ch.id === channelId);
+    if (channel) {
+      setSelectedChannelId(channelId);
+      setSelectedChannelName(channel.display_name || channel.channel_name);
+      setActiveTab("channelDetail");
+    }
+  };
+  
+  const handleBackToTopGames = () => {
+    setSelectedGame("");
+    setActiveTab("topGames");
+  };
+  
+  const handleBackToTopChannels = () => {
+    setSelectedChannelId(null);
+    setSelectedChannelName("");
+    setActiveTab("topChannels");
+  };
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -142,6 +178,26 @@ export function Statistics() {
                       ゲームタイトル別統計
                     </div>
                   </button>
+                  <button
+                    onClick={() => setActiveTab("topGames")}
+                    className="p-6 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg hover:bg-yellow-100 dark:hover:bg-yellow-900/30 transition-colors"
+                  >
+                    <div className="text-3xl mb-2">🏆</div>
+                    <div className="font-semibold text-gray-900 dark:text-gray-100">トップゲーム</div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                      ゲームランキング
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("topChannels")}
+                    className="p-6 bg-green-50 dark:bg-green-900/20 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
+                  >
+                    <div className="text-3xl mb-2">⭐</div>
+                    <div className="font-semibold text-gray-900 dark:text-gray-100">トップチャンネル</div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                      チャンネルランキング
+                    </div>
+                  </button>
                 </div>
               </div>
             </div>
@@ -159,6 +215,43 @@ export function Statistics() {
             <GameAnalytics
               startTime={new Date(dateRange.start).toISOString()}
               endTime={new Date(dateRange.end + 'T23:59:59').toISOString()}
+            />
+          )}
+
+          {activeTab === "topGames" && (
+            <TopGamesAnalytics
+              startTime={new Date(dateRange.start).toISOString()}
+              endTime={new Date(dateRange.end + 'T23:59:59').toISOString()}
+              onGameClick={handleGameClick}
+            />
+          )}
+
+          {activeTab === "gameDetail" && selectedGame && (
+            <GameDetailAnalytics
+              category={selectedGame}
+              startTime={new Date(dateRange.start).toISOString()}
+              endTime={new Date(dateRange.end + 'T23:59:59').toISOString()}
+              onBackClick={handleBackToTopGames}
+              onChannelClick={handleChannelClick}
+            />
+          )}
+
+          {activeTab === "topChannels" && (
+            <TopChannelsAnalytics
+              startTime={new Date(dateRange.start).toISOString()}
+              endTime={new Date(dateRange.end + 'T23:59:59').toISOString()}
+              onChannelClick={handleChannelClick}
+            />
+          )}
+
+          {activeTab === "channelDetail" && selectedChannelId && selectedChannelName && (
+            <ChannelDetailAnalytics
+              channelId={selectedChannelId}
+              channelName={selectedChannelName}
+              startTime={new Date(dateRange.start).toISOString()}
+              endTime={new Date(dateRange.end + 'T23:59:59').toISOString()}
+              onBackClick={handleBackToTopChannels}
+              onGameClick={handleGameClick}
             />
           )}
         </div>

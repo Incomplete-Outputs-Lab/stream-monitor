@@ -13,7 +13,10 @@ use tokio::sync::Mutex;
 
 use collectors::{poller::ChannelPoller, twitch::TwitchCollector, youtube::YouTubeCollector};
 use commands::{
-    analytics::{get_broadcaster_analytics, get_game_analytics, list_game_categories},
+    analytics::{
+        get_broadcaster_analytics, get_channel_daily_stats, get_data_availability,
+        get_game_analytics, get_game_daily_stats, list_game_categories,
+    },
     channels::{add_channel, list_channels, remove_channel, toggle_channel, update_channel},
     chat::{get_chat_messages, get_chat_rate, get_chat_stats},
     config::{
@@ -248,6 +251,9 @@ pub fn run() {
             get_broadcaster_analytics,
             get_game_analytics,
             list_game_categories,
+            get_data_availability,
+            get_game_daily_stats,
+            get_channel_daily_stats,
             // Channel commands
             add_channel,
             remove_channel,

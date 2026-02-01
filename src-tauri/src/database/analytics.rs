@@ -40,6 +40,25 @@ struct CategoryMinutesWatched {
     minutes_watched: i64,
 }
 
+/// データ可用性情報
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DataAvailability {
+    pub first_record: String,
+    pub last_record: String,
+    pub total_days_with_data: i32,
+    pub total_records: i64,
+}
+
+/// 日次統計
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DailyStats {
+    pub date: String,
+    pub minutes_watched: i64,
+    pub hours_broadcasted: f64,
+    pub average_ccu: f64,
+    pub collection_hours: f64,
+}
+
 /// 配信者別統計を取得
 pub fn get_broadcaster_analytics(
     conn: &Connection,
@@ -571,4 +590,146 @@ fn get_top_channel_for_category(
             .and_then(|r| r.ok());
 
     Ok(result)
+}
+
+/// データ可用性情報を取得
+pub fn get_data_availability(conn: &Connection) -> Result<DataAvailability, duckdb::Error> {
+    let sql = r#"
+        WITH date_stats AS (
+            SELECT 
+                DATE(collected_at) as date,
+                COUNT(*) as records
+            FROM stream_stats
+            GROUP BY DATE(collected_at)
+        )
+        SELECT 
+            MIN(ss.collected_at)::VARCHAR as first_record,
+            MAX(ss.collected_at)::VARCHAR as last_record,
+            COUNT(DISTINCT DATE(ss.collected_at)) as total_days_with_data,
+            COUNT(*) as total_records
+        FROM stream_stats ss
+    "#;
+
+    let mut stmt = conn.prepare(sql)?;
+    let mut rows = stmt.query([])?;
+
+    if let Some(row) = rows.next()? {
+        Ok(DataAvailability {
+            first_record: row.get(0)?,
+            last_record: row.get(1)?,
+            total_days_with_data: row.get(2)?,
+            total_records: row.get(3)?,
+        })
+    } else {
+        Ok(DataAvailability {
+            first_record: String::new(),
+            last_record: String::new(),
+            total_days_with_data: 0,
+            total_records: 0,
+        })
+    }
+}
+
+/// ゲーム別日次統計を取得
+pub fn get_game_daily_stats(
+    conn: &Connection,
+    category: &str,
+    start_time: &str,
+    end_time: &str,
+) -> Result<Vec<DailyStats>, duckdb::Error> {
+    let sql = r#"
+        WITH stats_with_interval AS (
+            SELECT 
+                DATE(ss.collected_at) as date,
+                ss.viewer_count,
+                ss.stream_id,
+                EXTRACT(EPOCH FROM (
+                    LEAD(ss.collected_at) OVER (PARTITION BY ss.stream_id ORDER BY ss.collected_at) 
+                    - ss.collected_at
+                )) / 60.0 AS interval_minutes,
+                ss.collected_at
+            FROM stream_stats ss
+            JOIN streams s ON ss.stream_id = s.id
+            WHERE ss.category = ?
+                AND ss.collected_at >= ?
+                AND ss.collected_at <= ?
+        )
+        SELECT 
+            date::VARCHAR as date,
+            COALESCE(SUM(viewer_count * COALESCE(interval_minutes, 1)), 0)::BIGINT AS minutes_watched,
+            COALESCE(SUM(COALESCE(interval_minutes, 1)) / 60.0, 0) AS hours_broadcasted,
+            COALESCE(AVG(viewer_count), 0) AS average_ccu,
+            COALESCE(SUM(COALESCE(interval_minutes, 1)) / 60.0, 0) AS collection_hours
+        FROM stats_with_interval
+        WHERE viewer_count IS NOT NULL
+        GROUP BY date
+        ORDER BY date
+    "#;
+
+    let mut stmt = conn.prepare(sql)?;
+    let params = vec![category.to_string(), start_time.to_string(), end_time.to_string()];
+    
+    let results = utils::query_map_with_params(&mut stmt, &params, |row| {
+        Ok(DailyStats {
+            date: row.get(0)?,
+            minutes_watched: row.get(1)?,
+            hours_broadcasted: row.get(2)?,
+            average_ccu: row.get(3)?,
+            collection_hours: row.get(4)?,
+        })
+    })?;
+
+    Ok(results.collect::<Result<Vec<_>, _>>()?)
+}
+
+/// チャンネル別日次統計を取得
+pub fn get_channel_daily_stats(
+    conn: &Connection,
+    channel_id: i64,
+    start_time: &str,
+    end_time: &str,
+) -> Result<Vec<DailyStats>, duckdb::Error> {
+    let sql = r#"
+        WITH stats_with_interval AS (
+            SELECT 
+                DATE(ss.collected_at) as date,
+                ss.viewer_count,
+                ss.stream_id,
+                EXTRACT(EPOCH FROM (
+                    LEAD(ss.collected_at) OVER (PARTITION BY ss.stream_id ORDER BY ss.collected_at) 
+                    - ss.collected_at
+                )) / 60.0 AS interval_minutes,
+                ss.collected_at
+            FROM stream_stats ss
+            JOIN streams s ON ss.stream_id = s.id
+            WHERE s.channel_id = ?
+                AND ss.collected_at >= ?
+                AND ss.collected_at <= ?
+        )
+        SELECT 
+            date::VARCHAR as date,
+            COALESCE(SUM(viewer_count * COALESCE(interval_minutes, 1)), 0)::BIGINT AS minutes_watched,
+            COALESCE(SUM(COALESCE(interval_minutes, 1)) / 60.0, 0) AS hours_broadcasted,
+            COALESCE(AVG(viewer_count), 0) AS average_ccu,
+            COALESCE(SUM(COALESCE(interval_minutes, 1)) / 60.0, 0) AS collection_hours
+        FROM stats_with_interval
+        WHERE viewer_count IS NOT NULL
+        GROUP BY date
+        ORDER BY date
+    "#;
+
+    let mut stmt = conn.prepare(sql)?;
+    let params = vec![channel_id.to_string(), start_time.to_string(), end_time.to_string()];
+    
+    let results = utils::query_map_with_params(&mut stmt, &params, |row| {
+        Ok(DailyStats {
+            date: row.get(0)?,
+            minutes_watched: row.get(1)?,
+            hours_broadcasted: row.get(2)?,
+            average_ccu: row.get(3)?,
+            collection_hours: row.get(4)?,
+        })
+    })?;
+
+    Ok(results.collect::<Result<Vec<_>, _>>()?)
 }

@@ -113,6 +113,7 @@ pub fn get_broadcaster_analytics(
                 channel_id,
                 channel_name,
                 COALESCE(SUM(viewer_count * COALESCE(interval_minutes, 1)), 0)::BIGINT AS minutes_watched,
+                COALESCE(SUM(COALESCE(interval_minutes, 1)) / 60.0, 0) AS hours_broadcasted,
                 COALESCE(AVG(viewer_count), 0) AS average_ccu,
                 COALESCE(MAX(viewer_count), 0) AS peak_ccu,
                 COUNT(DISTINCT stream_id) AS stream_count,
@@ -127,6 +128,7 @@ pub fn get_broadcaster_analytics(
             channel_id,
             channel_name,
             minutes_watched,
+            hours_broadcasted,
             average_ccu,
             peak_ccu,
             stream_count,
@@ -144,46 +146,16 @@ pub fn get_broadcaster_analytics(
             row.get::<_, i64>(0)?,    // channel_id
             row.get::<_, String>(1)?, // channel_name
             row.get::<_, i64>(2)?,    // minutes_watched
-            row.get::<_, f64>(3)?,    // average_ccu
-            row.get::<_, i32>(4)?,    // peak_ccu
-            row.get::<_, i32>(5)?,    // stream_count
-            row.get::<_, i64>(6)?,    // total_chat_messages
-            row.get::<_, f64>(7)?,    // avg_chat_rate
-            row.get::<_, i32>(8)?,    // category_count
+            row.get::<_, f64>(3)?,    // hours_broadcasted
+            row.get::<_, f64>(4)?,    // average_ccu
+            row.get::<_, i32>(5)?,    // peak_ccu
+            row.get::<_, i32>(6)?,    // stream_count
+            row.get::<_, i64>(7)?,    // total_chat_messages
+            row.get::<_, f64>(8)?,    // avg_chat_rate
+            row.get::<_, i32>(9)?,    // category_count
         ))
     })?
     .collect::<Result<Vec<_>, _>>()?;
-
-    // HoursBroadcasted を個別に計算
-    let hours_sql = format!(
-        r#"
-        SELECT 
-            s.channel_id,
-            COALESCE(SUM(
-                EXTRACT(EPOCH FROM (COALESCE(s.ended_at, CAST(CURRENT_TIMESTAMP AS TIMESTAMP)) - s.started_at)) / 3600.0
-            ), 0) AS hours_broadcasted
-        FROM streams s
-        WHERE 1=1 {}
-        GROUP BY s.channel_id
-        "#,
-        if channel_id.is_some() {
-            " AND s.channel_id = ?"
-        } else {
-            ""
-        }
-    );
-
-    let mut hours_params: Vec<String> = Vec::new();
-    if let Some(ch_id) = channel_id {
-        hours_params.push(ch_id.to_string());
-    }
-
-    let mut hours_stmt = conn.prepare(&hours_sql)?;
-    let hours_map: std::collections::HashMap<i64, f64> =
-        utils::query_map_with_params(&mut hours_stmt, &hours_params, |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, f64>(1)?))
-        })?
-        .collect::<Result<_, _>>()?;
 
     // ユニークチャッター数を取得
     let mut chatters_sql = String::from(
@@ -230,6 +202,7 @@ pub fn get_broadcaster_analytics(
         ch_id,
         ch_name,
         mw,
+        hours,
         avg_ccu,
         peak_ccu,
         stream_count,
@@ -238,7 +211,6 @@ pub fn get_broadcaster_analytics(
         category_count,
     ) in channel_stats
     {
-        let hours = hours_map.get(&ch_id).copied().unwrap_or(0.0);
         let unique_chatters = chatters_map.get(&ch_id).copied().unwrap_or(0);
 
         // エンゲージメント率を計算 (チャット数 / (視聴者数 * 時間))
@@ -397,6 +369,7 @@ pub fn get_game_analytics(
             SELECT 
                 category,
                 COALESCE(SUM(viewer_count * COALESCE(interval_minutes, 1)), 0)::BIGINT AS minutes_watched,
+                COALESCE(SUM(COALESCE(interval_minutes, 1)) / 60.0, 0) AS hours_broadcasted,
                 COALESCE(AVG(viewer_count), 0) AS average_ccu,
                 COUNT(DISTINCT channel_id) AS unique_broadcasters
             FROM stats_with_interval
@@ -406,6 +379,7 @@ pub fn get_game_analytics(
         SELECT 
             category,
             minutes_watched,
+            hours_broadcasted,
             average_ccu,
             unique_broadcasters
         FROM game_stats
@@ -418,51 +392,16 @@ pub fn get_game_analytics(
         Ok((
             row.get::<_, String>(0)?, // category
             row.get::<_, i64>(1)?,    // minutes_watched
-            row.get::<_, f64>(2)?,    // average_ccu
-            row.get::<_, i32>(3)?,    // unique_broadcasters
+            row.get::<_, f64>(2)?,    // hours_broadcasted
+            row.get::<_, f64>(3)?,    // average_ccu
+            row.get::<_, i32>(4)?,    // unique_broadcasters
         ))
     })?
     .collect::<Result<Vec<_>, _>>()?;
 
-    // HoursBroadcasted をカテゴリ別に計算
-    let mut hours_sql = String::from(
-        r#"
-        SELECT 
-            COALESCE(ss.category, 'Unknown') AS category,
-            COALESCE(SUM(
-                EXTRACT(EPOCH FROM (
-                    COALESCE(
-                        (SELECT MAX(collected_at) FROM stream_stats WHERE stream_id = s.id),
-                        s.started_at
-                    ) - s.started_at
-                )) / 3600.0
-            ), 0) AS hours_broadcasted
-        FROM streams s
-        LEFT JOIN stream_stats ss ON s.id = ss.stream_id
-        WHERE ss.category IS NOT NULL
-        "#,
-    );
-
-    let mut hours_params: Vec<String> = Vec::new();
-
-    if let Some(cat) = category {
-        hours_sql.push_str(" AND ss.category = ?");
-        hours_params.push(cat.to_string());
-    }
-
-    hours_sql.push_str(" GROUP BY ss.category");
-
-    let mut hours_stmt = conn.prepare(&hours_sql)?;
-    let hours_map: std::collections::HashMap<String, f64> =
-        utils::query_map_with_params(&mut hours_stmt, &hours_params, |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?))
-        })?
-        .collect::<Result<_, _>>()?;
-
     // トップチャンネルを取得
     let mut results = Vec::new();
-    for (cat, mw, avg_ccu, unique_bc) in game_stats {
-        let hours = hours_map.get(&cat).copied().unwrap_or(0.0);
+    for (cat, mw, hours, avg_ccu, unique_bc) in game_stats {
         let top_channel = get_top_channel_for_category(conn, &cat, start_time, end_time)?;
 
         results.push(GameAnalytics {
@@ -653,21 +592,44 @@ pub fn get_game_daily_stats(
             WHERE ss.category = ?
                 AND ss.collected_at >= ?
                 AND ss.collected_at <= ?
+        ),
+        daily_broadcast_hours AS (
+            SELECT 
+                DATE(s.started_at) as date,
+                COALESCE(SUM(
+                    EXTRACT(EPOCH FROM (
+                        COALESCE(s.ended_at, CAST(CURRENT_TIMESTAMP AS TIMESTAMP)) - s.started_at
+                    )) / 3600.0
+                ), 0) AS hours_broadcasted
+            FROM streams s
+            JOIN stream_stats ss ON s.id = ss.stream_id
+            WHERE ss.category = ?
+                AND s.started_at >= ?
+                AND s.started_at <= ?
+            GROUP BY DATE(s.started_at)
         )
         SELECT 
-            date::VARCHAR as date,
-            COALESCE(SUM(viewer_count * COALESCE(interval_minutes, 1)), 0)::BIGINT AS minutes_watched,
-            COALESCE(SUM(COALESCE(interval_minutes, 1)) / 60.0, 0) AS hours_broadcasted,
-            COALESCE(AVG(viewer_count), 0) AS average_ccu,
-            COALESCE(SUM(COALESCE(interval_minutes, 1)) / 60.0, 0) AS collection_hours
-        FROM stats_with_interval
-        WHERE viewer_count IS NOT NULL
-        GROUP BY date
-        ORDER BY date
+            swi.date::VARCHAR as date,
+            COALESCE(SUM(swi.viewer_count * COALESCE(swi.interval_minutes, 1)), 0)::BIGINT AS minutes_watched,
+            COALESCE(dbh.hours_broadcasted, 0) AS hours_broadcasted,
+            COALESCE(AVG(swi.viewer_count), 0) AS average_ccu,
+            COALESCE(SUM(COALESCE(swi.interval_minutes, 1)) / 60.0, 0) AS collection_hours
+        FROM stats_with_interval swi
+        LEFT JOIN daily_broadcast_hours dbh ON swi.date = dbh.date
+        WHERE swi.viewer_count IS NOT NULL
+        GROUP BY swi.date, dbh.hours_broadcasted
+        ORDER BY swi.date
     "#;
 
     let mut stmt = conn.prepare(sql)?;
-    let params = vec![category.to_string(), start_time.to_string(), end_time.to_string()];
+    let params = vec![
+        category.to_string(), 
+        start_time.to_string(), 
+        end_time.to_string(),
+        category.to_string(),
+        start_time.to_string(),
+        end_time.to_string(),
+    ];
     
     let results = utils::query_map_with_params(&mut stmt, &params, |row| {
         Ok(DailyStats {
@@ -705,21 +667,43 @@ pub fn get_channel_daily_stats(
             WHERE s.channel_id = ?
                 AND ss.collected_at >= ?
                 AND ss.collected_at <= ?
+        ),
+        daily_broadcast_hours AS (
+            SELECT 
+                DATE(s.started_at) as date,
+                COALESCE(SUM(
+                    EXTRACT(EPOCH FROM (
+                        COALESCE(s.ended_at, CAST(CURRENT_TIMESTAMP AS TIMESTAMP)) - s.started_at
+                    )) / 3600.0
+                ), 0) AS hours_broadcasted
+            FROM streams s
+            WHERE s.channel_id = ?
+                AND s.started_at >= ?
+                AND s.started_at <= ?
+            GROUP BY DATE(s.started_at)
         )
         SELECT 
-            date::VARCHAR as date,
-            COALESCE(SUM(viewer_count * COALESCE(interval_minutes, 1)), 0)::BIGINT AS minutes_watched,
-            COALESCE(SUM(COALESCE(interval_minutes, 1)) / 60.0, 0) AS hours_broadcasted,
-            COALESCE(AVG(viewer_count), 0) AS average_ccu,
-            COALESCE(SUM(COALESCE(interval_minutes, 1)) / 60.0, 0) AS collection_hours
-        FROM stats_with_interval
-        WHERE viewer_count IS NOT NULL
-        GROUP BY date
-        ORDER BY date
+            swi.date::VARCHAR as date,
+            COALESCE(SUM(swi.viewer_count * COALESCE(swi.interval_minutes, 1)), 0)::BIGINT AS minutes_watched,
+            COALESCE(dbh.hours_broadcasted, 0) AS hours_broadcasted,
+            COALESCE(AVG(swi.viewer_count), 0) AS average_ccu,
+            COALESCE(SUM(COALESCE(swi.interval_minutes, 1)) / 60.0, 0) AS collection_hours
+        FROM stats_with_interval swi
+        LEFT JOIN daily_broadcast_hours dbh ON swi.date = dbh.date
+        WHERE swi.viewer_count IS NOT NULL
+        GROUP BY swi.date, dbh.hours_broadcasted
+        ORDER BY swi.date
     "#;
 
     let mut stmt = conn.prepare(sql)?;
-    let params = vec![channel_id.to_string(), start_time.to_string(), end_time.to_string()];
+    let params = vec![
+        channel_id.to_string(), 
+        start_time.to_string(), 
+        end_time.to_string(),
+        channel_id.to_string(),
+        start_time.to_string(),
+        end_time.to_string(),
+    ];
     
     let results = utils::query_map_with_params(&mut stmt, &params, |row| {
         Ok(DailyStats {

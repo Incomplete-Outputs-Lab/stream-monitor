@@ -5,6 +5,8 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useState } from "react";
 import { ChannelWithStats, TwitchRateLimitStatus, DiscoveredStreamInfo } from "../../types";
 import { Tooltip as CustomTooltip } from "../common/Tooltip";
+import { toast } from "../../utils/toast";
+import { confirm } from "../../utils/confirm";
 
 interface StreamStats {
   id?: number;
@@ -63,11 +65,18 @@ function LiveChannelCard({ channel }: LiveChannelCardProps) {
         {isAutoDiscovered && (
           <button
             onClick={async () => {
-              if (confirm('このチャンネルを手動登録に昇格しますか？')) {
+              const confirmed = await confirm({
+                title: 'チャンネルの昇格',
+                message: 'このチャンネルを手動登録に昇格しますか？',
+                confirmText: '昇格',
+                type: 'info',
+              });
+              
+              if (confirmed) {
                 try {
                   // twitch_user_idが必須
                   if (!channel.twitch_user_id) {
-                    alert('このチャンネルにはTwitch User IDが設定されていません。');
+                    toast.error('このチャンネルにはTwitch User IDが設定されていません。');
                     return;
                   }
                   await invoke('promote_discovered_channel', { 
@@ -75,7 +84,7 @@ function LiveChannelCard({ channel }: LiveChannelCardProps) {
                   });
                   window.location.reload();
                 } catch (err) {
-                  alert(`エラー: ${err}`);
+                  toast.error(`エラー: ${err}`);
                 }
               }
             }}
@@ -312,7 +321,7 @@ export function Dashboard() {
       if (context?.previousChannels) {
         queryClient.setQueryData(["channels-with-twitch-info"], context.previousChannels);
       }
-      alert(`エラー: ${_err}`);
+      toast.error(`エラー: ${_err}`);
     },
     onSettled: () => {
       // 完了後にクエリを再検証して最新データを取得
@@ -321,8 +330,15 @@ export function Dashboard() {
     },
   });
 
-  const handlePromote = (channelId: string) => {
-    if (confirm('このチャンネルを手動登録に昇格しますか？\n配信終了後も監視を継続します。')) {
+  const handlePromote = async (channelId: string) => {
+    const confirmed = await confirm({
+      title: 'チャンネルの昇格',
+      message: 'このチャンネルを手動登録に昇格しますか？\n\n配信終了後も監視を継続します。',
+      confirmText: '昇格',
+      type: 'info',
+    });
+    
+    if (confirmed) {
       promoteMutation.mutate(channelId);
     }
   };

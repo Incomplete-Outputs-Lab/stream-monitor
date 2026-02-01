@@ -5,6 +5,8 @@ import { ChannelWithStats } from "../../types";
 import { ChannelForm } from "./ChannelForm";
 import { ChannelEditForm } from "./ChannelEditForm";
 import { ChannelItem } from "./ChannelItem";
+import { toast } from "../../utils/toast";
+import { confirm } from "../../utils/confirm";
 
 export function ChannelList() {
   const [showAddForm, setShowAddForm] = useState(false);
@@ -42,11 +44,18 @@ export function ChannelList() {
   });
 
   const handleDelete = async (channelId: number) => {
-    if (window.confirm("このチャンネルを削除しますか？")) {
+    const confirmed = await confirm({
+      title: 'チャンネルの削除',
+      message: 'このチャンネルを削除しますか？',
+      confirmText: '削除',
+      type: 'danger',
+    });
+    
+    if (confirmed) {
       try {
         await deleteMutation.mutateAsync(channelId);
       } catch (error) {
-        alert("チャンネルの削除に失敗しました: " + String(error));
+        toast.error("チャンネルの削除に失敗しました: " + String(error));
       }
     }
   };
@@ -55,7 +64,7 @@ export function ChannelList() {
     try {
       await toggleMutation.mutateAsync(channelId);
     } catch (error) {
-      alert("チャンネルの切り替えに失敗しました: " + String(error));
+      toast.error("チャンネルの切り替えに失敗しました: " + String(error));
     }
   };
 

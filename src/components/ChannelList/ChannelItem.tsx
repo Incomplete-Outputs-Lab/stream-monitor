@@ -1,5 +1,6 @@
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { ChannelWithStats } from "../../types";
+import { toast } from "../../utils/toast";
 
 interface ChannelItemProps {
   channel: ChannelWithStats;
@@ -24,7 +25,7 @@ export function ChannelItem({ channel, onEdit, onDelete, onToggle }: ChannelItem
       await openUrl(url);
     } catch (error) {
       console.error("Failed to open URL:", error);
-      alert("URLを開くことができませんでした: " + String(error));
+      toast.error("URLを開くことができませんでした: " + String(error));
     }
   };
 

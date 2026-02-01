@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Channel } from "../../types";
 import { useState } from "react";
 import { getToken } from "../../utils/keyring";
+import { toast } from "../../utils/toast";
 
 interface ChannelFormData {
   platform: 'twitch' | 'youtube';
@@ -151,9 +152,9 @@ export function ChannelForm({ onSuccess, onCancel }: ChannelFormProps) {
       const errorMessage = String(error);
       // 重複エラーの場合、より分かりやすいメッセージを表示
       if (errorMessage.includes('Duplicate key') || errorMessage.includes('unique constraint')) {
-        alert(`このチャンネルは既に登録されています。\nプラットフォーム: ${data.platform}\nチャンネルID: ${data.channel_id}`);
+        toast.error(`このチャンネルは既に登録されています。\nプラットフォーム: ${data.platform}\nチャンネルID: ${data.channel_id}`);
       } else {
-        alert(`チャンネルの追加に失敗しました: ${errorMessage}`);
+        toast.error(`チャンネルの追加に失敗しました: ${errorMessage}`);
       }
     }
   };

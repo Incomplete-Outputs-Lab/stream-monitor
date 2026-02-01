@@ -13,7 +13,7 @@ interface ChannelFormData {
 }
 
 interface ChannelFormProps {
-  channel?: Channel | null;
+  channel: null;
   onSuccess: () => void;
   onCancel: () => void;
 }
@@ -33,12 +33,7 @@ export function ChannelForm({ channel, onSuccess, onCancel }: ChannelFormProps) 
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const { register, handleSubmit, formState: { errors }, reset, watch, setValue } = useForm<ChannelFormData>({
-    defaultValues: channel ? {
-      platform: channel.platform as 'twitch' | 'youtube',
-      channel_id: channel.channel_id,
-      channel_name: channel.channel_name,
-      poll_interval: channel.poll_interval,
-    } : {
+    defaultValues: {
       platform: 'twitch',
       channel_id: '',
       channel_name: '',
@@ -69,20 +64,6 @@ export function ChannelForm({ channel, onSuccess, onCancel }: ChannelFormProps) 
     },
   });
 
-  const updateMutation = useMutation({
-    mutationFn: async (data: ChannelFormData) => {
-      if (!channel?.id) return;
-      return await invoke<Channel>("update_channel", {
-        id: channel.id,
-        channel_name: data.channel_name,
-        poll_interval: data.poll_interval,
-        enabled: channel.enabled,
-      });
-    },
-    onSuccess: () => {
-      onSuccess();
-    },
-  });
 
   // Twitchチャンネルのバリデーション
   const handleValidateTwitchChannel = async (channelId: string) => {
@@ -125,7 +106,7 @@ export function ChannelForm({ channel, onSuccess, onCancel }: ChannelFormProps) 
   const onSubmit = async (data: ChannelFormData) => {
     try {
       // Twitchの場合、バリデーションが必要
-      if (data.platform === 'twitch' && !channel && !validatedInfo) {
+      if (data.platform === 'twitch' && !validatedInfo) {
         setValidationError('チャンネルを追加する前に、「チャンネルを確認」ボタンで検証してください。');
         return;
       }
@@ -163,29 +144,25 @@ export function ChannelForm({ channel, onSuccess, onCancel }: ChannelFormProps) 
         } : {}),
       };
 
-      if (channel) {
-        await updateMutation.mutateAsync(submitData);
-      } else {
-        await addMutation.mutateAsync(submitData);
-      }
+      await addMutation.mutateAsync(submitData);
     } catch (error: any) {
       const errorMessage = String(error);
       // 重複エラーの場合、より分かりやすいメッセージを表示
       if (errorMessage.includes('Duplicate key') || errorMessage.includes('unique constraint')) {
         alert(`このチャンネルは既に登録されています。\nプラットフォーム: ${data.platform}\nチャンネルID: ${data.channel_id}`);
       } else {
-        alert(`チャンネルの${channel ? '更新' : '追加'}に失敗しました: ${errorMessage}`);
+        alert(`チャンネルの追加に失敗しました: ${errorMessage}`);
       }
     }
   };
 
-  const isLoading = addMutation.isPending || updateMutation.isPending;
+  const isLoading = addMutation.isPending;
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <div className="flex justify-between items-center">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-          {channel ? 'チャンネルを編集' : 'チャンネルを追加'}
+          チャンネルを追加
         </h2>
         <button
           type="button"
@@ -204,8 +181,7 @@ export function ChannelForm({ channel, onSuccess, onCancel }: ChannelFormProps) 
           </label>
           <select
             {...register("platform", { required: "プラットフォームを選択してください" })}
-            disabled={!!channel} // 編集時は変更不可
-            className="input-field disabled:bg-gray-100 dark:disabled:bg-slate-700"
+            className="input-field"
           >
             <option value="twitch">Twitch</option>
             <option value="youtube">YouTube</option>
@@ -219,7 +195,6 @@ export function ChannelForm({ channel, onSuccess, onCancel }: ChannelFormProps) 
         <div className="md:col-span-2">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             {watch("platform") === 'youtube' ? 'チャンネルURL' : 'チャンネルID'}
-            {channel && <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">（変更不可）</span>}
           </label>
           <div className="flex gap-2">
             <input
@@ -247,12 +222,11 @@ export function ChannelForm({ channel, onSuccess, onCancel }: ChannelFormProps) 
                   setValidationError(null);
                 }
               })}
-              disabled={!!channel} // 編集時は変更不可
               type="text"
               placeholder={watch("platform") === 'youtube' ? "例: https://www.youtube.com/channel/UC..." : "例: shroud"}
-              className="input-field disabled:bg-gray-100 dark:disabled:bg-slate-700 flex-1"
+              className="input-field flex-1"
             />
-            {watch("platform") === 'twitch' && !channel && (
+            {watch("platform") === 'twitch' && (
               <button
                 type="button"
                 onClick={() => handleValidateTwitchChannel(watch("channel_id"))}
@@ -321,14 +295,19 @@ export function ChannelForm({ channel, onSuccess, onCancel }: ChannelFormProps) 
             監視間隔（秒）
           </label>
           <select
-            {...register("poll_interval", { valueAsNumber: true })}
+            {...register("poll_interval", { 
+              setValueAs: (v) => {
+                const parsed = parseInt(String(v), 10);
+                return isNaN(parsed) ? 60 : parsed;
+              }
+            })}
             className="input-field"
           >
-            <option value={30}>30秒</option>
-            <option value={60}>1分</option>
-            <option value={180}>3分</option>
-            <option value={300}>5分</option>
-            <option value={600}>10分</option>
+            <option value="30">30秒</option>
+            <option value="60">1分</option>
+            <option value="180">3分</option>
+            <option value="300">5分</option>
+            <option value="600">10分</option>
           </select>
         </div>
       </div>
@@ -359,7 +338,7 @@ export function ChannelForm({ channel, onSuccess, onCancel }: ChannelFormProps) 
           disabled={isLoading}
           className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {isLoading ? "保存中..." : (channel ? "更新" : "追加")}
+          {isLoading ? "追加中..." : "追加"}
         </button>
       </div>
     </form>

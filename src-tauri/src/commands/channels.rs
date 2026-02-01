@@ -190,6 +190,11 @@ pub async fn update_channel(
     poll_interval: Option<i32>,
     enabled: Option<bool>,
 ) -> Result<Channel, String> {
+    println!(
+        "[update_channel] Called with id={}, channel_name={:?}, poll_interval={:?}, enabled={:?}",
+        id, channel_name, poll_interval, enabled
+    );
+
     let conn = db_manager
         .get_connection()
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
@@ -198,12 +203,17 @@ pub async fn update_channel(
     let old_channel =
         get_channel_by_id(&conn, id).ok_or_else(|| "Channel not found".to_string())?;
 
+    println!(
+        "[update_channel] Old channel: poll_interval={}, enabled={}",
+        old_channel.poll_interval, old_channel.enabled
+    );
+
     let mut updates = Vec::new();
     let mut params: Vec<String> = Vec::new();
 
-    if let Some(name) = channel_name {
+    if let Some(ref name) = channel_name {
         updates.push("channel_name = ?");
-        params.push(name);
+        params.push(name.clone());
     }
 
     if let Some(interval) = poll_interval {
@@ -217,6 +227,7 @@ pub async fn update_channel(
     }
 
     if updates.is_empty() {
+        println!("[update_channel] No updates to apply");
         return get_channel_by_id(&conn, id).ok_or_else(|| "Channel not found".to_string());
     }
 
@@ -224,6 +235,7 @@ pub async fn update_channel(
     params.push(id.to_string());
 
     let query = format!("UPDATE channels SET {} WHERE id = ?", updates.join(", "));
+    println!("[update_channel] Executing query: {} with params: {:?}", query, params);
 
     utils::execute_with_params(&conn, &query, &params)
         .map_err(|e| format!("Failed to update channel: {}", e))?;
@@ -231,12 +243,29 @@ pub async fn update_channel(
     let updated_channel =
         get_channel_by_id(&conn, id).ok_or_else(|| "Channel not found".to_string())?;
 
-    // 有効状態が変更された場合、ポーリングを開始/停止
-    if let Some(enabled) = enabled {
-        if let Some(poller) = app_handle.try_state::<Arc<Mutex<ChannelPoller>>>() {
-            let mut poller = poller.lock().await;
+    println!(
+        "[update_channel] Updated channel: poll_interval={}, enabled={}",
+        updated_channel.poll_interval, updated_channel.enabled
+    );
+
+    // poll_intervalが変更されたかチェック
+    let poll_interval_changed = poll_interval
+        .map(|new_interval| new_interval != old_channel.poll_interval)
+        .unwrap_or(false);
+
+    println!(
+        "[update_channel] poll_interval_changed={}, old={}, new={:?}",
+        poll_interval_changed, old_channel.poll_interval, poll_interval
+    );
+
+    // 有効状態が変更された場合、またはpoll_intervalが変更された場合にポーリングを更新
+    if let Some(poller) = app_handle.try_state::<Arc<Mutex<ChannelPoller>>>() {
+        let mut poller = poller.lock().await;
+        
+        if let Some(enabled) = enabled {
             if enabled && !old_channel.enabled {
                 // 無効→有効になった場合、ポーリングを開始
+                println!("[update_channel] Channel enabled, starting polling");
                 if let Err(e) =
                     poller.start_polling(updated_channel.clone(), &db_manager, app_handle.clone())
                 {
@@ -244,9 +273,40 @@ pub async fn update_channel(
                 }
             } else if !enabled && old_channel.enabled {
                 // 有効→無効になった場合、ポーリングを停止
+                println!("[update_channel] Channel disabled, stopping polling");
                 poller.stop_polling(id);
+            } else if enabled && poll_interval_changed {
+                // 有効のままでpoll_intervalが変更された場合、ポーリングを再起動
+                println!(
+                    "[update_channel] poll_interval changed from {} to {:?}, restarting polling",
+                    old_channel.poll_interval, poll_interval
+                );
+                poller.stop_polling(id);
+                if let Err(e) =
+                    poller.start_polling(updated_channel.clone(), &db_manager, app_handle.clone())
+                {
+                    eprintln!("Failed to restart polling for updated channel {}: {}", id, e);
+                }
+            } else {
+                println!(
+                    "[update_channel] No polling change needed (enabled={}, poll_interval_changed={})",
+                    enabled, poll_interval_changed
+                );
+            }
+        } else if poll_interval_changed && updated_channel.enabled {
+            // enabledの指定がなく、poll_intervalが変更され、チャンネルが有効な場合
+            println!(
+                "[update_channel] poll_interval changed (enabled not specified), restarting polling"
+            );
+            poller.stop_polling(id);
+            if let Err(e) =
+                poller.start_polling(updated_channel.clone(), &db_manager, app_handle.clone())
+            {
+                eprintln!("Failed to restart polling for updated channel {}: {}", id, e);
             }
         }
+    } else {
+        println!("[update_channel] Could not get poller state");
     }
 
     Ok(updated_channel)

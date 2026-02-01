@@ -53,6 +53,11 @@ impl TwitchCollector {
         let (client_id, client_secret) = Self::get_client_id_and_secret().await?;
         Ok(Self::new(client_id, client_secret))
     }
+
+    /// レート制限トラッカーへのアクセスを提供
+    pub fn get_api_client(&self) -> &Arc<TwitchApiClient> {
+        &self.api_client
+    }
 }
 
 #[async_trait]

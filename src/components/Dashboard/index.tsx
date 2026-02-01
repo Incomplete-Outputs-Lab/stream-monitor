@@ -2,7 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { ChannelWithStats } from "../../types";
+import { ChannelWithStats, TwitchRateLimitStatus } from "../../types";
+import { Tooltip as CustomTooltip } from "../common/Tooltip";
 
 interface StreamStats {
   id?: number;
@@ -204,6 +205,13 @@ export function Dashboard() {
     refetchInterval: 10000, // 10秒ごとに更新
   });
 
+  // Twitch APIレート制限状態を取得
+  const { data: rateLimitStatus } = useQuery({
+    queryKey: ["twitch-rate-limit"],
+    queryFn: () => invoke<TwitchRateLimitStatus>("get_twitch_rate_limit_status"),
+    refetchInterval: 5000, // 5秒ごとに更新
+  });
+
   useEffect(() => {
     if (recentStats) {
       setStatsData(recentStats);
@@ -230,6 +238,19 @@ export function Dashboard() {
 
   const totalViewers = liveChannels?.reduce((sum, channel) => sum + (channel.current_viewers || 0), 0) || 0;
 
+  // レート制限の色を決定
+  const getRateLimitColor = (percent: number) => {
+    if (percent < 50) return "bg-green-500";
+    if (percent < 80) return "bg-yellow-500";
+    return "bg-red-500";
+  };
+
+  const getRateLimitTextColor = (percent: number) => {
+    if (percent < 50) return "text-green-600 dark:text-green-400";
+    if (percent < 80) return "text-yellow-600 dark:text-yellow-400";
+    return "text-red-600 dark:text-red-400";
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex justify-between items-center">
@@ -237,10 +258,37 @@ export function Dashboard() {
           <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">ダッシュボード</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">リアルタイム統計情報</p>
         </div>
-        <div className="text-right">
-          <div className="text-sm font-medium text-gray-600 dark:text-gray-400">最終更新</div>
-          <div className="text-sm text-gray-500 dark:text-gray-500">
-            {new Date().toLocaleTimeString('ja-JP')}
+        <div className="flex items-center space-x-4">
+          {/* Twitch APIレート制限インジケーター */}
+          {rateLimitStatus && (
+            <CustomTooltip content={
+              <div className="text-xs space-y-1">
+                <div className="font-semibold mb-1">Twitch API使用状況</div>
+                <div>使用: {rateLimitStatus.points_used} / {rateLimitStatus.bucket_capacity} ポイント</div>
+                <div>残り: {rateLimitStatus.points_remaining} ポイント</div>
+                <div>リクエスト数: {rateLimitStatus.request_count}回</div>
+                {rateLimitStatus.oldest_entry_expires_in_seconds !== null && (
+                  <div>回復まで: {rateLimitStatus.oldest_entry_expires_in_seconds}秒</div>
+                )}
+              </div>
+            }>
+              <div className="flex items-center space-x-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors cursor-help">
+                <div className={`w-2 h-2 rounded-full ${getRateLimitColor(rateLimitStatus.usage_percent)}`}></div>
+                <div className="text-xs">
+                  <div className="font-medium text-gray-600 dark:text-gray-400">API</div>
+                  <div className={`font-semibold ${getRateLimitTextColor(rateLimitStatus.usage_percent)}`}>
+                    {rateLimitStatus.points_used}/{rateLimitStatus.bucket_capacity}
+                  </div>
+                </div>
+              </div>
+            </CustomTooltip>
+          )}
+          
+          <div className="text-right">
+            <div className="text-sm font-medium text-gray-600 dark:text-gray-400">最終更新</div>
+            <div className="text-sm text-gray-500 dark:text-gray-500">
+              {new Date().toLocaleTimeString('ja-JP')}
+            </div>
           </div>
         </div>
       </div>

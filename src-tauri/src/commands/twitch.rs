@@ -1,11 +1,15 @@
+use crate::api::twitch_api::TwitchRateLimitStatus;
+use crate::collectors::poller::ChannelPoller;
 use crate::config::settings::SettingsManager;
 use serde::{Deserialize, Serialize};
-use tauri::AppHandle;
+use tauri::{AppHandle, State};
+use tokio::sync::Mutex;
 use twitch_api::{
     helix::{channels::GetChannelFollowersRequest, users::GetUsersRequest, HelixClient},
     twitch_oauth2::{AccessToken, UserToken as TwitchApiUserToken},
     types,
 };
+use std::sync::Arc;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TwitchChannelInfo {
@@ -90,4 +94,39 @@ pub async fn validate_twitch_channel(
         follower_count,
         broadcaster_type,
     })
+}
+
+/// Twitch APIレート制限の現在のステータスを取得
+#[tauri::command]
+pub async fn get_twitch_rate_limit_status(
+    poller: State<'_, Arc<Mutex<ChannelPoller>>>,
+) -> Result<TwitchRateLimitStatus, String> {
+    let poller_guard = poller.lock().await;
+    
+    // TwitchCollectorからrate_limiterを取得
+    let result = if let Some(twitch_collector) = poller_guard.get_twitch_collector() {
+        let api_client = twitch_collector.get_api_client();
+        let rate_limiter = Arc::clone(&api_client.get_rate_limiter());
+        
+        // pollerのロックを早期に解放
+        drop(poller_guard);
+        
+        let status = match rate_limiter.lock() {
+            Ok(limiter) => Ok(limiter.get_status()),
+            Err(e) => Err(format!("レート制限トラッカーのロックに失敗しました: {}", e)),
+        };
+        status
+    } else {
+        // TwitchCollectorが初期化されていない場合、デフォルト値を返す
+        Ok(TwitchRateLimitStatus {
+            points_used: 0,
+            bucket_capacity: 800,
+            points_remaining: 800,
+            oldest_entry_expires_in_seconds: None,
+            usage_percent: 0.0,
+            request_count: 0,
+        })
+    };
+    
+    result
 }

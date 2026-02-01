@@ -224,3 +224,18 @@ export interface DailyStats {
   average_ccu: number;
   collection_hours: number;
 }
+
+export interface TwitchRateLimitStatus {
+  /** 直近1分間で消費したポイント数 */
+  points_used: number;
+  /** バケット容量（800） */
+  bucket_capacity: number;
+  /** 推定残りポイント数 */
+  points_remaining: number;
+  /** 最古エントリが期限切れになるまでの秒数 */
+  oldest_entry_expires_in_seconds: number | null;
+  /** 使用率（0-100） */
+  usage_percent: number;
+  /** 直近1分間のリクエスト数 */
+  request_count: number;
+}

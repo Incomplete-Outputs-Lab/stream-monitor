@@ -66,6 +66,11 @@ impl ChannelPoller {
         self.collectors.insert("twitch".to_string(), collector);
     }
 
+    /// Get Twitch collector for rate limit tracking
+    pub fn get_twitch_collector(&self) -> Option<&Arc<TwitchCollector>> {
+        self.twitch_collector.as_ref()
+    }
+
     pub fn start_polling(
         &mut self,
         channel: Channel,
@@ -73,6 +78,10 @@ impl ChannelPoller {
         app_handle: AppHandle,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if !channel.enabled {
+            println!(
+                "[ChannelPoller] Channel {} is disabled, not starting polling",
+                channel.id.unwrap_or(-1)
+            );
             return Ok(());
         }
 
@@ -83,7 +92,13 @@ impl ChannelPoller {
             .clone();
 
         let channel_id = channel.id.unwrap();
-        let poll_interval = Duration::from_secs(channel.poll_interval as u64);
+        let poll_interval_secs = channel.poll_interval as u64;
+        let poll_interval = Duration::from_secs(poll_interval_secs);
+        
+        println!(
+            "[ChannelPoller] Starting polling for channel {} ({}) with interval {} seconds",
+            channel_id, channel.channel_name, poll_interval_secs
+        );
         let db_manager = Arc::new(db_manager.inner().clone());
 
         // Initialize status
@@ -306,8 +321,13 @@ impl ChannelPoller {
     }
 
     pub fn stop_polling(&mut self, channel_id: i64) {
+        println!("[ChannelPoller] Stopping polling for channel {}", channel_id);
+        
         if let Some(task) = self.tasks.remove(&channel_id) {
             task.abort();
+            println!("[ChannelPoller] Task aborted for channel {}", channel_id);
+        } else {
+            println!("[ChannelPoller] No running task found for channel {}", channel_id);
         }
 
         // Update status to stopped

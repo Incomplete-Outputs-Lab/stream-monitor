@@ -33,7 +33,7 @@ use commands::{
         list_sql_templates, save_sql_template,
     },
     stats::{get_channel_stats, get_collector_status, get_live_channels, get_stream_stats},
-    twitch::validate_twitch_channel,
+    twitch::{get_twitch_rate_limit_status, validate_twitch_channel},
 };
 use config::settings::SettingsManager;
 use database::DatabaseManager;
@@ -303,6 +303,7 @@ pub fn run() {
             get_logs,
             // Twitch commands
             validate_twitch_channel,
+            get_twitch_rate_limit_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

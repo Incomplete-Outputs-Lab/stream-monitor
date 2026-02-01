@@ -210,6 +210,24 @@ export function Dashboard() {
     }
   }, [recentStats]);
 
+  // チャンネルごとの統計データを整形
+  const channelsStatsData: ChannelStatsData[] = (liveChannels || []).map(channel => {
+    // このチャンネルの統計データをフィルタ
+    const channelStats = statsData.filter(_stat => {
+      // stream_idが一致する統計データを取得
+      // （実際のロジックはバックエンドの実装に依存）
+      return true; // 仮実装：すべての統計を含める
+    });
+
+    return {
+      channel_id: channel.channel_id,
+      channel_name: channel.channel_name,
+      platform: channel.platform,
+      stream_id: 0, // 仮の値
+      stats: channelStats,
+    };
+  });
+
   const totalViewers = liveChannels?.reduce((sum, channel) => sum + (channel.current_viewers || 0), 0) || 0;
 
   return (

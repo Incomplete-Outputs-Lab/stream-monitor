@@ -265,6 +265,8 @@ export interface DiscoveredStreamInfo {
   title?: string;
   category?: string;
   viewer_count?: number;
+  follower_count?: number;
+  broadcaster_type?: string;
 }
 
 export interface TwitchGame {

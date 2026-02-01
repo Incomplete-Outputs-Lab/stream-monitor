@@ -31,6 +31,7 @@ use commands::{
     discovery::{
         get_auto_discovery_settings, get_discovered_streams, promote_discovered_channel,
         save_auto_discovery_settings, search_twitch_games, toggle_auto_discovery,
+        DiscoveredStreamInfo,
     },
     export::{export_to_csv, export_to_json},
     logs::get_logs,
@@ -46,6 +47,11 @@ use config::settings::SettingsManager;
 use database::DatabaseManager;
 use logger::AppLogger;
 use std::sync::Arc;
+
+/// メモリキャッシュ: 自動発見された配信の最新結果
+pub struct DiscoveredStreamsCache {
+    pub streams: Mutex<Vec<DiscoveredStreamInfo>>,
+}
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -143,6 +149,12 @@ pub fn run() {
             let auto_discovery_poller: Arc<tokio::sync::Mutex<Option<AutoDiscoveryPoller>>> =
                 Arc::new(tokio::sync::Mutex::new(None));
             app.manage(auto_discovery_poller.clone());
+
+            // Initialize DiscoveredStreamsCache
+            let discovered_streams_cache = Arc::new(DiscoveredStreamsCache {
+                streams: Mutex::new(Vec::new()),
+            });
+            app.manage(discovered_streams_cache);
 
             // データベース初期化を起動時に実行
             logger.info("Starting database initialization on startup...");

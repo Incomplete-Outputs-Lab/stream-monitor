@@ -71,10 +71,12 @@ pub fn init_database(conn: &Connection) -> Result<(), duckdb::Error> {
         r#"
         CREATE TABLE IF NOT EXISTS stream_stats (
             id BIGINT PRIMARY KEY DEFAULT nextval('stream_stats_id_seq'),
-            stream_id BIGINT NOT NULL,
+            stream_id BIGINT,
             collected_at TIMESTAMP NOT NULL,
             viewer_count INTEGER,
             chat_rate_1min INTEGER DEFAULT 0,
+            twitch_user_id TEXT,
+            channel_name TEXT,
             FOREIGN KEY (stream_id) REFERENCES streams(id)
         )
         "#,
@@ -293,6 +295,30 @@ fn migrate_database_schema(conn: &Connection) -> Result<(), duckdb::Error> {
     if channels_has_discovered_at_count == 0 {
         eprintln!("[Migration] Adding discovered_at column to channels table");
         conn.execute("ALTER TABLE channels ADD COLUMN discovered_at TIMESTAMP", [])?;
+    }
+
+    // channelsテーブルにcurrent_viewer_countフィールドを追加
+    let mut channels_has_current_viewer_count = conn.prepare(
+        "SELECT COUNT(*) FROM pragma_table_info('channels') WHERE name = 'current_viewer_count'",
+    )?;
+    let channels_has_current_viewer_count_count: i64 =
+        channels_has_current_viewer_count.query_row([], |row| row.get(0))?;
+
+    if channels_has_current_viewer_count_count == 0 {
+        eprintln!("[Migration] Adding current_viewer_count column to channels table");
+        conn.execute("ALTER TABLE channels ADD COLUMN current_viewer_count INTEGER", [])?;
+    }
+
+    // channelsテーブルにcurrent_categoryフィールドを追加
+    let mut channels_has_current_category = conn.prepare(
+        "SELECT COUNT(*) FROM pragma_table_info('channels') WHERE name = 'current_category'",
+    )?;
+    let channels_has_current_category_count: i64 =
+        channels_has_current_category.query_row([], |row| row.get(0))?;
+
+    if channels_has_current_category_count == 0 {
+        eprintln!("[Migration] Adding current_category column to channels table");
+        conn.execute("ALTER TABLE channels ADD COLUMN current_category TEXT", [])?;
     }
 
     Ok(())

@@ -3,7 +3,7 @@ use crate::config::settings::{AutoDiscoverySettings, SettingsManager};
 use crate::database::DatabaseManager;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use tokio::sync::Mutex;
 
 /// 自動発見設定を取得
@@ -21,9 +21,16 @@ pub async fn get_auto_discovery_settings(
 #[tauri::command]
 pub async fn save_auto_discovery_settings(
     app_handle: AppHandle,
-    settings: AutoDiscoverySettings,
+    mut settings: AutoDiscoverySettings,
     auto_discovery_poller: State<'_, Arc<Mutex<Option<AutoDiscoveryPoller>>>>,
 ) -> Result<(), String> {
+    // max_streamsのバリデーション（1-500の範囲に制限）
+    if settings.max_streams < 1 {
+        settings.max_streams = 1;
+    } else if settings.max_streams > 500 {
+        settings.max_streams = 500;
+    }
+
     // 設定をロード
     let mut app_settings = SettingsManager::load_settings(&app_handle)
         .map_err(|e| format!("Failed to load settings: {}", e))?;
@@ -116,54 +123,15 @@ pub async fn toggle_auto_discovery(
     Ok(new_enabled)
 }
 
-/// 発見された配信の一覧を取得
+/// 発見された配信の一覧を取得（メモリキャッシュから）
 #[tauri::command]
 pub async fn get_discovered_streams(
-    db_manager: State<'_, DatabaseManager>,
+    app_handle: AppHandle,
 ) -> Result<Vec<DiscoveredStreamInfo>, String> {
-    let conn = db_manager
-        .get_connection()
-        .map_err(|e| format!("Failed to get connection: {}", e))?;
-
-    let mut stmt = conn
-        .prepare(
-            r#"
-            SELECT 
-                c.id,
-                c.channel_id,
-                c.channel_name,
-                c.display_name,
-                c.profile_image_url,
-                c.discovered_at,
-                s.title,
-                s.category,
-                ss.viewer_count
-            FROM channels c
-            LEFT JOIN streams s ON s.channel_id = c.id AND s.ended_at IS NULL
-            LEFT JOIN stream_stats ss ON ss.stream_id = s.id
-            WHERE c.is_auto_discovered = true
-            ORDER BY c.discovered_at DESC
-            "#,
-        )
-        .map_err(|e| format!("Failed to prepare query: {}", e))?;
-
-    let streams = stmt
-        .query_map([], |row| {
-            Ok(DiscoveredStreamInfo {
-                id: row.get(0)?,
-                channel_id: row.get(1)?,
-                channel_name: row.get(2)?,
-                display_name: row.get(3).ok(),
-                profile_image_url: row.get(4).ok(),
-                discovered_at: row.get(5).ok(),
-                title: row.get(6).ok(),
-                category: row.get(7).ok(),
-                viewer_count: row.get(8).ok(),
-            })
-        })
-        .map_err(|e| format!("Failed to query streams: {}", e))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("Failed to collect streams: {}", e))?;
+    let cache: tauri::State<'_, Arc<crate::DiscoveredStreamsCache>> = app_handle.state();
+    let streams_lock = cache.streams.lock().await;
+    let streams = streams_lock.clone();
+    drop(streams_lock);
 
     Ok(streams)
 }
@@ -182,17 +150,73 @@ pub async fn search_twitch_games(query: String) -> Result<Vec<TwitchGame>, Strin
 #[tauri::command]
 pub async fn promote_discovered_channel(
     db_manager: State<'_, DatabaseManager>,
-    channel_id: i64,
+    app_handle: AppHandle,
+    channel_id: String, // Twitch user_id
 ) -> Result<(), String> {
+    // メモリキャッシュから該当するストリーム情報を取得
+    let cache: tauri::State<'_, Arc<crate::DiscoveredStreamsCache>> = app_handle.state();
+    let streams_lock = cache.streams.lock().await;
+    let stream_info = streams_lock
+        .iter()
+        .find(|s| s.channel_id == channel_id)
+        .cloned();
+    drop(streams_lock);
+
+    let stream_info = stream_info.ok_or_else(|| format!("Channel {} not found in cache", channel_id))?;
+
+    // channelsテーブルに新規登録（手動登録として）
     let conn = db_manager
         .get_connection()
         .map_err(|e| format!("Failed to get connection: {}", e))?;
 
-    conn.execute(
-        "UPDATE channels SET is_auto_discovered = false, discovered_at = NULL WHERE id = ?",
-        [channel_id],
-    )
-    .map_err(|e| format!("Failed to promote channel: {}", e))?;
+    // 既に登録されているかチェック
+    let mut stmt = conn
+        .prepare("SELECT COUNT(*) FROM channels WHERE platform = 'twitch' AND channel_id = ?")
+        .map_err(|e| format!("Failed to prepare query: {}", e))?;
+    let count: i64 = stmt
+        .query_row([&channel_id], |row| row.get(0))
+        .map_err(|e| format!("Failed to query: {}", e))?;
+    drop(stmt);
+
+    if count > 0 {
+        // 既に登録されている場合はis_auto_discoveredフラグを更新
+        conn.execute(
+            "UPDATE channels SET is_auto_discovered = false, discovered_at = NULL WHERE platform = 'twitch' AND channel_id = ?",
+            [&channel_id],
+        )
+        .map_err(|e| format!("Failed to update channel: {}", e))?;
+    } else {
+        // 新規登録
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            r#"
+            INSERT INTO channels (
+                platform, channel_id, channel_name, display_name,
+                profile_image_url, broadcaster_type, follower_count,
+                enabled, poll_interval, is_auto_discovered, discovered_at,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+            duckdb::params![
+                "twitch",
+                channel_id.as_str(),
+                stream_info.channel_name.as_str(),
+                stream_info.display_name.as_deref().unwrap_or(""),
+                stream_info.profile_image_url.as_deref().unwrap_or(""),
+                stream_info.broadcaster_type.as_deref().unwrap_or(""),
+                stream_info.follower_count.unwrap_or(0),
+                "true",  // enabled
+                "60",    // poll_interval
+                "false", // is_auto_discovered
+                None::<String>, // discovered_at
+                now.as_str(),
+                now.as_str(),
+            ],
+        )
+        .map_err(|e| format!("Failed to insert channel: {}", e))?;
+    }
+
+    drop(conn);
 
     eprintln!("[Discovery] Promoted channel {} to manual registration", channel_id);
     Ok(())
@@ -209,6 +233,8 @@ pub struct DiscoveredStreamInfo {
     pub title: Option<String>,
     pub category: Option<String>,
     pub viewer_count: Option<i32>,
+    pub follower_count: Option<i32>,
+    pub broadcaster_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

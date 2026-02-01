@@ -331,7 +331,7 @@ pub async fn list_channels(
         .map_err(|e| format!("Failed to get database connection: {}", e))?;
 
     let mut stmt = conn
-        .prepare("SELECT id, platform, channel_id, channel_name, display_name, profile_image_url, enabled, poll_interval, follower_count, broadcaster_type, view_count, is_auto_discovered, CAST(discovered_at AS VARCHAR) as discovered_at, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels ORDER BY created_at DESC")
+        .prepare("SELECT id, platform, channel_id, channel_name, display_name, profile_image_url, enabled, poll_interval, follower_count, broadcaster_type, view_count, is_auto_discovered, CAST(discovered_at AS VARCHAR) as discovered_at, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels WHERE is_auto_discovered = false OR is_auto_discovered IS NULL ORDER BY created_at DESC")
         .map_err(|e| format!("Failed to prepare statement: {}", e))?;
 
     let channels: Result<Vec<Channel>, _> = stmt

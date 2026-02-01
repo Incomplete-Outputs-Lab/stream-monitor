@@ -1,9 +1,12 @@
 use crate::api::twitch_api::TwitchApiClient;
+use crate::commands::discovery::DiscoveredStreamInfo;
 use crate::config::settings::{AutoDiscoverySettings, SettingsManager};
 use crate::database::DatabaseManager;
+use crate::DiscoveredStreamsCache;
 use chrono::Utc;
+use std::collections::HashMap;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio::time::{interval, Duration};
@@ -47,12 +50,24 @@ impl AutoDiscoveryPoller {
             }
         };
 
-        // Twitch クライアントがない場合はエラー
-        let twitch_client = self
-            .twitch_client
-            .as_ref()
-            .ok_or("Twitch client not available")?
-            .clone();
+        // Twitch クライアントを取得（既存のものか、新規作成）
+        let twitch_client = match &self.twitch_client {
+            Some(client) => client.clone(),
+            None => {
+                // twitch_clientがNoneの場合、設定からClient IDを取得して新規作成
+                let client_id = settings
+                    .twitch
+                    .client_id
+                    .as_ref()
+                    .ok_or("Twitch Client ID is not configured. Please configure it in Settings.")?;
+                
+                eprintln!("[AutoDiscovery] Creating new TwitchApiClient with client_id");
+                Arc::new(
+                    TwitchApiClient::new(client_id.clone(), None)
+                        .with_app_handle(self.app_handle.clone()),
+                )
+            }
+        };
 
         let db_manager = Arc::clone(&self.db_manager);
         let app_handle = self.app_handle.clone();
@@ -129,7 +144,7 @@ impl AutoDiscoveryPoller {
         }
     }
 
-    /// 配信を発見してデータベースに追加
+    /// 配信を発見してメモリキャッシュに保存し、統計データをDBに記録
     async fn discover_streams(
         twitch_client: &TwitchApiClient,
         settings: &AutoDiscoverySettings,
@@ -154,73 +169,118 @@ impl AutoDiscoveryPoller {
             .get_top_streams(game_ids, languages, Some(settings.max_streams as usize))
             .await?;
 
-        let mut discovered_count = 0;
-
-        for stream in streams {
-            // 最小視聴者数フィルター
-            if let Some(min_viewers) = settings.filters.min_viewers {
-                if (stream.viewer_count as u32) < min_viewers {
-                    continue;
+        // 最小視聴者数フィルターを適用
+        let filtered_streams: Vec<_> = streams
+            .into_iter()
+            .filter(|stream| {
+                if let Some(min_viewers) = settings.filters.min_viewers {
+                    (stream.viewer_count as u32) >= min_viewers
+                } else {
+                    true
                 }
-            }
+            })
+            .collect();
 
-            // user_idとuser_loginを取得
+        if filtered_streams.is_empty() {
+            return Ok(0);
+        }
+
+        // User IDを収集
+        let user_ids: Vec<String> = filtered_streams
+            .iter()
+            .map(|s| s.user_id.to_string())
+            .collect();
+
+        // ユーザー情報をバッチ取得
+        let user_id_refs: Vec<&str> = user_ids.iter().map(|s| s.as_str()).collect();
+        let users = twitch_client.get_users_by_ids(&user_id_refs).await?;
+
+        // User情報をHashMapに格納
+        let user_map: HashMap<String, _> = users
+            .into_iter()
+            .map(|u| (u.id.to_string(), u))
+            .collect();
+
+        // メモリキャッシュに保存するための配信情報を構築
+        let mut discovered_streams_info = Vec::new();
+        let now = Utc::now().to_rfc3339();
+
+        for stream in filtered_streams {
             let user_id = stream.user_id.to_string();
             let user_login = stream.user_login.to_string();
 
-            // すでに登録されているかチェック
-            let conn = db_manager.get_connection()?;
-            let mut stmt = conn.prepare(
-                "SELECT COUNT(*) FROM channels WHERE platform = 'twitch' AND channel_id = ?",
-            )?;
-            let count: i64 = stmt.query_row([&user_id], |row| row.get(0))?;
-            drop(stmt);
-            drop(conn);
+            // User情報を取得
+            let user = user_map.get(&user_id);
 
-            if count > 0 {
-                // 既に登録済み
-                continue;
-            }
+            // User情報から各フィールドを取得
+            let profile_image_url = user
+                .and_then(|u| u.profile_image_url.as_deref())
+                .map(|s| s.to_string());
+            let display_name = Some(stream.user_name.to_string());
+            let broadcaster_type = user
+                .and_then(|u| u.broadcaster_type.as_ref())
+                .map(|bt| match bt {
+                    twitch_api::types::BroadcasterType::Partner => "partner".to_string(),
+                    twitch_api::types::BroadcasterType::Affiliate => "affiliate".to_string(),
+                    _ => "".to_string(),
+                });
+            let follower_count: Option<i32> = None; // view_count is deprecated
 
-            // 新しいチャンネルとして登録
-            let now = Utc::now().to_rfc3339();
+            // DiscoveredStreamInfoを構築（メモリキャッシュ用）
+            let stream_info = DiscoveredStreamInfo {
+                id: 0, // メモリキャッシュでは使用しない
+                channel_id: user_id.clone(),
+                channel_name: user_login.clone(),
+                display_name: display_name.clone(),
+                profile_image_url: profile_image_url.clone(),
+                discovered_at: Some(now.clone()),
+                title: Some(stream.title.to_string()),
+                category: Some(stream.game_name.to_string()),
+                viewer_count: Some(stream.viewer_count as i32),
+                follower_count,
+                broadcaster_type: broadcaster_type.clone(),
+            };
+            discovered_streams_info.push(stream_info);
 
-            // データベースに挿入
+            // stream_statsテーブルに統計データを記録
             let conn = db_manager.get_connection()?;
             conn.execute(
                 r#"
-                INSERT INTO channels (
-                    platform, channel_id, channel_name, display_name,
-                    enabled, poll_interval, is_auto_discovered, discovered_at,
-                    created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO stream_stats (
+                    stream_id, collected_at, viewer_count, chat_rate_1min,
+                    twitch_user_id, channel_name, category
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 "#,
-                [
-                    &"twitch",
-                    &user_id.as_str(),
-                    &user_login.as_str(),
-                    &stream.user_name.as_str(),
-                    &"true",
-                    &"60",
-                    &"true",
-                    &now.as_str(),
-                    &now.as_str(),
-                    &now.as_str(),
+                duckdb::params![
+                    None::<i64>, // stream_id = NULL
+                    now.as_str(),
+                    stream.viewer_count as i32,
+                    0, // chat_rate_1min（AutoDiscoveryでは収集しない）
+                    user_id.as_str(),
+                    user_login.as_str(),
+                    stream.game_name.as_str(),
                 ],
             )?;
-
             drop(conn);
 
             eprintln!(
-                "[AutoDiscovery] Added channel: {} ({})",
-                user_login, user_id
+                "[AutoDiscovery] Discovered stream: {} ({}) - {} viewers, category: {}",
+                user_login, user_id, stream.viewer_count, stream.game_name
             );
-            
-            // Emit event to notify that a new channel was added
-            let _ = app_handle.emit("channel-added", user_id.clone());
-            
-            discovered_count += 1;
         }
+
+        let discovered_count = discovered_streams_info.len();
+
+        // メモリキャッシュに保存
+        let cache: tauri::State<'_, Arc<DiscoveredStreamsCache>> = app_handle.state();
+        let mut streams_lock = cache.streams.lock().await;
+        *streams_lock = discovered_streams_info;
+        drop(streams_lock);
+
+        // フロントエンドにイベントを発行（キャッシュ無効化のトリガー）
+        let _ = app_handle.emit("discovered-streams-updated", ());
+
+        eprintln!("[AutoDiscovery] Discovered {} streams, saved to cache", discovered_count);
 
         Ok(discovered_count)
     }

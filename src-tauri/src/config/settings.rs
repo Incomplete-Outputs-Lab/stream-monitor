@@ -111,13 +111,19 @@ pub struct SettingsManager;
 
 impl SettingsManager {
     pub fn get_settings_path(
-        _app_handle: &AppHandle,
+        app_handle: &AppHandle,
     ) -> Result<PathBuf, Box<dyn std::error::Error>> {
-        // Tauri 2.xのapp_data_dir()を取得
-        // 一時的な実装：現在のディレクトリに設定ファイルを作成
-        let app_data_dir = std::env::current_dir()
-            .or_else(|_| std::path::PathBuf::from(".").canonicalize())
-            .map_err(|e| format!("Failed to get current directory: {}", e))?;
+        use tauri::Manager;
+
+        // Tauri 2.xのapp_data_dir()を取得（ログファイルやDBファイルと同じ場所）
+        let app_data_dir = app_handle
+            .path()
+            .app_data_dir()
+            .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+
+        // ディレクトリが存在しない場合は作成
+        std::fs::create_dir_all(&app_data_dir)
+            .map_err(|e| format!("Failed to create app data directory: {}", e))?;
 
         Ok(app_data_dir.join("settings.json"))
     }

@@ -268,6 +268,52 @@ impl TwitchApiClient {
         }
     }
 
+    /// 複数のユーザーをIDで取得（最大100件）
+    pub async fn get_users_by_ids(
+        &self,
+        user_ids: &[&str],
+    ) -> Result<Vec<User>, Box<dyn std::error::Error>> {
+        if user_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let token = self.get_user_token().await?;
+
+        // user_idsをUserIdRefに変換
+        let user_id_refs: Vec<&types::UserIdRef> = user_ids
+            .iter()
+            .map(|id| (*id).into())
+            .collect();
+        let request = GetUsersRequest::ids(user_id_refs.as_slice());
+
+        // リクエストをトラッキング
+        if let Ok(mut limiter) = self.rate_limiter.lock() {
+            limiter.track_request();
+        }
+
+        match self.client.req_get(request.clone(), &token).await {
+            Ok(response) => Ok(response.data),
+            Err(e) => {
+                // 401エラーの場合、トークンをリフレッシュして再試行
+                if e.to_string().contains("401") || e.to_string().contains("Unauthorized") {
+                    eprintln!("Token expired, attempting refresh...");
+                    let _new_token = self.refresh_token().await?;
+                    let refreshed_token = self.get_user_token().await?;
+
+                    // 再試行もトラッキング
+                    if let Ok(mut limiter) = self.rate_limiter.lock() {
+                        limiter.track_request();
+                    }
+
+                    let response = self.client.req_get(request, &refreshed_token).await?;
+                    Ok(response.data)
+                } else {
+                    Err(e.into())
+                }
+            }
+        }
+    }
+
     pub async fn get_stream_by_user_id(
         &self,
         user_id: &str,
@@ -308,12 +354,12 @@ impl TwitchApiClient {
         }
     }
 
-    /// 視聴者数順にソートされた上位配信を取得
+    /// 視聴者数順にソートされた上位配信を取得（ページネーション対応）
     ///
     /// # Arguments
     /// * `game_ids` - フィルターするゲームID（最大100件）
     /// * `languages` - フィルターする言語コード（最大100件）
-    /// * `first` - 取得する配信数（最大100件、デフォルト20件）
+    /// * `first` - 取得する配信数（最大500件、デフォルト100件）
     ///
     /// # Returns
     /// 視聴者数の降順でソートされた配信のリスト
@@ -324,57 +370,87 @@ impl TwitchApiClient {
         first: Option<usize>,
     ) -> Result<Vec<Stream>, Box<dyn std::error::Error>> {
         let token = self.get_user_token().await?;
+        
+        // 目標取得件数（最大500件）
+        let target_count = first.unwrap_or(100).min(500);
+        let mut all_streams = Vec::new();
+        let mut cursor: Option<twitch_api::helix::Cursor> = None;
 
-        // GetStreamsRequestを作成
-        let mut request = GetStreamsRequest::default();
+        // ページネーションでデータを取得
+        loop {
+            // GetStreamsRequestを作成
+            let mut request = GetStreamsRequest::default();
 
-        // game_idsを設定
-        if let Some(ids) = &game_ids {
-            let game_id_refs: Vec<&types::CategoryIdRef> = ids
-                .iter()
-                .map(|id| id.as_str().into())
-                .collect();
-            request.game_id = game_id_refs.into();
-        }
-
-        // languagesを設定
-        if let Some(langs) = &languages {
-            if !langs.is_empty() {
-                request.language = Some(std::borrow::Cow::Borrowed(langs[0].as_str()));
+            // game_idsを設定
+            if let Some(ids) = &game_ids {
+                let game_id_refs: Vec<&types::CategoryIdRef> = ids
+                    .iter()
+                    .map(|id| id.as_str().into())
+                    .collect();
+                request.game_id = game_id_refs.into();
             }
-        }
 
-        // firstを設定（最大100）
-        if let Some(count) = first {
-            request.first = Some(count.min(100));
-        }
-
-        // リクエストをトラッキング
-        if let Ok(mut limiter) = self.rate_limiter.lock() {
-            limiter.track_request();
-        }
-
-        match self.client.req_get(request.clone(), &token).await {
-            Ok(response) => Ok(response.data),
-            Err(e) => {
-                // 401エラーの場合、トークンをリフレッシュして再試行
-                if e.to_string().contains("401") || e.to_string().contains("Unauthorized") {
-                    eprintln!("Token expired, attempting refresh...");
-                    let _new_token = self.refresh_token().await?;
-                    let refreshed_token = self.get_user_token().await?;
-
-                    // 再試行もトラッキング
-                    if let Ok(mut limiter) = self.rate_limiter.lock() {
-                        limiter.track_request();
-                    }
-
-                    let response = self.client.req_get(request, &refreshed_token).await?;
-                    Ok(response.data)
-                } else {
-                    Err(e.into())
+            // languagesを設定
+            if let Some(langs) = &languages {
+                if !langs.is_empty() {
+                    request.language = Some(std::borrow::Cow::Borrowed(langs[0].as_str()));
                 }
             }
+
+            // 1回のリクエストで最大100件を取得（Twitch APIの上限）
+            request.first = Some(100);
+            
+            // カーソルを設定（2ページ目以降）
+            if let Some(c) = cursor.clone() {
+                request.after = Some(c.into());
+            }
+
+            // リクエストをトラッキング
+            if let Ok(mut limiter) = self.rate_limiter.lock() {
+                limiter.track_request();
+            }
+
+            // APIリクエストを実行
+            let response = match self.client.req_get(request.clone(), &token).await {
+                Ok(response) => response,
+                Err(e) => {
+                    // 401エラーの場合、トークンをリフレッシュして再試行
+                    if e.to_string().contains("401") || e.to_string().contains("Unauthorized") {
+                        eprintln!("Token expired, attempting refresh...");
+                        let _new_token = self.refresh_token().await?;
+                        let refreshed_token = self.get_user_token().await?;
+
+                        // 再試行もトラッキング
+                        if let Ok(mut limiter) = self.rate_limiter.lock() {
+                            limiter.track_request();
+                        }
+
+                        self.client.req_get(request, &refreshed_token).await?
+                    } else {
+                        return Err(e.into());
+                    }
+                }
+            };
+
+            // データを蓄積
+            all_streams.extend(response.data);
+
+            // 次のページがあるかチェック
+            cursor = response.pagination;
+
+            // 目標件数に達したか、次のページがない場合は終了
+            if all_streams.len() >= target_count || cursor.is_none() {
+                break;
+            }
+
+            eprintln!("[TwitchAPI] Fetched {} streams, continuing pagination...", all_streams.len());
         }
+
+        // 目標件数に制限
+        all_streams.truncate(target_count);
+        
+        eprintln!("[TwitchAPI] Total fetched {} streams", all_streams.len());
+        Ok(all_streams)
     }
 }
 

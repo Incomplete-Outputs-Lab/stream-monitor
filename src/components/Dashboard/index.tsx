@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { ChannelWithStats } from "../../types";
 
 interface StreamStats {
@@ -10,6 +10,14 @@ interface StreamStats {
   collected_at: string;
   viewer_count?: number;
   chat_rate_1min: number;
+}
+
+interface ChannelStatsData {
+  channel_id: string;
+  channel_name: string;
+  platform: string;
+  stream_id: number;
+  stats: StreamStats[];
 }
 
 interface LiveChannelCardProps {
@@ -57,67 +65,114 @@ function LiveChannelCard({ channel }: LiveChannelCardProps) {
 }
 
 interface ViewerChartProps {
-  data: StreamStats[];
+  channelsData: ChannelStatsData[];
 }
 
-function ViewerChart({ data }: ViewerChartProps) {
+// チャンネルごとに異なる色を割り当て
+const CHANNEL_COLORS = [
+  '#3b82f6', // blue-500
+  '#10b981', // green-500
+  '#f59e0b', // amber-500
+  '#ef4444', // red-500
+  '#8b5cf6', // violet-500
+  '#ec4899', // pink-500
+  '#14b8a6', // teal-500
+  '#f97316', // orange-500
+];
+
+function ViewerChart({ channelsData }: ViewerChartProps) {
   // データをグラフ用に変換
-  const chartData = data.slice(-20).map(stat => ({
-    time: new Date(stat.collected_at).toLocaleTimeString('ja-JP', {
-      hour: '2-digit',
-      minute: '2-digit'
-    }),
-    viewers: stat.viewer_count || 0,
-    chatRate: stat.chat_rate_1min,
-  }));
+  // 各タイムスタンプごとに、各チャンネルの視聴者数をマージ
+  const timeMap = new Map<string, Record<string, number>>();
+
+  channelsData.forEach(channelData => {
+    const channelKey = `${channelData.platform}_${channelData.channel_name}`;
+    channelData.stats.slice(-20).forEach(stat => {
+      const time = new Date(stat.collected_at).toLocaleTimeString('ja-JP', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      
+      if (!timeMap.has(time)) {
+        timeMap.set(time, {});
+      }
+      const timeData = timeMap.get(time)!;
+      timeData[channelKey] = stat.viewer_count || 0;
+    });
+  });
+
+  // Map を配列に変換してソート
+  const chartData = Array.from(timeMap.entries())
+    .map(([time, viewers]) => ({
+      time,
+      ...viewers,
+    }))
+    .sort((a, b) => {
+      // 時刻文字列を比較可能な形式に変換
+      const timeA = a.time.split(':').map(Number);
+      const timeB = b.time.split(':').map(Number);
+      return timeA[0] * 60 + timeA[1] - (timeB[0] * 60 + timeB[1]);
+    });
 
   return (
     <div className="card p-6 animate-fade-in">
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">視聴者数推移</h3>
-        <div className="flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
-          <div className="w-3 h-3 rounded-full bg-gradient-to-r from-blue-500 to-indigo-600"></div>
-          <span>視聴者数</span>
+        <div className="text-xs text-gray-500 dark:text-gray-400">
+          チャンネル別推移
         </div>
       </div>
-      <div className="h-64">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis 
-              dataKey="time" 
-              stroke="#64748b"
-              style={{ fontSize: '12px' }}
-            />
-            <YAxis 
-              stroke="#64748b"
-              style={{ fontSize: '12px' }}
-            />
-            <Tooltip 
-              contentStyle={{
-                backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                border: '1px solid #e2e8f0',
-                borderRadius: '8px',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-              }}
-            />
-            <Line
-              type="monotone"
-              dataKey="viewers"
-              stroke="url(#colorGradient)"
-              strokeWidth={3}
-              dot={false}
-              activeDot={{ r: 6 }}
-            />
-            <defs>
-              <linearGradient id="colorGradient" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%" stopColor="#3b82f6" />
-                <stop offset="100%" stopColor="#6366f1" />
-              </linearGradient>
-            </defs>
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+      {channelsData.length === 0 ? (
+        <div className="h-64 flex items-center justify-center">
+          <p className="text-gray-500 dark:text-gray-400">ライブ中のチャンネルがありません</p>
+        </div>
+      ) : (
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis 
+                dataKey="time" 
+                stroke="#64748b"
+                style={{ fontSize: '12px' }}
+              />
+              <YAxis 
+                stroke="#64748b"
+                style={{ fontSize: '12px' }}
+              />
+              <Tooltip 
+                contentStyle={{
+                  backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                }}
+              />
+              <Legend 
+                wrapperStyle={{ fontSize: '12px' }}
+                iconType="line"
+              />
+              {channelsData.map((channelData, index) => {
+                const channelKey = `${channelData.platform}_${channelData.channel_name}`;
+                const color = CHANNEL_COLORS[index % CHANNEL_COLORS.length];
+                const platformIcon = channelData.platform === 'twitch' ? '🎮' : '▶️';
+                return (
+                  <Line
+                    key={channelKey}
+                    type="monotone"
+                    dataKey={channelKey}
+                    name={`${platformIcon} ${channelData.channel_name}`}
+                    stroke={color}
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                  />
+                );
+              })}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </div>
   );
 }
@@ -154,6 +209,24 @@ export function Dashboard() {
       setStatsData(recentStats);
     }
   }, [recentStats]);
+
+  // チャンネルごとの統計データを整形
+  const channelsStatsData: ChannelStatsData[] = (liveChannels || []).map(channel => {
+    // このチャンネルの統計データをフィルタ
+    const channelStats = statsData.filter(_stat => {
+      // stream_idが一致する統計データを取得
+      // （実際のロジックはバックエンドの実装に依存）
+      return true; // 仮実装：すべての統計を含める
+    });
+
+    return {
+      channel_id: channel.channel_id,
+      channel_name: channel.channel_name,
+      platform: channel.platform,
+      stream_id: 0, // 仮の値
+      stats: channelStats,
+    };
+  });
 
   const totalViewers = liveChannels?.reduce((sum, channel) => sum + (channel.current_viewers || 0), 0) || 0;
 
@@ -227,7 +300,7 @@ export function Dashboard() {
 
       {/* チャートとライブチャンネル */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ViewerChart data={statsData} />
+        <ViewerChart channelsData={channelsStatsData} />
 
         <div className="card p-6 animate-fade-in">
           <div className="flex items-center justify-between mb-6">

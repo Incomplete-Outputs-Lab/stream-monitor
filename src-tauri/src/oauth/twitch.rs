@@ -1,4 +1,5 @@
-use crate::config::keyring_store::KeyringStore;
+use crate::config::keyring_store::{KeyringStore, TokenMetadata};
+use chrono::{Duration, Utc};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -184,6 +185,24 @@ impl TwitchOAuth {
                         }
                     }
 
+                    // トークンメタデータを保存（有効期限情報）
+                    if let Some(expires_in) = token_response.expires_in {
+                        let now = Utc::now();
+                        let metadata = TokenMetadata {
+                            expires_at: (now + Duration::seconds(expires_in as i64)).to_rfc3339(),
+                            obtained_at: now.to_rfc3339(),
+                        };
+                        
+                        if let Err(e) = KeyringStore::save_token_metadata_with_app(
+                            handle,
+                            "twitch",
+                            &metadata,
+                        ) {
+                            eprintln!("[Twitch Device Flow] WARNING: Failed to save token metadata: {}", e);
+                            // メタデータ保存失敗は致命的ではないので続行
+                        }
+                    }
+
                     // Give frontend time to process the save event
                     eprintln!("[Twitch Device Flow] Token save event sent, waiting for frontend processing...");
                     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
@@ -298,6 +317,23 @@ impl TwitchOAuth {
         if let Some(new_refresh_token) = &token_response.refresh_token {
             KeyringStore::save_token_with_app(&handle, "twitch_refresh", new_refresh_token)?;
             eprintln!("[Twitch Device Flow] New refresh token saved (one-time use)");
+        }
+
+        // トークンメタデータを保存（有効期限情報）
+        if let Some(expires_in) = token_response.expires_in {
+            let now = Utc::now();
+            let metadata = TokenMetadata {
+                expires_at: (now + Duration::seconds(expires_in as i64)).to_rfc3339(),
+                obtained_at: now.to_rfc3339(),
+            };
+            
+            if let Err(e) = KeyringStore::save_token_metadata_with_app(
+                &handle,
+                "twitch",
+                &metadata,
+            ) {
+                eprintln!("[Twitch Device Flow] WARNING: Failed to save token metadata: {}", e);
+            }
         }
 
         // Give frontend time to process the save event

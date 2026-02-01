@@ -1,4 +1,5 @@
 use crate::collectors::collector_trait::Collector;
+use crate::collectors::twitch::TwitchCollector;
 use crate::database::{
     models::{Channel, ChannelStatsEvent, Stream, StreamData, StreamStats},
     writer::DatabaseWriter,
@@ -28,6 +29,7 @@ pub struct CollectorStatus {
 
 pub struct ChannelPoller {
     collectors: HashMap<String, Arc<dyn Collector + Send + Sync>>,
+    twitch_collector: Option<Arc<TwitchCollector>>,
     tasks: HashMap<i64, tokio::task::JoinHandle<()>>,
     status_map: Arc<RwLock<HashMap<i64, CollectorStatus>>>,
 }
@@ -36,6 +38,7 @@ impl ChannelPoller {
     pub fn new() -> Self {
         Self {
             collectors: HashMap::new(),
+            twitch_collector: None,
             tasks: HashMap::new(),
             status_map: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -54,7 +57,13 @@ impl ChannelPoller {
         platform: String,
         collector: Arc<dyn Collector + Send + Sync>,
     ) {
-        self.collectors.insert(platform, collector);
+        self.collectors.insert(platform.clone(), collector);
+    }
+
+    /// Register Twitch collector specifically for token management
+    pub fn register_twitch_collector(&mut self, collector: Arc<TwitchCollector>) {
+        self.twitch_collector = Some(collector.clone());
+        self.collectors.insert("twitch".to_string(), collector);
     }
 
     pub fn start_polling(
@@ -96,6 +105,8 @@ impl ChannelPoller {
         }
 
         let status_map = Arc::clone(&self.status_map);
+        let twitch_collector_for_task = self.twitch_collector.clone();
+        
         let task = tokio::spawn(async move {
             // Get logger from app_handle
             let logger = app_handle.state::<AppLogger>();
@@ -124,10 +135,35 @@ impl ChannelPoller {
 
                 // Update last poll time
                 let now = Utc::now().to_rfc3339();
-                if let Ok(mut map) = status_map.write() {
+                let poll_count = if let Ok(mut map) = status_map.write() {
                     if let Some(status) = map.get_mut(&channel_id) {
                         status.last_poll_at = Some(now.clone());
                         status.poll_count += 1;
+                        status.poll_count
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                };
+
+                // Twitch プラットフォームの場合、10回のポーリングごとにトークン有効期限をチェック
+                if channel.platform == "twitch" && poll_count % 10 == 0 {
+                    if let Some(ref twitch_collector) = twitch_collector_for_task {
+                        match twitch_collector.check_and_refresh_token_if_needed().await {
+                            Ok(true) => {
+                                logger.info("Twitch token refreshed proactively");
+                            }
+                            Ok(false) => {
+                                // トークンはまだ有効
+                            }
+                            Err(e) => {
+                                logger.error(&format!(
+                                    "Failed to check/refresh Twitch token: {}",
+                                    e
+                                ));
+                            }
+                        }
                     }
                 }
 
@@ -225,11 +261,38 @@ impl ChannelPoller {
                         let _ = app_handle.emit("channel-stats-updated", event);
                     }
                     Err(e) => {
-                        logger.error(&format!("Failed to poll channel {}: {}", channel_id, e));
+                        let error_msg = format!("Failed to poll channel {}: {}", channel_id, e);
+                        logger.error(&error_msg);
+                        
+                        // トークン関連のエラーかチェック
+                        let error_str = e.to_string();
+                        let is_token_error = error_str.contains("not authorized") 
+                            || error_str.contains("Unauthorized")
+                            || error_str.contains("Token")
+                            || error_str.contains("401");
+                        
+                        if is_token_error {
+                            logger.error("Token authentication issue detected. Automatic refresh will be attempted on next poll or during periodic check.");
+                            
+                            // フロントエンドに通知（オプション）
+                            #[derive(Clone, serde::Serialize)]
+                            struct AuthErrorEvent {
+                                platform: String,
+                                channel_id: i64,
+                                message: String,
+                            }
+                            
+                            let _ = app_handle.emit("auth-error", AuthErrorEvent {
+                                platform: channel.platform.clone(),
+                                channel_id,
+                                message: "Token may have expired. Automatic refresh will be attempted.".to_string(),
+                            });
+                        }
+                        
                         // Update status with error
                         if let Ok(mut map) = status_map.write() {
                             if let Some(status) = map.get_mut(&channel_id) {
-                                status.last_error = Some(format!("Poll failed: {}", e));
+                                status.last_error = Some(error_msg);
                                 status.error_count += 1;
                             }
                         }

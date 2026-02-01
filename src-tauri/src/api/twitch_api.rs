@@ -1,5 +1,6 @@
 use crate::config::keyring_store::KeyringStore;
 use crate::oauth::twitch::TwitchOAuth;
+use chrono::{DateTime, Utc};
 use std::sync::Arc;
 use twitch_api::{
     helix::{
@@ -98,16 +99,103 @@ impl TwitchApiClient {
 
     async fn get_user_token(&self) -> Result<TwitchApiUserToken, Box<dyn std::error::Error>> {
         let access_token = self.get_access_token().await?;
-        // twitch_apiのUserTokenに変換
-        TwitchApiUserToken::from_token(&*self.client, access_token)
-            .await
-            .map_err(|e| format!("Failed to create UserToken: {}", e).into())
+        
+        // トークン検証を試行
+        match TwitchApiUserToken::from_token(&*self.client, access_token).await {
+            Ok(token) => Ok(token),
+            Err(e) => {
+                // トークン検証失敗 - リフレッシュを試行
+                eprintln!("[TwitchAPI] Token validation failed: {}, attempting refresh...", e);
+                
+                // リフレッシュトークンの存在確認
+                if let Some(ref handle) = self.app_handle {
+                    if KeyringStore::get_token_with_app(handle, "twitch_refresh").is_err() {
+                        return Err("Refresh token not found. Please re-authenticate via Device Code Flow.".into());
+                    }
+                } else {
+                    return Err("No app handle available for token refresh.".into());
+                }
+                
+                // トークンリフレッシュ実行
+                let new_token = self.refresh_token().await?;
+                
+                // 再度検証
+                TwitchApiUserToken::from_token(&*self.client, new_token)
+                    .await
+                    .map_err(|e| {
+                        format!(
+                            "Token validation failed after refresh: {}. Please re-authenticate.",
+                            e
+                        )
+                        .into()
+                    })
+            }
+        }
     }
 
     pub async fn authenticate(&self) -> Result<(), Box<dyn std::error::Error>> {
         // トークンの取得と検証
         let _token = self.get_access_token().await?;
         Ok(())
+    }
+
+    /// トークンの有効期限をチェックし、期限が近い場合はリフレッシュ
+    /// 
+    /// Returns: Ok(true) if token was refreshed, Ok(false) if refresh was not needed
+    pub async fn check_and_refresh_token_if_needed(&self) -> Result<bool, Box<dyn std::error::Error>> {
+        let handle = self.app_handle.as_ref()
+            .ok_or("No app handle available")?;
+        
+        // メタデータを取得
+        let metadata = match KeyringStore::get_token_metadata_with_app(handle, "twitch") {
+            Ok(m) => m,
+            Err(_) => {
+                // メタデータがない場合は、トークンが古い形式で保存されている可能性
+                eprintln!("[TwitchAPI] Token metadata not found, skipping proactive refresh");
+                return Ok(false);
+            }
+        };
+        
+        let expires_at = match DateTime::parse_from_rfc3339(&metadata.expires_at) {
+            Ok(dt) => dt,
+            Err(e) => {
+                eprintln!("[TwitchAPI] Failed to parse expiration time: {}", e);
+                return Ok(false);
+            }
+        };
+        
+        let now = Utc::now();
+        let time_until_expiry = expires_at.signed_duration_since(now);
+        let minutes_until_expiry = time_until_expiry.num_minutes();
+        
+        // 有効期限まで30分以内の場合はリフレッシュ
+        if minutes_until_expiry < 30 {
+            eprintln!(
+                "[TwitchAPI] Token expires in {} minutes, refreshing proactively...",
+                minutes_until_expiry
+            );
+            
+            // リフレッシュトークンの存在確認
+            if KeyringStore::get_token_with_app(handle, "twitch_refresh").is_err() {
+                eprintln!("[TwitchAPI] No refresh token available, cannot refresh proactively");
+                return Ok(false);
+            }
+            
+            // トークンリフレッシュ
+            match self.refresh_token().await {
+                Ok(_) => {
+                    eprintln!("[TwitchAPI] Token refreshed successfully (proactive)");
+                    Ok(true)
+                }
+                Err(e) => {
+                    eprintln!("[TwitchAPI] Failed to refresh token proactively: {}", e);
+                    Err(e)
+                }
+            }
+        } else {
+            // まだ有効期限まで余裕がある
+            Ok(false)
+        }
     }
 
     pub async fn get_user_by_login(&self, login: &str) -> Result<User, Box<dyn std::error::Error>> {

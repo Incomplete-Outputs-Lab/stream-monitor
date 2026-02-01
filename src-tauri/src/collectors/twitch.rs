@@ -98,6 +98,11 @@ impl Collector for TwitchCollector {
 }
 
 impl TwitchCollector {
+    /// トークンの有効期限をチェックし、必要に応じてリフレッシュ
+    pub async fn check_and_refresh_token_if_needed(&self) -> Result<bool, Box<dyn std::error::Error>> {
+        self.api_client.check_and_refresh_token_if_needed().await
+    }
+
     /// チャット収集を開始（ストリーム開始時に呼び出し）
     /// TODO: チャット機能実装中
     #[allow(dead_code)]

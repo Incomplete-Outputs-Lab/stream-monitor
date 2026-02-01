@@ -1,5 +1,6 @@
 use crate::database::DatabaseManager;
-use duckdb::{params, types::ValueRef};
+use chrono::{TimeZone, Utc};
+use duckdb::{params, types::ValueRef, types::TimeUnit};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tauri::State;
@@ -131,11 +132,21 @@ pub async fn execute_sql(
                     Ok(ValueRef::Float(f)) => serde_json::json!(f),
                     Ok(ValueRef::Double(f)) => serde_json::json!(f),
                     Ok(ValueRef::Decimal(d)) => serde_json::json!(d.to_string()),
-                    Ok(ValueRef::Timestamp(_, _)) => {
+                    Ok(ValueRef::Timestamp(unit, value)) => {
                         // Timestampを文字列に変換
-                        match first_row.get::<_, String>(i) {
-                            Ok(s) => serde_json::Value::String(s),
-                            Err(_) => serde_json::Value::Null,
+                        let datetime = match unit {
+                            TimeUnit::Second => Utc.timestamp_opt(value, 0).single(),
+                            TimeUnit::Millisecond => Utc.timestamp_millis_opt(value).single(),
+                            TimeUnit::Microsecond => Utc.timestamp_micros(value).single(),
+                            TimeUnit::Nanosecond => {
+                                let secs = value / 1_000_000_000;
+                                let nsecs = (value % 1_000_000_000) as u32;
+                                Utc.timestamp_opt(secs, nsecs).single()
+                            }
+                        };
+                        match datetime {
+                            Some(dt) => serde_json::Value::String(dt.format("%Y-%m-%d %H:%M:%S%.6f").to_string()),
+                            None => serde_json::Value::String(format!("<Invalid Timestamp: {}>", value)),
                         }
                     }
                     Ok(ValueRef::Text(s)) => {
@@ -214,11 +225,21 @@ pub async fn execute_sql(
                     Ok(ValueRef::Float(f)) => serde_json::json!(f),
                     Ok(ValueRef::Double(f)) => serde_json::json!(f),
                     Ok(ValueRef::Decimal(d)) => serde_json::json!(d.to_string()),
-                    Ok(ValueRef::Timestamp(_, _)) => {
+                    Ok(ValueRef::Timestamp(unit, value)) => {
                         // Timestampを文字列に変換
-                        match row.get::<_, String>(i) {
-                            Ok(s) => serde_json::Value::String(s),
-                            Err(_) => serde_json::Value::Null,
+                        let datetime = match unit {
+                            TimeUnit::Second => Utc.timestamp_opt(value, 0).single(),
+                            TimeUnit::Millisecond => Utc.timestamp_millis_opt(value).single(),
+                            TimeUnit::Microsecond => Utc.timestamp_micros(value).single(),
+                            TimeUnit::Nanosecond => {
+                                let secs = value / 1_000_000_000;
+                                let nsecs = (value % 1_000_000_000) as u32;
+                                Utc.timestamp_opt(secs, nsecs).single()
+                            }
+                        };
+                        match datetime {
+                            Some(dt) => serde_json::Value::String(dt.format("%Y-%m-%d %H:%M:%S%.6f").to_string()),
+                            None => serde_json::Value::String(format!("<Invalid Timestamp: {}>", value)),
                         }
                     }
                     Ok(ValueRef::Text(s)) => {

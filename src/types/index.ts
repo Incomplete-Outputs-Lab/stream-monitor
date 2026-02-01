@@ -209,3 +209,18 @@ export interface GameAnalytics {
   unique_broadcasters: number;
   top_channel: string | null;
 }
+
+export interface DataAvailability {
+  first_record: string;
+  last_record: string;
+  total_days_with_data: number;
+  total_records: number;
+}
+
+export interface DailyStats {
+  date: string;
+  minutes_watched: number;
+  hours_broadcasted: number;
+  average_ccu: number;
+  collection_hours: number;
+}

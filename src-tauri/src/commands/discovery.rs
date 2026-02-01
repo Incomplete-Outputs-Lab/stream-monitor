@@ -4,6 +4,7 @@ use crate::constants::database as db_constants;
 use crate::database::DatabaseManager;
 use crate::error::ResultExt;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 use tokio::sync::Mutex;
@@ -127,16 +128,55 @@ pub async fn toggle_auto_discovery(
 }
 
 /// 発見された配信の一覧を取得（メモリキャッシュから）
+/// 既に登録されているチャンネルは除外して返す
 #[tauri::command]
 pub async fn get_discovered_streams(
     app_handle: AppHandle,
+    db_manager: State<'_, DatabaseManager>,
 ) -> Result<Vec<DiscoveredStreamInfo>, String> {
+    // 1. 既に登録されているチャンネルのtwitch_user_idを取得
+    let registered_user_ids: HashSet<i64> = {
+        let conn = db_manager
+            .get_connection()
+            .db_context("get connection")
+            .map_err(|e| e.to_string())?;
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT twitch_user_id FROM channels WHERE platform = 'twitch' AND twitch_user_id IS NOT NULL",
+            )
+            .db_context("prepare query")
+            .map_err(|e| e.to_string())?;
+
+        let ids: Vec<i64> = stmt
+            .query_map([], |row| row.get(0))
+            .db_context("query")
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        ids.into_iter().collect()
+    };
+
+    // 2. メモリキャッシュから配信を取得
     let cache: tauri::State<'_, Arc<crate::DiscoveredStreamsCache>> = app_handle.state();
     let streams_lock = cache.streams.lock().await;
     let streams = streams_lock.clone();
     drop(streams_lock);
 
-    Ok(streams)
+    // 3. 既に登録されているチャンネルを除外
+    let filtered_streams: Vec<DiscoveredStreamInfo> = streams
+        .into_iter()
+        .filter(|s| !registered_user_ids.contains(&s.twitch_user_id))
+        .collect();
+
+    eprintln!(
+        "[Discovery] Returning {} discovered streams (filtered out {} registered channels)",
+        filtered_streams.len(),
+        registered_user_ids.len()
+    );
+
+    Ok(filtered_streams)
 }
 
 /// Twitchゲーム検索（フィルター設定用）

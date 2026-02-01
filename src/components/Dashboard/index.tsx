@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -237,7 +237,7 @@ export function Dashboard() {
   });
 
   // 自動発見された配信を取得
-  const { data: discoveredStreams, refetch: refetchDiscovered } = useQuery({
+  const { data: discoveredStreams } = useQuery({
     queryKey: ["discovered-streams"],
     queryFn: () => invoke<DiscoveredStreamInfo[]>("get_discovered_streams"),
     refetchInterval: 30000, // 30秒ごとに更新
@@ -253,14 +253,77 @@ export function Dashboard() {
     };
   }, [queryClient]);
 
-  const handlePromote = async (channelId: string) => {
-    if (confirm('このチャンネルを手動登録に昇格しますか？\n配信終了後も監視を継続します。')) {
-      try {
-        await invoke('promote_discovered_channel', { channelId });
-        refetchDiscovered();
-      } catch (err) {
-        alert(`エラー: ${err}`);
+  // 楽観的更新を使用したチャンネル昇格mutation
+  const promoteMutation = useMutation({
+    mutationFn: async (channelId: string) => {
+      await invoke('promote_discovered_channel', { channelId });
+    },
+    onMutate: async (channelId: string) => {
+      // 既存のクエリをキャンセル
+      await queryClient.cancelQueries({ queryKey: ["discovered-streams"] });
+      await queryClient.cancelQueries({ queryKey: ["channels-with-twitch-info"] });
+
+      // 現在のキャッシュを保存（ロールバック用）
+      const previousDiscovered = queryClient.getQueryData<DiscoveredStreamInfo[]>(["discovered-streams"]);
+      const previousChannels = queryClient.getQueryData<ChannelWithStats[]>(["channels-with-twitch-info"]);
+
+      // 昇格するストリーム情報を取得
+      const promotingStream = previousDiscovered?.find(
+        s => s.twitch_user_id.toString() === channelId
+      );
+
+      // 楽観的更新: 自動発見リストから削除
+      if (previousDiscovered) {
+        queryClient.setQueryData<DiscoveredStreamInfo[]>(
+          ["discovered-streams"],
+          previousDiscovered.filter(s => s.twitch_user_id.toString() !== channelId)
+        );
       }
+
+      // 楽観的更新: ライブチャンネルリストに追加
+      if (previousChannels && promotingStream) {
+        const newChannel: ChannelWithStats = {
+          id: -1, // 仮のID（サーバーからの応答で更新される）
+          platform: "twitch",
+          channel_id: promotingStream.channel_name,
+          channel_name: promotingStream.display_name || promotingStream.channel_name,
+          enabled: true,
+          poll_interval: 60,
+          is_auto_discovered: false,
+          is_live: true,
+          current_viewers: promotingStream.viewer_count ?? 0,
+          current_title: promotingStream.title ?? undefined,
+          twitch_user_id: promotingStream.twitch_user_id,
+          profile_image_url: promotingStream.profile_image_url ?? undefined,
+        };
+        queryClient.setQueryData<ChannelWithStats[]>(
+          ["channels-with-twitch-info"],
+          [...previousChannels, newChannel]
+        );
+      }
+
+      return { previousDiscovered, previousChannels };
+    },
+    onError: (_err, _channelId, context) => {
+      // エラー時はロールバック
+      if (context?.previousDiscovered) {
+        queryClient.setQueryData(["discovered-streams"], context.previousDiscovered);
+      }
+      if (context?.previousChannels) {
+        queryClient.setQueryData(["channels-with-twitch-info"], context.previousChannels);
+      }
+      alert(`エラー: ${_err}`);
+    },
+    onSettled: () => {
+      // 完了後にクエリを再検証して最新データを取得
+      queryClient.invalidateQueries({ queryKey: ["discovered-streams"] });
+      queryClient.invalidateQueries({ queryKey: ["channels-with-twitch-info"] });
+    },
+  });
+
+  const handlePromote = (channelId: string) => {
+    if (confirm('このチャンネルを手動登録に昇格しますか？\n配信終了後も監視を継続します。')) {
+      promoteMutation.mutate(channelId);
     }
   };
 
@@ -280,7 +343,9 @@ export function Dashboard() {
     return acc;
   }, new Map<string, ChannelWithStats>());
 
-  const uniqueLiveChannels = Array.from(uniqueLiveChannelsMap.values());
+  // 視聴者数の降順でソート（楽観的更新時と再検証後で一貫した順序を保証）
+  const uniqueLiveChannels = Array.from(uniqueLiveChannelsMap.values())
+    .sort((a, b) => (b.current_viewers ?? 0) - (a.current_viewers ?? 0));
 
   const totalViewers = uniqueLiveChannels.reduce((sum, channel) => sum + (channel.current_viewers || 0), 0);
 

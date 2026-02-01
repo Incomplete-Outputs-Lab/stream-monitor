@@ -653,21 +653,44 @@ pub fn get_game_daily_stats(
             WHERE ss.category = ?
                 AND ss.collected_at >= ?
                 AND ss.collected_at <= ?
+        ),
+        daily_broadcast_hours AS (
+            SELECT 
+                DATE(s.started_at) as date,
+                COALESCE(SUM(
+                    EXTRACT(EPOCH FROM (
+                        COALESCE(s.ended_at, CAST(CURRENT_TIMESTAMP AS TIMESTAMP)) - s.started_at
+                    )) / 3600.0
+                ), 0) AS hours_broadcasted
+            FROM streams s
+            JOIN stream_stats ss ON s.id = ss.stream_id
+            WHERE ss.category = ?
+                AND s.started_at >= ?
+                AND s.started_at <= ?
+            GROUP BY DATE(s.started_at)
         )
         SELECT 
-            date::VARCHAR as date,
-            COALESCE(SUM(viewer_count * COALESCE(interval_minutes, 1)), 0)::BIGINT AS minutes_watched,
-            COALESCE(SUM(COALESCE(interval_minutes, 1)) / 60.0, 0) AS hours_broadcasted,
-            COALESCE(AVG(viewer_count), 0) AS average_ccu,
-            COALESCE(SUM(COALESCE(interval_minutes, 1)) / 60.0, 0) AS collection_hours
-        FROM stats_with_interval
-        WHERE viewer_count IS NOT NULL
-        GROUP BY date
-        ORDER BY date
+            swi.date::VARCHAR as date,
+            COALESCE(SUM(swi.viewer_count * COALESCE(swi.interval_minutes, 1)), 0)::BIGINT AS minutes_watched,
+            COALESCE(dbh.hours_broadcasted, 0) AS hours_broadcasted,
+            COALESCE(AVG(swi.viewer_count), 0) AS average_ccu,
+            COALESCE(SUM(COALESCE(swi.interval_minutes, 1)) / 60.0, 0) AS collection_hours
+        FROM stats_with_interval swi
+        LEFT JOIN daily_broadcast_hours dbh ON swi.date = dbh.date
+        WHERE swi.viewer_count IS NOT NULL
+        GROUP BY swi.date, dbh.hours_broadcasted
+        ORDER BY swi.date
     "#;
 
     let mut stmt = conn.prepare(sql)?;
-    let params = vec![category.to_string(), start_time.to_string(), end_time.to_string()];
+    let params = vec![
+        category.to_string(), 
+        start_time.to_string(), 
+        end_time.to_string(),
+        category.to_string(),
+        start_time.to_string(),
+        end_time.to_string(),
+    ];
     
     let results = utils::query_map_with_params(&mut stmt, &params, |row| {
         Ok(DailyStats {
@@ -705,21 +728,43 @@ pub fn get_channel_daily_stats(
             WHERE s.channel_id = ?
                 AND ss.collected_at >= ?
                 AND ss.collected_at <= ?
+        ),
+        daily_broadcast_hours AS (
+            SELECT 
+                DATE(s.started_at) as date,
+                COALESCE(SUM(
+                    EXTRACT(EPOCH FROM (
+                        COALESCE(s.ended_at, CAST(CURRENT_TIMESTAMP AS TIMESTAMP)) - s.started_at
+                    )) / 3600.0
+                ), 0) AS hours_broadcasted
+            FROM streams s
+            WHERE s.channel_id = ?
+                AND s.started_at >= ?
+                AND s.started_at <= ?
+            GROUP BY DATE(s.started_at)
         )
         SELECT 
-            date::VARCHAR as date,
-            COALESCE(SUM(viewer_count * COALESCE(interval_minutes, 1)), 0)::BIGINT AS minutes_watched,
-            COALESCE(SUM(COALESCE(interval_minutes, 1)) / 60.0, 0) AS hours_broadcasted,
-            COALESCE(AVG(viewer_count), 0) AS average_ccu,
-            COALESCE(SUM(COALESCE(interval_minutes, 1)) / 60.0, 0) AS collection_hours
-        FROM stats_with_interval
-        WHERE viewer_count IS NOT NULL
-        GROUP BY date
-        ORDER BY date
+            swi.date::VARCHAR as date,
+            COALESCE(SUM(swi.viewer_count * COALESCE(swi.interval_minutes, 1)), 0)::BIGINT AS minutes_watched,
+            COALESCE(dbh.hours_broadcasted, 0) AS hours_broadcasted,
+            COALESCE(AVG(swi.viewer_count), 0) AS average_ccu,
+            COALESCE(SUM(COALESCE(swi.interval_minutes, 1)) / 60.0, 0) AS collection_hours
+        FROM stats_with_interval swi
+        LEFT JOIN daily_broadcast_hours dbh ON swi.date = dbh.date
+        WHERE swi.viewer_count IS NOT NULL
+        GROUP BY swi.date, dbh.hours_broadcasted
+        ORDER BY swi.date
     "#;
 
     let mut stmt = conn.prepare(sql)?;
-    let params = vec![channel_id.to_string(), start_time.to_string(), end_time.to_string()];
+    let params = vec![
+        channel_id.to_string(), 
+        start_time.to_string(), 
+        end_time.to_string(),
+        channel_id.to_string(),
+        start_time.to_string(),
+        end_time.to_string(),
+    ];
     
     let results = utils::query_map_with_params(&mut stmt, &params, |row| {
         Ok(DailyStats {

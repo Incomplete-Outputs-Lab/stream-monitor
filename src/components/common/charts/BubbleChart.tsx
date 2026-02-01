@@ -31,14 +31,6 @@ export function BubbleChart({
   height = 400,
   showLegend = false,
 }: BubbleChartProps) {
-  // Find min/max for Z-axis scaling
-  const zValues = data
-    .map(item => item[zDataKey])
-    .filter((val): val is number => typeof val === 'number');
-  
-  const minZ = Math.min(...zValues);
-  const maxZ = Math.max(...zValues);
-
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;

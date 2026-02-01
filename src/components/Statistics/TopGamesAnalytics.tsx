@@ -101,13 +101,6 @@ export default function TopGamesAnalytics({
     return Math.round(mw * 0.1333);
   };
 
-  // トップチャンネルのMW%を計算
-  const calculateTopChannelPercent = (game: GameAnalytics): number => {
-    // 注: 実際にはget_game_analyticsでチャンネル別MWを取得する必要がある
-    // 現在はダミー値を返す
-    return 0;
-  };
-
   return (
     <div className="space-y-6">
       {availability && <DataAvailabilityBanner availability={availability} />}

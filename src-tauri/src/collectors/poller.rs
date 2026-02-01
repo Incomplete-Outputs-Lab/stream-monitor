@@ -222,7 +222,9 @@ impl ChannelPoller {
                 match collector.poll_channel(&updated_channel).await {
                     Ok(Some(stream_data)) => {
                         // ストリーム情報をデータベースに保存
-                        if let Err(e) = Self::save_stream_data(&conn, &updated_channel, &stream_data) {
+                        if let Err(e) =
+                            Self::save_stream_data(&conn, &updated_channel, &stream_data)
+                        {
                             logger.error(&format!(
                                 "Failed to save stream data for channel {}: {}",
                                 channel_id, e
@@ -381,7 +383,7 @@ impl ChannelPoller {
         stream_data: &StreamData,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let channel_id = channel.id.ok_or("Channel ID is required")?;
-        
+
         // StreamDataから配信情報を含むStreamレコードを作成
         let stream = Stream {
             id: None,

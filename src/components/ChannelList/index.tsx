@@ -1,14 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { useState } from "react";
-import { Channel, ChannelWithStats } from "../../types";
+import { ChannelWithStats } from "../../types";
 import { ChannelForm } from "./ChannelForm";
 import { ChannelEditForm } from "./ChannelEditForm";
 import { ChannelItem } from "./ChannelItem";
 
 export function ChannelList() {
   const [showAddForm, setShowAddForm] = useState(false);
-  const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
+  const [editingChannel, setEditingChannel] = useState<ChannelWithStats | null>(null);
   const [filter, setFilter] = useState<'all' | 'twitch' | 'youtube'>('all');
 
   const queryClient = useQueryClient();
@@ -16,7 +16,7 @@ export function ChannelList() {
   // チャンネル取得
   const { data: channels = [], isLoading } = useQuery({
     queryKey: ["channels"],
-    queryFn: () => invoke<Channel[]>("list_channels"),
+    queryFn: () => invoke<ChannelWithStats[]>("list_channels"),
     refetchInterval: 30000, // 30秒ごとに更新
   });
 
@@ -70,7 +70,7 @@ export function ChannelList() {
     setEditingChannel(null);
   };
 
-  const handleEditChannel = (channel: Channel | ChannelWithStats) => {
+  const handleEditChannel = (channel: ChannelWithStats) => {
     setEditingChannel(channel);
     setShowAddForm(false);
   };

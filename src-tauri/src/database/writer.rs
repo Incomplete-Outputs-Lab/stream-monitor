@@ -152,5 +152,4 @@ impl DatabaseWriter {
             }
         }
     }
-
 }

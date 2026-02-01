@@ -308,6 +308,54 @@ impl TwitchApiClient {
         }
     }
 
+    /// 複数のユーザーIDからストリーム情報をバッチ取得
+    pub async fn get_streams_by_user_ids(
+        &self,
+        user_ids: &[&str],
+    ) -> Result<Vec<Stream>, Box<dyn std::error::Error>> {
+        if user_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let token = self.get_user_token().await?;
+
+        let user_id_refs: Vec<&types::UserIdRef> = user_ids.iter().map(|id| (*id).into()).collect();
+        let request = GetStreamsRequest::user_ids(user_id_refs.as_slice());
+
+        // リクエストをトラッキング
+        if let Ok(mut limiter) = self.rate_limiter.lock() {
+            limiter.track_request();
+        }
+
+        match self.client.req_get(request, &token).await {
+            Ok(response) => Ok(response.data),
+            Err(e) => {
+                // 401エラーの場合、トークンをリフレッシュして再試行
+                if e.to_string().contains("401") || e.to_string().contains("Unauthorized") {
+                    eprintln!("Token expired, attempting refresh...");
+                    let _new_token = self.refresh_token().await?;
+                    let refreshed_token = self.get_user_token().await?;
+
+                    // 再試行もトラッキング
+                    if let Ok(mut limiter) = self.rate_limiter.lock() {
+                        limiter.track_request();
+                    }
+
+                    let response = self
+                        .client
+                        .req_get(
+                            GetStreamsRequest::user_ids(user_id_refs.as_slice()),
+                            &refreshed_token,
+                        )
+                        .await?;
+                    Ok(response.data)
+                } else {
+                    Err(e.into())
+                }
+            }
+        }
+    }
+
     /// 複数のユーザーIDからユーザー情報を取得
     pub async fn get_users_by_ids(
         &self,
@@ -315,10 +363,7 @@ impl TwitchApiClient {
     ) -> Result<Vec<User>, Box<dyn std::error::Error>> {
         let token = self.get_user_token().await?;
 
-        let user_id_refs: Vec<&types::UserIdRef> = user_ids
-            .iter()
-            .map(|id| (*id).into())
-            .collect();
+        let user_id_refs: Vec<&types::UserIdRef> = user_ids.iter().map(|id| (*id).into()).collect();
         let request = GetUsersRequest::ids(user_id_refs.as_slice());
 
         // リクエストをトラッキング
@@ -342,7 +387,55 @@ impl TwitchApiClient {
 
                     let response = self
                         .client
-                        .req_get(GetUsersRequest::ids(user_id_refs.as_slice()), &refreshed_token)
+                        .req_get(
+                            GetUsersRequest::ids(user_id_refs.as_slice()),
+                            &refreshed_token,
+                        )
+                        .await?;
+                    Ok(response.data)
+                } else {
+                    Err(e.into())
+                }
+            }
+        }
+    }
+
+    /// 複数のログイン名からユーザー情報を取得
+    pub async fn get_users_by_logins(
+        &self,
+        logins: &[&str],
+    ) -> Result<Vec<User>, Box<dyn std::error::Error>> {
+        let token = self.get_user_token().await?;
+
+        let login_refs: Vec<&types::UserNameRef> =
+            logins.iter().map(|login| (*login).into()).collect();
+        let request = GetUsersRequest::logins(login_refs.as_slice());
+
+        // リクエストをトラッキング
+        if let Ok(mut limiter) = self.rate_limiter.lock() {
+            limiter.track_request();
+        }
+
+        match self.client.req_get(request, &token).await {
+            Ok(response) => Ok(response.data),
+            Err(e) => {
+                // 401エラーの場合、トークンをリフレッシュして再試行
+                if e.to_string().contains("401") || e.to_string().contains("Unauthorized") {
+                    eprintln!("Token expired, attempting refresh...");
+                    let _new_token = self.refresh_token().await?;
+                    let refreshed_token = self.get_user_token().await?;
+
+                    // 再試行もトラッキング
+                    if let Ok(mut limiter) = self.rate_limiter.lock() {
+                        limiter.track_request();
+                    }
+
+                    let response = self
+                        .client
+                        .req_get(
+                            GetUsersRequest::logins(login_refs.as_slice()),
+                            &refreshed_token,
+                        )
                         .await?;
                     Ok(response.data)
                 } else {
@@ -367,10 +460,11 @@ impl TwitchApiClient {
 
         // GetStreamsRequestを構築
         let mut request = GetStreamsRequest::default();
-        
+
         // ゲームIDを設定
         if let Some(ids) = game_ids {
-            let game_id_refs: Vec<types::CategoryId> = ids.into_iter().map(|id| id.into()).collect();
+            let game_id_refs: Vec<types::CategoryId> =
+                ids.into_iter().map(|id| id.into()).collect();
             request.game_id = game_id_refs.into();
         }
 

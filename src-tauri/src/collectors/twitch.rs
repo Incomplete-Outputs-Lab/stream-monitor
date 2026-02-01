@@ -73,9 +73,10 @@ impl Collector for TwitchCollector {
                 .api_client
                 .get_users_by_ids(&[channel.channel_id.as_str()])
                 .await?;
-            users.into_iter().next().ok_or_else(|| {
-                format!("User not found for ID: {}", channel.channel_id)
-            })?
+            users
+                .into_iter()
+                .next()
+                .ok_or_else(|| format!("User not found for ID: {}", channel.channel_id))?
         } else {
             // loginの場合、loginでユーザー情報を取得
             self.api_client
@@ -90,7 +91,6 @@ impl Collector for TwitchCollector {
             .await?;
 
         if let Some(stream) = stream_opt {
-
             // Twitch APIから取得したストリーム情報を構造化して返す
             Ok(Some(StreamData {
                 stream_id: stream.id.to_string(),

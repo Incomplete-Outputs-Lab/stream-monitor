@@ -76,7 +76,6 @@ pub async fn get_stream_stats(
     stats.map_err(|e| format!("Failed to collect stats: {}", e))
 }
 
-
 #[tauri::command]
 pub async fn get_channel_stats(
     app_handle: AppHandle,

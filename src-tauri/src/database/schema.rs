@@ -197,67 +197,6 @@ fn migrate_database_schema(conn: &Connection) -> Result<(), duckdb::Error> {
         conn.execute("ALTER TABLE streams ADD COLUMN thumbnail_url TEXT", [])?;
     }
 
-    // channelsテーブルにdisplay_nameフィールドを追加
-    let mut channels_has_display_name = conn.prepare(
-        "SELECT COUNT(*) FROM pragma_table_info('channels') WHERE name = 'display_name'",
-    )?;
-    let channels_has_display_name_count: i64 =
-        channels_has_display_name.query_row([], |row| row.get(0))?;
-
-    if channels_has_display_name_count == 0 {
-        // display_nameフィールドがない場合、ALTER TABLEで追加
-        eprintln!("[Migration] Adding display_name column to channels table");
-        conn.execute("ALTER TABLE channels ADD COLUMN display_name TEXT", [])?;
-    }
-
-    // channelsテーブルにprofile_image_urlフィールドを追加
-    let mut channels_has_profile_image = conn.prepare(
-        "SELECT COUNT(*) FROM pragma_table_info('channels') WHERE name = 'profile_image_url'",
-    )?;
-    let channels_has_profile_image_count: i64 =
-        channels_has_profile_image.query_row([], |row| row.get(0))?;
-
-    if channels_has_profile_image_count == 0 {
-        // profile_image_urlフィールドがない場合、ALTER TABLEで追加
-        eprintln!("[Migration] Adding profile_image_url column to channels table");
-        conn.execute("ALTER TABLE channels ADD COLUMN profile_image_url TEXT", [])?;
-    }
-
-    // channelsテーブルにfollower_countフィールドを追加
-    let mut channels_has_follower_count = conn.prepare(
-        "SELECT COUNT(*) FROM pragma_table_info('channels') WHERE name = 'follower_count'",
-    )?;
-    let channels_has_follower_count_count: i64 =
-        channels_has_follower_count.query_row([], |row| row.get(0))?;
-
-    if channels_has_follower_count_count == 0 {
-        eprintln!("[Migration] Adding follower_count column to channels table");
-        conn.execute("ALTER TABLE channels ADD COLUMN follower_count INTEGER", [])?;
-    }
-
-    // channelsテーブルにbroadcaster_typeフィールドを追加
-    let mut channels_has_broadcaster_type = conn.prepare(
-        "SELECT COUNT(*) FROM pragma_table_info('channels') WHERE name = 'broadcaster_type'",
-    )?;
-    let channels_has_broadcaster_type_count: i64 =
-        channels_has_broadcaster_type.query_row([], |row| row.get(0))?;
-
-    if channels_has_broadcaster_type_count == 0 {
-        eprintln!("[Migration] Adding broadcaster_type column to channels table");
-        conn.execute("ALTER TABLE channels ADD COLUMN broadcaster_type TEXT", [])?;
-    }
-
-    // channelsテーブルにview_countフィールドを追加
-    let mut channels_has_view_count = conn
-        .prepare("SELECT COUNT(*) FROM pragma_table_info('channels') WHERE name = 'view_count'")?;
-    let channels_has_view_count_count: i64 =
-        channels_has_view_count.query_row([], |row| row.get(0))?;
-
-    if channels_has_view_count_count == 0 {
-        eprintln!("[Migration] Adding view_count column to channels table");
-        conn.execute("ALTER TABLE channels ADD COLUMN view_count INTEGER", [])?;
-    }
-
     // stream_statsテーブルにcategoryフィールドを追加
     let mut stream_stats_has_category = conn.prepare(
         "SELECT COUNT(*) FROM pragma_table_info('stream_stats') WHERE name = 'category'",
@@ -294,7 +233,10 @@ fn migrate_database_schema(conn: &Connection) -> Result<(), duckdb::Error> {
 
     if channels_has_discovered_at_count == 0 {
         eprintln!("[Migration] Adding discovered_at column to channels table");
-        conn.execute("ALTER TABLE channels ADD COLUMN discovered_at TIMESTAMP", [])?;
+        conn.execute(
+            "ALTER TABLE channels ADD COLUMN discovered_at TIMESTAMP",
+            [],
+        )?;
     }
 
     // channelsテーブルにcurrent_viewer_countフィールドを追加
@@ -306,7 +248,10 @@ fn migrate_database_schema(conn: &Connection) -> Result<(), duckdb::Error> {
 
     if channels_has_current_viewer_count_count == 0 {
         eprintln!("[Migration] Adding current_viewer_count column to channels table");
-        conn.execute("ALTER TABLE channels ADD COLUMN current_viewer_count INTEGER", [])?;
+        conn.execute(
+            "ALTER TABLE channels ADD COLUMN current_viewer_count INTEGER",
+            [],
+        )?;
     }
 
     // channelsテーブルにcurrent_categoryフィールドを追加

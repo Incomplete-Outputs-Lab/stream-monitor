@@ -55,12 +55,10 @@ impl AutoDiscoveryPoller {
             Some(client) => client.clone(),
             None => {
                 // twitch_clientがNoneの場合、設定からClient IDを取得して新規作成
-                let client_id = settings
-                    .twitch
-                    .client_id
-                    .as_ref()
-                    .ok_or("Twitch Client ID is not configured. Please configure it in Settings.")?;
-                
+                let client_id = settings.twitch.client_id.as_ref().ok_or(
+                    "Twitch Client ID is not configured. Please configure it in Settings.",
+                )?;
+
                 eprintln!("[AutoDiscovery] Creating new TwitchApiClient with client_id");
                 Arc::new(
                     TwitchApiClient::new(client_id.clone(), None)
@@ -106,7 +104,14 @@ impl AutoDiscoveryPoller {
                 };
 
                 // 配信を取得
-                match Self::discover_streams(&twitch_client, current_auto_discovery, &db_manager, &app_handle).await {
+                match Self::discover_streams(
+                    &twitch_client,
+                    current_auto_discovery,
+                    &db_manager,
+                    &app_handle,
+                )
+                .await
+                {
                     Ok(count) => {
                         eprintln!("[AutoDiscovery] Discovered {} streams", count);
                         if count > 0 {
@@ -196,10 +201,8 @@ impl AutoDiscoveryPoller {
         let users = twitch_client.get_users_by_ids(&user_id_refs).await?;
 
         // User情報をHashMapに格納
-        let user_map: HashMap<String, _> = users
-            .into_iter()
-            .map(|u| (u.id.to_string(), u))
-            .collect();
+        let user_map: HashMap<String, _> =
+            users.into_iter().map(|u| (u.id.to_string(), u)).collect();
 
         // メモリキャッシュに保存するための配信情報を構築
         let mut discovered_streams_info = Vec::new();
@@ -217,13 +220,13 @@ impl AutoDiscoveryPoller {
                 .and_then(|u| u.profile_image_url.as_deref())
                 .map(|s| s.to_string());
             let display_name = Some(stream.user_name.to_string());
-            let broadcaster_type = user
-                .and_then(|u| u.broadcaster_type.as_ref())
-                .map(|bt| match bt {
-                    twitch_api::types::BroadcasterType::Partner => "partner".to_string(),
-                    twitch_api::types::BroadcasterType::Affiliate => "affiliate".to_string(),
-                    _ => "".to_string(),
-                });
+            let broadcaster_type =
+                user.and_then(|u| u.broadcaster_type.as_ref())
+                    .map(|bt| match bt {
+                        twitch_api::types::BroadcasterType::Partner => "partner".to_string(),
+                        twitch_api::types::BroadcasterType::Affiliate => "affiliate".to_string(),
+                        _ => "".to_string(),
+                    });
             let follower_count: Option<i32> = None; // view_count is deprecated
 
             // DiscoveredStreamInfoを構築（メモリキャッシュ用）
@@ -280,7 +283,10 @@ impl AutoDiscoveryPoller {
         // フロントエンドにイベントを発行（キャッシュ無効化のトリガー）
         let _ = app_handle.emit("discovered-streams-updated", ());
 
-        eprintln!("[AutoDiscovery] Discovered {} streams, saved to cache", discovered_count);
+        eprintln!(
+            "[AutoDiscovery] Discovered {} streams, saved to cache",
+            discovered_count
+        );
 
         Ok(discovered_count)
     }

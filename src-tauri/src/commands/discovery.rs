@@ -25,11 +25,7 @@ pub async fn save_auto_discovery_settings(
     auto_discovery_poller: State<'_, Arc<Mutex<Option<AutoDiscoveryPoller>>>>,
 ) -> Result<(), String> {
     // max_streamsのバリデーション（1-500の範囲に制限）
-    if settings.max_streams < 1 {
-        settings.max_streams = 1;
-    } else if settings.max_streams > 500 {
-        settings.max_streams = 500;
-    }
+    settings.max_streams = settings.max_streams.clamp(1, 500);
 
     // 設定をロード
     let mut app_settings = SettingsManager::load_settings(&app_handle)
@@ -162,7 +158,8 @@ pub async fn promote_discovered_channel(
         .cloned();
     drop(streams_lock);
 
-    let stream_info = stream_info.ok_or_else(|| format!("Channel {} not found in cache", channel_id))?;
+    let stream_info =
+        stream_info.ok_or_else(|| format!("Channel {} not found in cache", channel_id))?;
 
     // channelsテーブルに新規登録（手動登録として）
     let conn = db_manager
@@ -205,9 +202,9 @@ pub async fn promote_discovered_channel(
                 stream_info.profile_image_url.as_deref().unwrap_or(""),
                 stream_info.broadcaster_type.as_deref().unwrap_or(""),
                 stream_info.follower_count.unwrap_or(0),
-                "true",  // enabled
-                "60",    // poll_interval
-                "false", // is_auto_discovered
+                "true",         // enabled
+                "60",           // poll_interval
+                "false",        // is_auto_discovered
                 None::<String>, // discovered_at
                 now.as_str(),
                 now.as_str(),
@@ -218,7 +215,10 @@ pub async fn promote_discovered_channel(
 
     drop(conn);
 
-    eprintln!("[Discovery] Promoted channel {} to manual registration", channel_id);
+    eprintln!(
+        "[Discovery] Promoted channel {} to manual registration",
+        channel_id
+    );
     Ok(())
 }
 

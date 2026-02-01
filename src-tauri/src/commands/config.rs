@@ -16,6 +16,7 @@ pub struct BuildInfo {
     pub commit_hash: Option<String>,
     pub build_date: Option<String>,
     pub developer: String,
+    pub repository_url: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -228,7 +229,8 @@ pub async fn get_build_info() -> Result<BuildInfo, String> {
         version: env!("CARGO_PKG_VERSION").to_string(),
         commit_hash: option_env!("GIT_COMMIT_HASH").map(|s| s.to_string()),
         build_date: option_env!("BUILD_DATE").map(|s| s.to_string()),
-        developer: "Flowing".to_string(),
+        developer: "未完成成果物研究所".to_string(),
+        repository_url: "https://github.com/Incomplete-Outputs-Lab/stream-monitor".to_string(),
     })
 }
 

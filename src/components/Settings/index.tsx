@@ -13,6 +13,7 @@ interface BuildInfo {
   commit_hash?: string;
   build_date?: string;
   developer: string;
+  repository_url: string;
 }
 
 export function Settings() {
@@ -197,10 +198,8 @@ export function Settings() {
             />
           )}
         </section>
-      </div>
 
-      {/* Twitch自動発見設定 */}
-      <div className="mt-6">
+        {/* Twitch自動発見設定 */}
         <AutoDiscoveryForm />
       </div>
 
@@ -217,9 +216,14 @@ export function Settings() {
               {buildInfo.commit_hash && (
                 <div className="flex justify-between">
                   <span className="text-gray-600 dark:text-gray-400">コミット:</span>
-                  <span className="text-gray-900 dark:text-gray-100 font-mono">
+                  <a
+                    href={`${buildInfo.repository_url}/commit/${buildInfo.commit_hash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 font-mono transition-colors underline"
+                  >
                     {buildInfo.commit_hash.substring(0, 8)}
-                  </span>
+                  </a>
                 </div>
               )}
               {buildInfo.build_date && (
@@ -231,6 +235,17 @@ export function Settings() {
               <div className="flex justify-between">
                 <span className="text-gray-600 dark:text-gray-400">開発元:</span>
                 <span className="text-gray-900 dark:text-gray-100">{buildInfo.developer}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">リポジトリ:</span>
+                <a
+                  href={buildInfo.repository_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 transition-colors underline"
+                >
+                  GitHub
+                </a>
               </div>
             </div>
           </section>

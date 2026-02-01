@@ -127,6 +127,26 @@ export function Settings() {
         {/* アプリ設定 */}
         <section className="card p-4 space-y-3">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">アプリ設定</h2>
+          
+          {/* システムトレイ常駐 */}
+          <div className="pb-3 border-b border-gray-200 dark:border-slate-600">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  システムトレイに常駐
+                </span>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  ウィンドウを閉じてもアプリは終了しません
+                </p>
+              </div>
+              <div className="flex items-center space-x-2">
+                <span className="text-xs text-green-600 dark:text-green-400 font-medium">有効</span>
+                <div className="w-2 h-2 rounded-full bg-green-500"></div>
+              </div>
+            </div>
+          </div>
+
+          {/* OS起動時に自動起動 */}
           <div>
             <label className="flex items-center justify-between cursor-pointer">
               <div>
@@ -134,7 +154,7 @@ export function Settings() {
                   OS起動時に自動起動
                 </span>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  システムトレイに常駐します
+                  Windowsの起動時にアプリを自動的に起動します
                 </p>
               </div>
               <button

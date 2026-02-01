@@ -1,3 +1,4 @@
+pub mod analytics;
 pub mod channels;
 pub mod chat;
 pub mod config;

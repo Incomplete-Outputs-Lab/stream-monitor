@@ -36,6 +36,7 @@ pub struct StreamStats {
     pub collected_at: String,
     pub viewer_count: Option<i32>,
     pub chat_rate_1min: i32,
+    pub category: Option<String>,
 }
 
 /// Combined stream data returned by collectors
@@ -119,6 +120,7 @@ mod tests {
             collected_at: "2024-01-01T00:00:00Z".to_string(),
             viewer_count: Some(100),
             chat_rate_1min: 10,
+            category: Some("Just Chatting".to_string()),
         };
 
         let json = serde_json::to_string(&stats).unwrap();
@@ -126,5 +128,6 @@ mod tests {
 
         assert_eq!(stats.viewer_count, deserialized.viewer_count);
         assert_eq!(stats.chat_rate_1min, deserialized.chat_rate_1min);
+        assert_eq!(stats.category, deserialized.category);
     }
 }

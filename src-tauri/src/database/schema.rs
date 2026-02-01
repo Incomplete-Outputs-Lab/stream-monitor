@@ -256,5 +256,17 @@ fn migrate_database_schema(conn: &Connection) -> Result<(), duckdb::Error> {
         conn.execute("ALTER TABLE channels ADD COLUMN view_count INTEGER", [])?;
     }
 
+    // stream_statsテーブルにcategoryフィールドを追加
+    let mut stream_stats_has_category = conn.prepare(
+        "SELECT COUNT(*) FROM pragma_table_info('stream_stats') WHERE name = 'category'",
+    )?;
+    let stream_stats_has_category_count: i64 =
+        stream_stats_has_category.query_row([], |row| row.get(0))?;
+
+    if stream_stats_has_category_count == 0 {
+        eprintln!("[Migration] Adding category column to stream_stats table");
+        conn.execute("ALTER TABLE stream_stats ADD COLUMN category TEXT", [])?;
+    }
+
     Ok(())
 }

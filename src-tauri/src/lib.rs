@@ -13,6 +13,7 @@ use tokio::sync::Mutex;
 
 use collectors::{poller::ChannelPoller, twitch::TwitchCollector, youtube::YouTubeCollector};
 use commands::{
+    analytics::{get_broadcaster_analytics, get_game_analytics},
     channels::{add_channel, list_channels, remove_channel, toggle_channel, update_channel},
     chat::{get_chat_messages, get_chat_rate, get_chat_stats},
     config::{
@@ -243,6 +244,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             greet,
+            // Analytics commands
+            get_broadcaster_analytics,
+            get_game_analytics,
             // Channel commands
             add_channel,
             remove_channel,

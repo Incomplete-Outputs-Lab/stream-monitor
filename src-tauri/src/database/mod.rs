@@ -1,4 +1,5 @@
 pub mod aggregation;
+pub mod analytics;
 pub mod models;
 pub mod schema;
 pub mod utils;

@@ -313,6 +313,7 @@ impl ChannelPoller {
             collected_at: Utc::now().to_rfc3339(),
             viewer_count: stream_data.viewer_count,
             chat_rate_1min: stream_data.chat_rate_1min,
+            category: stream_data.category.clone(),
         };
 
         // ストリーム統計を保存

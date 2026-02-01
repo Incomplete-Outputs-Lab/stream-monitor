@@ -20,6 +20,7 @@ export interface StreamStats {
   collected_at: string;
   viewer_count?: number;
   chat_rate_1min: number;
+  category?: string;
 }
 
 export interface ChannelWithStats extends Channel {
@@ -181,4 +182,23 @@ export interface SaveTemplateRequest {
 export interface TableInfo {
   table_name: string;
   column_count: number;
+}
+
+export interface BroadcasterAnalytics {
+  channel_id: number;
+  channel_name: string;
+  minutes_watched: number;
+  hours_broadcasted: number;
+  average_ccu: number;
+  main_played_title: string | null;
+  main_title_mw_percent: number | null;
+}
+
+export interface GameAnalytics {
+  category: string;
+  minutes_watched: number;
+  hours_broadcasted: number;
+  average_ccu: number;
+  unique_broadcasters: number;
+  top_channel: string | null;
 }

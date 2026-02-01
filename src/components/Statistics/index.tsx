@@ -4,10 +4,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { ChannelStatistics } from "./ChannelStatistics";
 import { ChatAnalysis } from "./ChatAnalysis";
 import { StreamSessionView } from "./StreamSessionView";
+import BroadcasterAnalytics from "./BroadcasterAnalytics";
+import GameAnalytics from "./GameAnalytics";
 import { DateRangePicker } from "./DateRangePicker";
 import { Channel, StreamStats } from "../../types";
 
-type TabType = "overview" | "channels" | "chat" | "sessions";
+type TabType = "overview" | "channels" | "chat" | "sessions" | "broadcaster" | "game";
 
 interface ChannelStat {
   channel: Channel;
@@ -89,6 +91,8 @@ export function Statistics() {
   const tabs = [
     { id: "overview" as TabType, label: "概要", icon: "📊" },
     { id: "channels" as TabType, label: "チャンネル統計", icon: "📺" },
+    { id: "broadcaster" as TabType, label: "配信者分析", icon: "👤" },
+    { id: "game" as TabType, label: "ゲーム分析", icon: "🎮" },
     { id: "chat" as TabType, label: "チャット分析", icon: "💬" },
     { id: "sessions" as TabType, label: "セッション履歴", icon: "📅" },
   ];
@@ -171,7 +175,7 @@ export function Statistics() {
                 <p className="text-gray-600 dark:text-gray-400 mb-6">
                   タブを選択して詳細な統計データを確認してください
                 </p>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl mx-auto">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-w-5xl mx-auto">
                   <button
                     onClick={() => setActiveTab("channels")}
                     className="p-6 bg-purple-50 dark:bg-purple-900/20 rounded-lg hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors"
@@ -180,6 +184,26 @@ export function Statistics() {
                     <div className="font-semibold text-gray-900 dark:text-gray-100">チャンネル統計</div>
                     <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                       チャンネル別の詳細統計
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("broadcaster")}
+                    className="p-6 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition-colors"
+                  >
+                    <div className="text-3xl mb-2">👤</div>
+                    <div className="font-semibold text-gray-900 dark:text-gray-100">配信者分析</div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                      MinutesWatched・放送時間等
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("game")}
+                    className="p-6 bg-pink-50 dark:bg-pink-900/20 rounded-lg hover:bg-pink-100 dark:hover:bg-pink-900/30 transition-colors"
+                  >
+                    <div className="text-3xl mb-2">🎮</div>
+                    <div className="font-semibold text-gray-900 dark:text-gray-100">ゲーム分析</div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                      ゲームタイトル別統計
                     </div>
                   </button>
                   <button
@@ -218,6 +242,21 @@ export function Statistics() {
                 dateRange={dateRange}
               />
             )
+          )}
+
+          {activeTab === "broadcaster" && (
+            <BroadcasterAnalytics
+              channelId={selectedChannelId || undefined}
+              startTime={new Date(dateRange.start).toISOString()}
+              endTime={new Date(dateRange.end + 'T23:59:59').toISOString()}
+            />
+          )}
+
+          {activeTab === "game" && (
+            <GameAnalytics
+              startTime={new Date(dateRange.start).toISOString()}
+              endTime={new Date(dateRange.end + 'T23:59:59').toISOString()}
+            />
           )}
 
           {activeTab === "chat" && (

@@ -65,13 +65,6 @@ pub async fn save_token(
 }
 
 #[tauri::command]
-pub async fn get_token(app_handle: AppHandle, platform: String) -> Result<String, String> {
-    KeyringStore::get_token_with_app(&app_handle, &platform)
-        .config_context("get token")
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
 pub async fn delete_token(
     app_handle: AppHandle,
     platform: String,
@@ -84,11 +77,6 @@ pub async fn delete_token(
         success: true,
         message: "Token deleted successfully".to_string(),
     })
-}
-
-#[tauri::command]
-pub async fn has_token(app_handle: AppHandle, platform: String) -> Result<bool, String> {
-    Ok(KeyringStore::has_token_with_app(&app_handle, &platform))
 }
 
 #[tauri::command]
@@ -246,62 +234,6 @@ pub async fn get_build_info() -> Result<BuildInfo, String> {
         developer: "未完成成果物研究所".to_string(),
         repository_url: "https://github.com/Incomplete-Outputs-Lab/stream-monitor".to_string(),
     })
-}
-
-#[tauri::command]
-pub async fn initialize_database(app_handle: AppHandle) -> Result<DatabaseInitResult, String> {
-    eprintln!("[Database Init] Starting database initialization...");
-
-    match get_connection(&app_handle) {
-        Ok(conn) => {
-            // 明示的にスキーマ初期化を実行
-            match crate::database::schema::init_database(&conn) {
-                Ok(_) => {
-                    eprintln!("[Database Init] Database initialized successfully");
-                    Ok(DatabaseInitResult {
-                        success: true,
-                        message: "Database initialized successfully".to_string(),
-                        backup_created: None,
-                        error_type: None,
-                    })
-                }
-                Err(schema_err) => {
-                    eprintln!(
-                        "[Database Init] Schema initialization failed: {}",
-                        schema_err
-                    );
-                    Ok(DatabaseInitResult {
-                        success: false,
-                        message: format!("Schema initialization failed: {}", schema_err),
-                        backup_created: None,
-                        error_type: Some("schema_error".to_string()),
-                    })
-                }
-            }
-        }
-        Err(e) => {
-            eprintln!("[Database Init] Database initialization failed: {}", e);
-
-            // エラーの種類を判定
-            let error_type = if e
-                .to_string()
-                .contains("Failed to initialize database schema")
-            {
-                "schema_error"
-            } else if e.to_string().contains("Failed to open database") {
-                "connection_error"
-            } else {
-                "unknown_error"
-            };
-
-            Ok(DatabaseInitResult {
-                success: false,
-                message: format!("Database initialization failed: {}", e),
-                backup_created: None, // バックアップはまだ作成していない
-                error_type: Some(error_type.to_string()),
-            })
-        }
-    }
 }
 
 #[tauri::command]

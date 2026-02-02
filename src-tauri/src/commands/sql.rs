@@ -674,17 +674,51 @@ pub async fn list_sql_templates(
     Ok(templates)
 }
 
-/// 特定のSQLテンプレートを取得
+/// SQLテンプレートを保存（新規作成または更新）
 #[tauri::command]
-pub async fn get_sql_template(
+pub async fn save_sql_template(
     db_manager: State<'_, DatabaseManager>,
-    id: i64,
+    request: SaveTemplateRequest,
 ) -> Result<SqlTemplate, String> {
     let conn = db_manager
         .get_connection()
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 
+    let id = if let Some(id) = request.id {
+        // 更新
+        conn.execute(
+            "UPDATE sql_templates 
+             SET name = ?, description = ?, query = ?, updated_at = CURRENT_TIMESTAMP 
+             WHERE id = ?",
+            params![&request.name, &request.description, &request.query, id],
+        )
+        .db_context("update template")
+        .map_err(|e| e.to_string())?;
+
+        id
+    } else {
+        // 新規作成
+        conn.execute(
+            "INSERT INTO sql_templates (name, description, query) 
+             VALUES (?, ?, ?)",
+            params![&request.name, &request.description, &request.query],
+        )
+        .db_context("insert template")
+        .map_err(|e| e.to_string())?;
+
+        // 最後に挿入されたIDを取得
+        let mut stmt = conn
+            .prepare("SELECT currval('sql_templates_id_seq')")
+            .db_context("get last insert id")
+            .map_err(|e| e.to_string())?;
+
+        stmt.query_row([], |row| row.get(0))
+            .db_context("fetch last insert id")
+            .map_err(|e| e.to_string())?
+    };
+
+    // 保存したテンプレートを取得して返す
     let mut stmt = conn
         .prepare(
             "SELECT id, name, description, query, 
@@ -707,58 +741,9 @@ pub async fn get_sql_template(
                 updated_at: Some(row.get(5)?),
             })
         })
-        .map_err(|e| format!("Template not found: {}", e))?;
+        .map_err(|e| format!("Failed to retrieve saved template: {}", e))?;
 
     Ok(template)
-}
-
-/// SQLテンプレートを保存（新規作成または更新）
-#[tauri::command]
-pub async fn save_sql_template(
-    db_manager: State<'_, DatabaseManager>,
-    request: SaveTemplateRequest,
-) -> Result<SqlTemplate, String> {
-    let id = {
-        let conn = db_manager
-            .get_connection()
-            .db_context("get database connection")
-            .map_err(|e| e.to_string())?;
-
-        if let Some(id) = request.id {
-            // 更新
-            conn.execute(
-                "UPDATE sql_templates 
-                 SET name = ?, description = ?, query = ?, updated_at = CURRENT_TIMESTAMP 
-                 WHERE id = ?",
-                params![&request.name, &request.description, &request.query, id],
-            )
-            .db_context("update template")
-            .map_err(|e| e.to_string())?;
-
-            id
-        } else {
-            // 新規作成
-            conn.execute(
-                "INSERT INTO sql_templates (name, description, query) 
-                 VALUES (?, ?, ?)",
-                params![&request.name, &request.description, &request.query],
-            )
-            .db_context("insert template")
-            .map_err(|e| e.to_string())?;
-
-            // 最後に挿入されたIDを取得
-            let mut stmt = conn
-                .prepare("SELECT currval('sql_templates_id_seq')")
-                .db_context("get last insert id")
-                .map_err(|e| e.to_string())?;
-
-            stmt.query_row([], |row| row.get(0))
-                .db_context("fetch last insert id")
-                .map_err(|e| e.to_string())?
-        }
-    };
-
-    get_sql_template(db_manager, id).await
 }
 
 /// SQLテンプレートを削除

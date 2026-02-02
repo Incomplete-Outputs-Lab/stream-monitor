@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import type { TimePatternStats } from '../../../types';
-import { BarChart, LineChart } from '../../common/charts';
+import { BarChart } from '../../common/charts';
 import { LoadingSpinner } from '../../common/LoadingSpinner';
 
 interface TimePatternTabProps {

@@ -164,10 +164,10 @@ const AnomalyDetectionTab = ({ channelId, startTime, endTime }: AnomalyDetection
                   }}
                   labelStyle={{ color: '#f3f4f6' }}
                   itemStyle={{ color: '#f3f4f6' }}
-                  formatter={(value: any, name: string) => {
+                  formatter={(value: any, name?: string) => {
                     if (name === 'value') return [value.toLocaleString(), '視聴者数'];
                     if (name === 'zScore') return [value.toFixed(2), 'Z-score'];
-                    return [value, name];
+                    return [value, name || ''];
                   }}
                   labelFormatter={(label: any) => new Date(label).toLocaleString('ja-JP')}
                 />

@@ -45,14 +45,6 @@ impl ChannelPoller {
         }
     }
 
-    pub fn get_all_status(&self) -> Vec<CollectorStatus> {
-        if let Ok(status_map) = self.status_map.read() {
-            status_map.values().cloned().collect()
-        } else {
-            Vec::new()
-        }
-    }
-
     pub fn register_collector(
         &mut self,
         platform: String,

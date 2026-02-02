@@ -115,10 +115,10 @@ const CorrelationTab = ({ channelId, startTime, endTime }: CorrelationTabProps) 
                 }}
                 labelStyle={{ color: '#f3f4f6' }}
                 itemStyle={{ color: '#f3f4f6' }}
-                formatter={(value: any, name: string) => {
+                formatter={(value: any, name?: string) => {
                   if (name === 'viewers') return [value.toLocaleString(), '視聴者数'];
                   if (name === 'chats') return [value.toLocaleString(), 'チャット数'];
-                  return [value, name];
+                  return [value, name || ''];
                 }}
               />
               <Legend />
@@ -142,7 +142,7 @@ const CorrelationTab = ({ channelId, startTime, endTime }: CorrelationTabProps) 
               sampleCount: h.sampleCount,
             }))}
             xKey="hour"
-            bars={[{ key: 'correlation', color: '#8b5cf6', name: '相関係数' }]}
+            bars={[{ key: 'correlation', color: '#8b5cf6' }]}
             height={350}
           />
           <div className="mt-4 overflow-x-auto">

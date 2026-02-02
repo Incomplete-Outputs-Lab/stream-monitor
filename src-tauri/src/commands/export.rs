@@ -13,46 +13,6 @@ pub struct ExportQuery {
     pub delimiter: Option<String>,   // Custom delimiter (default: comma)
 }
 
-#[tauri::command]
-pub async fn export_to_csv(
-    _app_handle: AppHandle,
-    db_manager: State<'_, DatabaseManager>,
-    query: ExportQuery,
-    file_path: String,
-) -> Result<String, String> {
-    let conn = db_manager
-        .get_connection()
-        .db_context("get database connection")
-        .map_err(|e| e.to_string())?;
-
-    let stats = get_stream_stats_internal(&conn, &query)
-        .db_context("query stats")
-        .map_err(|e| e.to_string())?;
-
-    let stats_len = stats.len();
-
-    // CSV生成
-    let mut csv = String::from("id,stream_id,collected_at,viewer_count,chat_rate_1min\n");
-
-    for stat in &stats {
-        csv.push_str(&format!(
-            "{},{},{},{},{}\n",
-            stat.id.unwrap_or(0),
-            stat.stream_id,
-            stat.collected_at,
-            stat.viewer_count.unwrap_or(0),
-            stat.chat_rate_1min
-        ));
-    }
-
-    // ファイルに書き込み
-    std::fs::write(&file_path, csv)
-        .io_context("write file")
-        .map_err(|e| e.to_string())?;
-
-    Ok(format!("Exported {} records to {}", stats_len, file_path))
-}
-
 fn get_stream_stats_internal(
     conn: &Connection,
     query: &ExportQuery,

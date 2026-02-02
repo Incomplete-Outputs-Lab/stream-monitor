@@ -5,23 +5,11 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tokio::task::JoinHandle;
 use twitch_irc::login::StaticLoginCredentials;
 use twitch_irc::message::ServerMessage;
 use twitch_irc::ClientConfig;
 use twitch_irc::SecureTCPTransport;
 use twitch_irc::TwitchIRCClient;
-
-/// IRC接続統計情報
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct IrcConnectionStatus {
-    pub channel_id: i64,
-    pub channel_name: String,
-    pub is_connected: bool,
-    pub connected_at: Option<String>,
-    pub message_count: u64,
-    pub last_message_at: Option<String>,
-}
 
 /// チャンネルごとのIRC接続管理
 struct ChannelConnection {
@@ -29,18 +17,14 @@ struct ChannelConnection {
     channel_name: String,
     stream_id: Arc<Mutex<Option<i64>>>,
     is_connected: Arc<AtomicBool>,
-    connected_at: Arc<Mutex<Option<String>>>,
     message_count: Arc<AtomicU64>,
     last_message_at: Arc<Mutex<Option<String>>>,
-    join_handle: Option<JoinHandle<()>>,
 }
 
 /// 複数のTwitch IRC接続を管理するマネージャー
 pub struct TwitchIrcManager {
     channels: Arc<Mutex<HashMap<i64, ChannelConnection>>>,
     client: Arc<TwitchIRCClient<SecureTCPTransport, StaticLoginCredentials>>,
-    incoming_task: Arc<Mutex<Option<JoinHandle<()>>>>,
-    db_conn: Arc<Mutex<duckdb::Connection>>,
     logger: Arc<AppLogger>,
 }
 
@@ -57,8 +41,8 @@ impl TwitchIrcManager {
         let logger_clone = Arc::clone(&logger);
         let channels_clone = Arc::clone(&channels);
 
-        // メッセージ受信タスクを開始
-        let incoming_task = tokio::spawn(async move {
+        // メッセージ受信タスクを開始（バックグラウンドで継続実行）
+        let _incoming_task = tokio::spawn(async move {
             let mut batch = Vec::new();
             let mut last_flush = std::time::Instant::now();
 
@@ -142,11 +126,12 @@ impl TwitchIrcManager {
             }
         });
 
+        // incoming_taskを保持しないため、バックグラウンドで継続実行される
+        // db_connは直接保持せず、flush_batch内で使用する
+        
         Self {
             channels,
             client,
-            incoming_task: Arc::new(Mutex::new(Some(incoming_task))),
-            db_conn,
             logger,
         }
     }
@@ -205,10 +190,8 @@ impl TwitchIrcManager {
             channel_name: channel_name.to_string(),
             stream_id: Arc::new(Mutex::new(None)),
             is_connected: Arc::new(AtomicBool::new(true)),
-            connected_at: Arc::new(Mutex::new(Some(Local::now().to_rfc3339()))),
             message_count: Arc::new(AtomicU64::new(0)),
             last_message_at: Arc::new(Mutex::new(None)),
-            join_handle: None,
         };
 
         channels.insert(channel_id, connection);
@@ -260,42 +243,4 @@ impl TwitchIrcManager {
         self.logger.info("[IRC] Token update not needed for anonymous connection");
     }
 
-    /// 接続状態を取得
-    pub async fn get_connection_status(&self) -> Vec<IrcConnectionStatus> {
-        let channels = self.channels.lock().await;
-        
-        let mut statuses = Vec::new();
-        for connection in channels.values() {
-            statuses.push(IrcConnectionStatus {
-                channel_id: connection.channel_id,
-                channel_name: connection.channel_name.clone(),
-                is_connected: connection.is_connected.load(Ordering::SeqCst),
-                connected_at: connection.connected_at.lock().await.clone(),
-                message_count: connection.message_count.load(Ordering::SeqCst),
-                last_message_at: connection.last_message_at.lock().await.clone(),
-            });
-        }
-        
-        statuses
-    }
-
-    /// 全てのIRC接続を停止
-    pub async fn stop_all_collections(&self) {
-        let mut channels = self.channels.lock().await;
-        
-        for connection in channels.values() {
-            let channel_login = connection.channel_name.to_lowercase();
-            self.client.part(channel_login);
-            connection.is_connected.store(false, Ordering::SeqCst);
-        }
-        
-        channels.clear();
-        
-        // メッセージ受信タスクを停止
-        if let Some(task) = self.incoming_task.lock().await.take() {
-            task.abort();
-        }
-        
-        self.logger.info("[IRC] Stopped all collections");
-    }
 }

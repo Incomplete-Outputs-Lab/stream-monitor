@@ -160,28 +160,6 @@ pub async fn get_chatter_activity_scores(
     .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub async fn get_retention_cohort(
-    db_manager: State<'_, DatabaseManager>,
-    channel_id: i64,
-    start_time: Option<String>,
-    end_time: Option<String>,
-) -> Result<data_science_analytics::RetentionCohortResult, String> {
-    let conn = db_manager
-        .get_connection()
-        .db_context("get database connection")
-        .map_err(|e| e.to_string())?;
-
-    data_science_analytics::get_retention_cohort(
-        &conn,
-        channel_id,
-        start_time.as_deref(),
-        end_time.as_deref(),
-    )
-    .db_context("get retention cohort")
-    .map_err(|e| e.to_string())
-}
-
 // ============================================================================
 // Phase 4: Anomaly Detection Commands
 // ============================================================================

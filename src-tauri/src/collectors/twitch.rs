@@ -14,21 +14,6 @@ pub struct TwitchCollector {
 }
 
 impl TwitchCollector {
-    /// Create a new TwitchCollector with IRC support
-    pub fn new_with_irc(
-        client_id: String,
-        client_secret: Option<String>,
-        db_conn: Arc<Mutex<Connection>>,
-        logger: Arc<AppLogger>,
-    ) -> Self {
-        let irc_manager = Arc::new(TwitchIrcManager::new(db_conn, Arc::clone(&logger)));
-        
-        Self {
-            api_client: Arc::new(TwitchApiClient::new(client_id, client_secret)),
-            irc_manager,
-        }
-    }
-
     /// Create a new TwitchCollector with AppHandle and IRC support
     pub fn new_with_app(
         client_id: String,
@@ -164,8 +149,4 @@ impl TwitchCollector {
         self.irc_manager.update_channel_stream(channel_id, stream_id).await;
     }
 
-    /// IRC接続状態を取得
-    pub async fn get_irc_connection_status(&self) -> Vec<crate::websocket::twitch_irc::IrcConnectionStatus> {
-        self.irc_manager.get_connection_status().await
-    }
 }

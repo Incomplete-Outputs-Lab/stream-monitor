@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import type { ChatEngagementStats, ChatSpike } from '../../../types';
-import { LineChart, BarChart } from '../../common/charts';
+import { LineChart } from '../../common/charts';
 import { LoadingSpinner } from '../../common/LoadingSpinner';
 
 interface EngagementTabProps {

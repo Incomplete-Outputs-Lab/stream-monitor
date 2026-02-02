@@ -75,7 +75,7 @@ const ChatterScoreTab = ({ channelId, startTime, endTime }: ChatterScoreTabProps
               count: d.userCount,
             }))}
             xKey="range"
-            bars={[{ key: 'count', color: '#8b5cf6', name: 'ユーザー数' }]}
+            bars={[{ key: 'count', color: '#8b5cf6' }]}
             height={300}
           />
         </div>

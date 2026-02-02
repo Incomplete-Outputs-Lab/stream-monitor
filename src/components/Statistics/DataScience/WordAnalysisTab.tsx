@@ -101,7 +101,7 @@ const WordAnalysisTab = ({ channelId, startTime, endTime }: WordAnalysisTabProps
                 count: w.count,
               }))}
               xKey="name"
-              bars={[{ key: 'count', color: '#3b82f6', name: '出現回数' }]}
+              bars={[{ key: 'count', color: '#3b82f6' }]}
               title="トップ20頻出ワード"
               height={400}
             />
@@ -184,8 +184,8 @@ const WordAnalysisTab = ({ channelId, startTime, endTime }: WordAnalysisTabProps
               }))}
               xKey="name"
               bars={[
-                { key: 'count', color: '#8b5cf6', name: '使用回数' },
-                { key: 'users', color: '#ec4899', name: 'ユーザー数' },
+                { key: 'count', color: '#8b5cf6' },
+                { key: 'users', color: '#ec4899' },
               ]}
               title="トップエモート"
               height={350}
@@ -202,7 +202,7 @@ const WordAnalysisTab = ({ channelId, startTime, endTime }: WordAnalysisTabProps
                 count: h.count,
               }))}
               xKey="hour"
-              lines={[{ key: 'count', color: '#8b5cf6', name: 'エモート数' }]}
+              lines={[{ key: 'count', color: '#8b5cf6' }]}
               title="時間帯別エモート使用パターン"
               height={300}
             />
@@ -259,7 +259,7 @@ const WordAnalysisTab = ({ channelId, startTime, endTime }: WordAnalysisTabProps
                 count: d.count,
               }))}
               xKey="bucket"
-              bars={[{ key: 'count', color: '#10b981', name: 'メッセージ数' }]}
+              bars={[{ key: 'count', color: '#10b981' }]}
               title="メッセージ長分布"
               height={300}
             />
@@ -275,7 +275,7 @@ const WordAnalysisTab = ({ channelId, startTime, endTime }: WordAnalysisTabProps
                 avgLength: s.avgLength,
               }))}
               xKey="segment"
-              bars={[{ key: 'avgLength', color: '#f59e0b', name: '平均長' }]}
+              bars={[{ key: 'avgLength', color: '#f59e0b' }]}
               title="セグメント別平均メッセージ長"
               height={300}
             />

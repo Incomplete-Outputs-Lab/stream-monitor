@@ -133,7 +133,7 @@ const CategoryImpactTab = ({ channelId, startTime, endTime }: CategoryImpactTabP
                 avgViewers: Math.round(p.avgViewers),
               }))}
               xKey="category"
-              bars={[{ key: 'avgViewers', color: '#3b82f6', name: '平均視聴者数' }]}
+              bars={[{ key: 'avgViewers', color: '#3b82f6' }]}
               title="カテゴリ別平均視聴者数（トップ10）"
               height={350}
             />

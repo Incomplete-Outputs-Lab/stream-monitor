@@ -71,50 +71,6 @@ export interface ChatMessagesQuery {
   offset?: number;
 }
 
-export interface ChatStats {
-  total_messages: number;
-  unique_users: number;
-  messages_per_minute: number;
-  top_users: UserMessageCount[];
-  message_types: MessageTypeCount[];
-  hourly_distribution: HourlyStats[];
-}
-
-export interface UserMessageCount {
-  user_name: string;
-  message_count: number;
-}
-
-export interface MessageTypeCount {
-  message_type: string;
-  count: number;
-}
-
-export interface HourlyStats {
-  hour: number;
-  message_count: number;
-}
-
-export interface ChatStatsQuery {
-  stream_id?: number;
-  channel_id?: number;
-  start_time?: string;
-  end_time?: string;
-}
-
-export interface ChatRateQuery {
-  stream_id?: number;
-  channel_id?: number;
-  start_time?: string;
-  end_time?: string;
-  interval_minutes?: number;
-}
-
-export interface ChatRateData {
-  timestamp: string;
-  message_count: number;
-  interval_minutes: number;
-}
 
 export interface AggregatedStreamStats {
   timestamp: string;
@@ -564,20 +520,6 @@ export interface ChatterScoreResult {
   segmentAvgScores: SegmentAvgScore[];
 }
 
-export interface RetentionCohort {
-  cohortWeek: string;
-  cohortSize: number;
-  week0: number;
-  week1: number;
-  week2: number;
-  week3: number;
-  week4: number;
-}
-
-export interface RetentionCohortResult {
-  cohorts: RetentionCohort[];
-  overallRetention: number;
-}
 
 // Phase 4: Anomaly Detection
 

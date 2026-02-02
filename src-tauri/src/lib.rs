@@ -29,35 +29,34 @@ use commands::{
         get_user_segment_stats, list_game_categories,
     },
     channels::{
-        add_channel, list_channels, migrate_twitch_user_ids, remove_channel, toggle_channel,
+        add_channel, list_channels, remove_channel, toggle_channel,
         update_channel,
     },
-    chat::{get_chat_messages, get_chat_rate, get_chat_stats},
+    chat::{get_chat_messages},
     config::{
         delete_oauth_config, delete_token, get_build_info, get_database_init_status,
-        get_oauth_config, get_token, has_oauth_config, has_token, initialize_database,
-        recreate_database, save_oauth_config, save_token, verify_token,
+        get_oauth_config, has_oauth_config, recreate_database, save_oauth_config, 
+        save_token, verify_token,
     },
     data_science::{
         detect_anomalies, get_category_change_impact, get_chatter_activity_scores,
-        get_emote_analysis, get_message_length_stats, get_retention_cohort,
+        get_emote_analysis, get_message_length_stats,
         get_viewer_chat_correlation, get_word_frequency_analysis,
     },
-    database::{create_database_backup, get_database_info},
+    database::{get_database_info},
     discovery::{
         get_auto_discovery_settings, get_discovered_streams, get_games_by_ids,
         promote_discovered_channel, save_auto_discovery_settings, search_twitch_games,
         toggle_auto_discovery, DiscoveredStreamInfo,
     },
-    export::{export_to_csv, export_to_delimited, preview_export_data},
-    irc::{get_irc_connection_status, reconnect_irc_channel},
+    export::{export_to_delimited, preview_export_data},
     logs::get_logs,
     oauth::{poll_twitch_device_token, start_twitch_device_auth},
     sql::{
-        delete_sql_template, execute_sql, get_sql_template, list_database_tables,
+        delete_sql_template, execute_sql, list_database_tables,
         list_sql_templates, save_sql_template,
     },
-    stats::{get_channel_stats, get_collector_status, get_stream_stats},
+    stats::{get_stream_stats},
     timeline::{get_channel_streams, get_stream_timeline},
     twitch::{get_twitch_rate_limit_status, validate_twitch_channel},
     window::show_main_window,
@@ -126,10 +125,6 @@ async fn check_for_updates(app: tauri::AppHandle) {
     }
 }
 
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
 
 /// Helper function to start polling for existing enabled channels
 fn start_existing_channels_polling(
@@ -476,7 +471,6 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            greet,
             // Analytics commands
             get_broadcaster_analytics,
             get_game_analytics,
@@ -498,7 +492,6 @@ pub fn run() {
             get_viewer_chat_correlation,
             get_category_change_impact,
             get_chatter_activity_scores,
-            get_retention_cohort,
             detect_anomalies,
             // Channel commands
             add_channel,
@@ -506,30 +499,20 @@ pub fn run() {
             update_channel,
             list_channels,
             toggle_channel,
-            migrate_twitch_user_ids,
             // Chat commands
             get_chat_messages,
-            get_chat_stats,
-            get_chat_rate,
-            // IRC commands
-            get_irc_connection_status,
-            reconnect_irc_channel,
             // Config commands
             save_token,
-            get_token,
             delete_token,
-            has_token,
             verify_token,
             get_build_info,
             get_database_init_status,
-            initialize_database,
             recreate_database,
             get_oauth_config,
             save_oauth_config,
             delete_oauth_config,
             has_oauth_config,
             // Database commands
-            create_database_backup,
             get_database_info,
             // Discovery commands
             get_auto_discovery_settings,
@@ -542,7 +525,6 @@ pub fn run() {
             // SQL commands
             execute_sql,
             list_sql_templates,
-            get_sql_template,
             save_sql_template,
             delete_sql_template,
             list_database_tables,
@@ -551,13 +533,10 @@ pub fn run() {
             poll_twitch_device_token,
             // Stats commands
             get_stream_stats,
-            get_channel_stats,
-            get_collector_status,
             // Timeline commands
             get_channel_streams,
             get_stream_timeline,
             // Export commands
-            export_to_csv,
             export_to_delimited,
             preview_export_data,
             // Logs commands

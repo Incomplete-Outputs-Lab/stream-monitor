@@ -79,18 +79,6 @@ where
     dispatch_params!(|p| stmt.query_map(p, f), params)
 }
 
-pub fn query_row_with_params<T, F>(
-    conn: &Connection,
-    sql: &str,
-    params: &[String],
-    f: F,
-) -> DuckResult<T>
-where
-    F: FnOnce(&duckdb::Row) -> DuckResult<T>,
-{
-    dispatch_params!(|p| conn.query_row(sql, p, f), params)
-}
-
 /// RowからChatMessageを作成するヘルパー関数
 pub fn row_to_chat_message(row: &Row) -> DuckResult<ChatMessage> {
     // badges を文字列として取得し、配列にパース

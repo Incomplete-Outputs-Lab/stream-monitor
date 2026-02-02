@@ -1,5 +1,5 @@
 use crate::database::models::{ChatMessage, Stream, StreamStats};
-use duckdb::Connection;
+use duckdb::{Connection, OptionalExt};
 
 pub struct DatabaseWriter;
 
@@ -9,33 +9,57 @@ impl DatabaseWriter {
         channel_id: i64,
         stream: &Stream,
     ) -> Result<i64, duckdb::Error> {
-        // パフォーマンス最適化: UPSERT構文を使用して単一クエリで処理
-        // streamsテーブルのUNIQUE制約 (channel_id, stream_id) を利用
+        // 外部キー制約の問題を回避するため、SELECTでチェックしてからINSERT/UPDATEを実行
         let ended_at_value = stream.ended_at.as_deref();
 
-        let id: i64 = conn.query_row(
-            r#"
-            INSERT INTO streams (channel_id, stream_id, title, category, started_at, ended_at) 
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT (channel_id, stream_id) 
-            DO UPDATE SET 
-                title = EXCLUDED.title,
-                category = EXCLUDED.category,
-                ended_at = EXCLUDED.ended_at
-            RETURNING id
-            "#,
-            duckdb::params![
-                channel_id,
-                &stream.stream_id,
-                stream.title.as_deref().unwrap_or(""),
-                stream.category.as_deref().unwrap_or(""),
-                &stream.started_at,
-                ended_at_value,
-            ],
+        // まず既存レコードを検索
+        let existing_id: Option<i64> = conn.query_row(
+            "SELECT id FROM streams WHERE channel_id = ? AND stream_id = ?",
+            duckdb::params![channel_id, &stream.stream_id],
             |row| row.get(0)
-        )?;
-        
-        Ok(id)
+        ).optional()?;
+
+        match existing_id {
+            Some(id) => {
+                // 既存レコードがあればUPDATE
+                conn.execute(
+                    r#"
+                    UPDATE streams 
+                    SET title = ?,
+                        category = ?,
+                        ended_at = ?
+                    WHERE id = ?
+                    "#,
+                    duckdb::params![
+                        stream.title.as_deref().unwrap_or(""),
+                        stream.category.as_deref().unwrap_or(""),
+                        ended_at_value,
+                        id,
+                    ],
+                )?;
+                Ok(id)
+            }
+            None => {
+                // 新規レコードならINSERT
+                let id: i64 = conn.query_row(
+                    r#"
+                    INSERT INTO streams (channel_id, stream_id, title, category, started_at, ended_at) 
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    RETURNING id
+                    "#,
+                    duckdb::params![
+                        channel_id,
+                        &stream.stream_id,
+                        stream.title.as_deref().unwrap_or(""),
+                        stream.category.as_deref().unwrap_or(""),
+                        &stream.started_at,
+                        ended_at_value,
+                    ],
+                    |row| row.get(0)
+                )?;
+                Ok(id)
+            }
+        }
     }
 
     pub fn insert_stream_stats(

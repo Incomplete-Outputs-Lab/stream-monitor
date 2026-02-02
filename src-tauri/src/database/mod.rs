@@ -73,32 +73,6 @@ impl DatabaseManager {
     }
 
     /// 手動バックアップを作成
-    pub fn create_backup(&self) -> Result<PathBuf, Box<dyn std::error::Error>> {
-        // インメモリDB使用時はバックアップを作成できない
-        if cfg!(debug_assertions) {
-            return Err(
-                "Cannot create backup in development mode (using in-memory database)".into(),
-            );
-        }
-
-        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-        let backup_path = self
-            .db_path
-            .with_extension(format!("db.backup.{}", timestamp));
-
-        // CHECKPOINTでWALをフラッシュしてからコピー
-        if let Ok(conn) = self.conn.lock() {
-            conn.execute("CHECKPOINT", []).ok();
-        }
-
-        std::fs::copy(&self.db_path, &backup_path)
-            .io_context("create backup")
-            .map_err(|e| e.to_string())?;
-
-        eprintln!("Backup created at: {}", backup_path.display());
-        Ok(backup_path)
-    }
-
     /// データベースファイルのパスを取得
     pub fn get_db_path(&self) -> &PathBuf {
         &self.db_path

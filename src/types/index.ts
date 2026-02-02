@@ -305,6 +305,7 @@ export interface StreamInfo {
   follower_gain: number;
   total_chat_messages: number;
   engagement_rate: number;
+  last_collected_at?: string;
 }
 
 export interface TimelinePoint {

@@ -5,6 +5,16 @@ interface StreamSummaryProps {
   streamInfo: StreamInfo;
 }
 
+// 配信中判定ロジック: ポーリング間隔の2倍（2分）以内に収集されたデータがあれば配信中とみなす
+const isStreamLive = (stream: StreamInfo): boolean => {
+  if (stream.ended_at) return false;
+  if (!stream.last_collected_at) return false;
+  
+  const lastCollected = new Date(stream.last_collected_at).getTime();
+  const threshold = 2 * 60 * 1000; // 2分
+  return Date.now() - lastCollected < threshold;
+};
+
 const StreamSummary: React.FC<StreamSummaryProps> = ({ streamInfo }) => {
   const formatDuration = (minutes: number): string => {
     const hours = Math.floor(minutes / 60);
@@ -29,13 +39,13 @@ const StreamSummary: React.FC<StreamSummaryProps> = ({ streamInfo }) => {
         <h2 className="text-xl font-bold text-gray-900 dark:text-white">
           {streamInfo.title || '(タイトルなし)'}
         </h2>
-        {streamInfo.ended_at ? (
-          <span className="px-3 py-1 text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded">
-            終了
-          </span>
-        ) : (
+        {isStreamLive(streamInfo) ? (
           <span className="px-3 py-1 text-sm font-medium bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded">
             配信中
+          </span>
+        ) : (
+          <span className="px-3 py-1 text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded">
+            終了
           </span>
         )}
       </div>

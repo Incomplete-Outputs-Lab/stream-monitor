@@ -33,7 +33,7 @@ export function Statistics() {
   const [selectedGame, setSelectedGame] = useState<string>("");
   const [selectedChannelName, setSelectedChannelName] = useState<string>("");
 
-  // チャンネル一覧取得
+  // チャンネル一覧取得（ドリルダウンナビゲーション用）
   const { data: channels } = useQuery({
     queryKey: ["channels"],
     queryFn: async () => {
@@ -87,37 +87,15 @@ export function Statistics() {
       </div>
 
       {/* フィルタエリア */}
-      <div className="card p-4 space-y-4">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex-1 min-w-[300px]">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              期間
-            </label>
-            <DateRangePicker
-              startDate={dateRange.start}
-              endDate={dateRange.end}
-              onChange={handleDateRangeChange}
-            />
-          </div>
-
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              チャンネル
-            </label>
-            <select
-              value={selectedChannelId || ''}
-              onChange={(e) => setSelectedChannelId(e.target.value ? parseInt(e.target.value) : null)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100"
-            >
-              <option value="">すべてのチャンネル</option>
-              {channels?.map((channel) => (
-                <option key={channel.id} value={channel.id}>
-                  {channel.display_name || channel.channel_name} ({channel.platform})
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
+      <div className="card p-4">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          期間
+        </label>
+        <DateRangePicker
+          startDate={dateRange.start}
+          endDate={dateRange.end}
+          onChange={handleDateRangeChange}
+        />
       </div>
 
       {/* タブナビゲーション */}
@@ -205,7 +183,6 @@ export function Statistics() {
 
           {activeTab === "broadcaster" && (
             <BroadcasterAnalytics
-              channelId={selectedChannelId || undefined}
               startTime={dateRange.start + 'T00:00:00'}
               endTime={dateRange.end + 'T23:59:59'}
             />

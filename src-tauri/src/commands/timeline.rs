@@ -20,6 +20,7 @@ pub struct StreamInfo {
     pub follower_gain: i32,
     pub total_chat_messages: i64,
     pub engagement_rate: f64,
+    pub last_collected_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,7 +98,8 @@ fn get_channel_streams_internal(
                         COALESCE(s.ended_at, CAST(CURRENT_TIMESTAMP AS TIMESTAMP)) - s.started_at
                     )) / 60,
                     0
-                ) as duration_minutes
+                ) as duration_minutes,
+                MAX(ss.collected_at) as last_collected_at
             FROM streams s
             LEFT JOIN stream_stats ss ON s.id = ss.stream_id
             WHERE s.channel_id = ?
@@ -160,7 +162,8 @@ fn get_channel_streams_internal(
                 WHEN COALESCE(mw.minutes_watched, 0) > 0 
                 THEN (COALESCE(cc.total_chat_messages, 0)::DOUBLE / mw.minutes_watched::DOUBLE) * 1000.0
                 ELSE 0.0
-            END as engagement_rate
+            END as engagement_rate,
+            CAST(sm.last_collected_at AS VARCHAR) as last_collected_at
         FROM stream_metrics sm
         JOIN channels c ON sm.channel_id = c.id
         LEFT JOIN mw_calc mw ON sm.id = mw.stream_id
@@ -193,6 +196,7 @@ fn get_channel_streams_internal(
             follower_gain: row.get::<_, i32>(12)?,
             total_chat_messages: row.get::<_, i64>(13)?,
             engagement_rate: row.get::<_, f64>(14)?,
+            last_collected_at: row.get::<_, Option<String>>(15)?,
         })
     })?;
 
@@ -263,7 +267,8 @@ fn get_stream_info_by_id(
                         COALESCE(s.ended_at, CAST(CURRENT_TIMESTAMP AS TIMESTAMP)) - s.started_at
                     )) / 60,
                     0
-                ) as duration_minutes
+                ) as duration_minutes,
+                MAX(ss.collected_at) as last_collected_at
             FROM streams s
             LEFT JOIN stream_stats ss ON s.id = ss.stream_id
             WHERE s.id = ?
@@ -326,7 +331,8 @@ fn get_stream_info_by_id(
                 WHEN COALESCE(mw.minutes_watched, 0) > 0 
                 THEN (COALESCE(cc.total_chat_messages, 0)::DOUBLE / mw.minutes_watched::DOUBLE) * 1000.0
                 ELSE 0.0
-            END as engagement_rate
+            END as engagement_rate,
+            CAST(sm.last_collected_at AS VARCHAR) as last_collected_at
         FROM stream_metrics sm
         JOIN channels c ON sm.channel_id = c.id
         LEFT JOIN mw_calc mw ON sm.id = mw.stream_id
@@ -360,6 +366,7 @@ fn get_stream_info_by_id(
                 follower_gain: row.get::<_, i32>(12)?,
                 total_chat_messages: row.get::<_, i64>(13)?,
                 engagement_rate: row.get::<_, f64>(14)?,
+                last_collected_at: row.get::<_, Option<String>>(15)?,
             })
         },
     )?;

@@ -1,30 +1,38 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { BroadcasterAnalytics as BroadcasterAnalyticsType } from '../../types';
+import { BroadcasterAnalytics as BroadcasterAnalyticsType, Channel } from '../../types';
 import { BarChart } from '../common/charts/BarChart';
 import { Tooltip } from '../common/Tooltip';
 import { useSortableData } from '../../hooks/useSortableData';
 import { SortableTableHeader } from '../common/SortableTableHeader';
 
 interface BroadcasterAnalyticsProps {
-  channelId?: number;
   startTime?: string;
   endTime?: string;
 }
 
 export default function BroadcasterAnalytics({
-  channelId,
   startTime,
   endTime,
 }: BroadcasterAnalyticsProps) {
+  const [selectedChannelId, setSelectedChannelId] = useState<number | null>(null);
+
+  // チャンネル一覧取得
+  const { data: channels } = useQuery({
+    queryKey: ["channels"],
+    queryFn: async () => {
+      return await invoke<Channel[]>("list_channels");
+    },
+  });
   const { data: analytics, isLoading, error } = useQuery({
-    queryKey: ['broadcaster-analytics', channelId, startTime, endTime],
+    queryKey: ['broadcaster-analytics', selectedChannelId, startTime, endTime],
     queryFn: async () => {
       const result = await invoke<BroadcasterAnalyticsType[]>(
         'get_broadcaster_analytics',
         {
-          channelId,
+          channelId: selectedChannelId || undefined,
           startTime,
           endTime,
         }
@@ -50,24 +58,84 @@ export default function BroadcasterAnalytics({
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center p-8">
-        <div className="text-gray-400">Loading broadcaster analytics...</div>
+      <div className="space-y-4">
+        {/* チャンネルフィルター */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            チャンネル
+          </label>
+          <select
+            value={selectedChannelId || ''}
+            onChange={(e) => setSelectedChannelId(e.target.value ? parseInt(e.target.value) : null)}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100"
+          >
+            <option value="">すべてのチャンネル</option>
+            {channels?.map((channel) => (
+              <option key={channel.id} value={channel.id}>
+                {channel.display_name || channel.channel_name} ({channel.platform})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex justify-center items-center p-8">
+          <div className="text-gray-400">Loading broadcaster analytics...</div>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="p-4 bg-red-500/10 border border-red-500 rounded-lg">
-        <p className="text-red-500">Error loading analytics: {String(error)}</p>
+      <div className="space-y-4">
+        {/* チャンネルフィルター */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            チャンネル
+          </label>
+          <select
+            value={selectedChannelId || ''}
+            onChange={(e) => setSelectedChannelId(e.target.value ? parseInt(e.target.value) : null)}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100"
+          >
+            <option value="">すべてのチャンネル</option>
+            {channels?.map((channel) => (
+              <option key={channel.id} value={channel.id}>
+                {channel.display_name || channel.channel_name} ({channel.platform})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="p-4 bg-red-500/10 border border-red-500 rounded-lg">
+          <p className="text-red-500">Error loading analytics: {String(error)}</p>
+        </div>
       </div>
     );
   }
 
   if (!analytics || analytics.length === 0) {
     return (
-      <div className="p-8 text-center text-gray-400">
-        No analytics data available for the selected period.
+      <div className="space-y-4">
+        {/* チャンネルフィルター */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            チャンネル
+          </label>
+          <select
+            value={selectedChannelId || ''}
+            onChange={(e) => setSelectedChannelId(e.target.value ? parseInt(e.target.value) : null)}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100"
+          >
+            <option value="">すべてのチャンネル</option>
+            {channels?.map((channel) => (
+              <option key={channel.id} value={channel.id}>
+                {channel.display_name || channel.channel_name} ({channel.platform})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="p-8 text-center text-gray-400">
+          No analytics data available for the selected period.
+        </div>
       </div>
     );
   }
@@ -128,6 +196,25 @@ export default function BroadcasterAnalytics({
 
   return (
     <div className="space-y-6">
+      {/* チャンネルフィルター */}
+      <div className="card p-4">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          チャンネル
+        </label>
+        <select
+          value={selectedChannelId || ''}
+          onChange={(e) => setSelectedChannelId(e.target.value ? parseInt(e.target.value) : null)}
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100"
+        >
+          <option value="">すべてのチャンネル</option>
+          {channels?.map((channel) => (
+            <option key={channel.id} value={channel.id}>
+              {channel.display_name || channel.channel_name} ({channel.platform})
+            </option>
+          ))}
+        </select>
+      </div>
+
       {/* サマリーカード */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <div className="bg-gray-800 p-4 rounded-lg border border-gray-700">

@@ -12,6 +12,25 @@ interface ComparisonSelectorProps {
 
 const MAX_STREAMS = 10;
 
+// 配信中判定ロジック: ポーリング間隔の2倍（2分）以内に収集されたデータがあれば配信中とみなす
+const isStreamLive = (stream: StreamInfo): boolean => {
+  if (stream.ended_at) return false;
+  if (!stream.last_collected_at) return false;
+  
+  const lastCollected = new Date(stream.last_collected_at).getTime();
+  const threshold = 2 * 60 * 1000; // 2分
+  return Date.now() - lastCollected < threshold;
+};
+
+// 時間重複判定関数: 2つの配信の時刻が一部でも重なっているか
+const hasTimeOverlap = (streamA: StreamInfo, streamB: StreamInfo): boolean => {
+  const aStart = new Date(streamA.started_at).getTime();
+  const aEnd = streamA.ended_at ? new Date(streamA.ended_at).getTime() : Date.now();
+  const bStart = new Date(streamB.started_at).getTime();
+  const bEnd = streamB.ended_at ? new Date(streamB.ended_at).getTime() : Date.now();
+  return aStart < bEnd && bStart < aEnd;
+};
+
 const ComparisonSelector: React.FC<ComparisonSelectorProps> = ({
   onTimelinesSelect,
   selectedStreams,
@@ -279,7 +298,15 @@ const ComparisonSelector: React.FC<ComparisonSelectorProps> = ({
             </div>
           ) : (
             <div className="space-y-2 max-h-96 overflow-y-auto">
-              {streams.map((stream) => {
+              {streams
+                .filter((stream) => {
+                  // 最初の配信が選択されている場合、時刻が重複する配信のみ表示
+                  if (selectedStreams.length === 0) return true;
+                  const firstSelected = streams.find(s => s.id === selectedStreams[0].streamId);
+                  if (!firstSelected) return true;
+                  return hasTimeOverlap(firstSelected, stream);
+                })
+                .map((stream) => {
                 const isSelected = selectedStreams.some((s) => s.streamId === stream.id);
                 const selectedStream = selectedStreams.find((s) => s.streamId === stream.id);
 
@@ -330,13 +357,13 @@ const ComparisonSelector: React.FC<ComparisonSelectorProps> = ({
                               {stream.category || '(カテゴリなし)'}
                             </p>
                           </div>
-                          {stream.ended_at ? (
-                            <span className="ml-2 px-2 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded">
-                              終了
-                            </span>
-                          ) : (
+                          {isStreamLive(stream) ? (
                             <span className="ml-2 px-2 py-1 text-xs font-medium bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded">
                               配信中
+                            </span>
+                          ) : (
+                            <span className="ml-2 px-2 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded">
+                              終了
                             </span>
                           )}
                         </div>

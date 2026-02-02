@@ -210,6 +210,7 @@ function DiscoveredStreamCard({ stream, onPromote, isAlreadyRegistered = false }
 
 export function Dashboard() {
   const [statsData, setStatsData] = useState<StreamStats[]>([]);
+  const [localExpiresIn, setLocalExpiresIn] = useState<number | null>(null);
   const queryClient = useQueryClient();
 
   // チャンネル情報を取得し、ライブチャンネルのみをフィルタリング
@@ -244,6 +245,22 @@ export function Dashboard() {
     queryFn: () => invoke<TwitchRateLimitStatus>("get_twitch_rate_limit_status"),
     refetchInterval: 5000, // 5秒ごとに更新
   });
+
+  // rateLimitStatusが更新されたらlocalExpiresInを更新
+  useEffect(() => {
+    if (rateLimitStatus?.oldest_entry_expires_in_seconds != null) {
+      setLocalExpiresIn(rateLimitStatus.oldest_entry_expires_in_seconds);
+    }
+  }, [rateLimitStatus?.oldest_entry_expires_in_seconds]);
+
+  // localExpiresInを1秒ごとにデクリメント
+  useEffect(() => {
+    if (localExpiresIn === null || localExpiresIn <= 0) return;
+    const timer = setInterval(() => {
+      setLocalExpiresIn(prev => prev !== null && prev > 0 ? prev - 1 : null);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [localExpiresIn]);
 
   // 自動発見された配信を取得
   const { data: discoveredStreams } = useQuery({
@@ -394,8 +411,8 @@ export function Dashboard() {
                 <div>使用: {rateLimitStatus.points_used} / {rateLimitStatus.bucket_capacity} ポイント</div>
                 <div>残り: {rateLimitStatus.points_remaining} ポイント</div>
                 <div>リクエスト数: {rateLimitStatus.request_count}回</div>
-                {rateLimitStatus.oldest_entry_expires_in_seconds !== null && (
-                  <div>回復まで: {rateLimitStatus.oldest_entry_expires_in_seconds}秒</div>
+                {localExpiresIn !== null && localExpiresIn > 0 && (
+                  <div>回復まで: {localExpiresIn}秒</div>
                 )}
               </div>
             }>

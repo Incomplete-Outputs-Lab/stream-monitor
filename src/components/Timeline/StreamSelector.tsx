@@ -7,6 +7,16 @@ interface StreamSelectorProps {
   onTimelineSelect: (timeline: StreamTimelineData | null) => void;
 }
 
+// 配信中判定ロジック: ポーリング間隔の2倍（2分）以内に収集されたデータがあれば配信中とみなす
+const isStreamLive = (stream: StreamInfo): boolean => {
+  if (stream.ended_at) return false;
+  if (!stream.last_collected_at) return false;
+  
+  const lastCollected = new Date(stream.last_collected_at).getTime();
+  const threshold = 2 * 60 * 1000; // 2分
+  return Date.now() - lastCollected < threshold;
+};
+
 const StreamSelector: React.FC<StreamSelectorProps> = ({ onTimelineSelect }) => {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [selectedChannelId, setSelectedChannelId] = useState<number | null>(null);
@@ -164,13 +174,13 @@ const StreamSelector: React.FC<StreamSelectorProps> = ({ onTimelineSelect }) => 
                         {stream.category || '(カテゴリなし)'}
                       </p>
                     </div>
-                    {stream.ended_at ? (
-                      <span className="ml-2 px-2 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded">
-                        終了
-                      </span>
-                    ) : (
+                    {isStreamLive(stream) ? (
                       <span className="ml-2 px-2 py-1 text-xs font-medium bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded">
                         配信中
+                      </span>
+                    ) : (
+                      <span className="ml-2 px-2 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded">
+                        終了
                       </span>
                     )}
                   </div>

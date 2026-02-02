@@ -338,7 +338,7 @@ mod tests {
                 user_name: "User1".to_string(),
                 message: "Hello".to_string(),
                 message_type: "normal".to_string(),
-                badges: None,
+                badges: Some(vec!["broadcaster".to_string()]),
             },
             ChatMessage {
                 id: Some(2),

@@ -406,16 +406,57 @@ fn migrate_database_schema(conn: &Connection) -> Result<(), duckdb::Error> {
         eprintln!("[Migration] chat_messages table migration completed");
     }
 
-    // chat_messagesテーブルにbadgesフィールドを追加
-    let mut chat_messages_has_badges = conn.prepare(
-        "SELECT COUNT(*) FROM pragma_table_info('chat_messages') WHERE name = 'badges'",
+    // chat_messagesテーブルにbadgesフィールドを追加（TEXT[]型）
+    let mut chat_messages_badges_info = conn.prepare(
+        "SELECT type FROM pragma_table_info('chat_messages') WHERE name = 'badges'",
     )?;
-    let chat_messages_has_badges_count: i64 =
-        chat_messages_has_badges.query_row([], |row| row.get(0))?;
+    let badges_type: Option<String> = chat_messages_badges_info
+        .query_map([], |row| row.get(0))
+        .ok()
+        .and_then(|mut rows| rows.next())
+        .and_then(|r| r.ok());
 
-    if chat_messages_has_badges_count == 0 {
-        eprintln!("[Migration] Adding badges column to chat_messages table");
-        conn.execute("ALTER TABLE chat_messages ADD COLUMN badges TEXT", [])?;
+    match badges_type.as_deref() {
+        None => {
+            // カラムが存在しない場合は TEXT[] 型で追加
+            eprintln!("[Migration] Adding badges column (TEXT[]) to chat_messages table");
+            conn.execute("ALTER TABLE chat_messages ADD COLUMN badges TEXT[]", [])?;
+        }
+        Some("TEXT") => {
+            // TEXT 型の場合は TEXT[] に変更（既存データを変換）
+            eprintln!("[Migration] Converting badges column from TEXT to TEXT[]");
+            
+            // 一時カラムを追加
+            conn.execute("ALTER TABLE chat_messages ADD COLUMN badges_new TEXT[]", [])?;
+            
+            // 既存のJSON文字列データを配列に変換（存在する場合）
+            // 空文字列やNULLはそのまま
+            conn.execute(
+                r#"
+                UPDATE chat_messages 
+                SET badges_new = CASE 
+                    WHEN badges IS NULL OR badges = '' THEN NULL
+                    ELSE TRY_CAST(badges AS TEXT[])
+                END
+                "#,
+                []
+            )?;
+            
+            // 古いカラムを削除
+            conn.execute("ALTER TABLE chat_messages DROP COLUMN badges", [])?;
+            
+            // 新しいカラムをリネーム
+            conn.execute("ALTER TABLE chat_messages RENAME COLUMN badges_new TO badges", [])?;
+            
+            eprintln!("[Migration] badges column conversion completed");
+        }
+        Some("TEXT[]") => {
+            // 既に TEXT[] 型の場合は何もしない
+            eprintln!("[Migration] badges column already TEXT[], skipping");
+        }
+        Some(other) => {
+            eprintln!("[Migration] Warning: badges column has unexpected type: {}", other);
+        }
     }
 
     Ok(())

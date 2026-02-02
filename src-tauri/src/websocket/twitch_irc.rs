@@ -77,15 +77,16 @@ impl TwitchIrcManager {
                             conn.message_count.fetch_add(1, Ordering::SeqCst);
                             *conn.last_message_at.lock().await = Some(Local::now().to_rfc3339());
                             
-                            // バッジ情報をJSON配列形式に変換（バッジ名のみ）
-                            let badges_json = if msg.badges.is_empty() {
+                            // バッジ情報を配列として取得（バッジ名のみ）
+                            let badges = if msg.badges.is_empty() {
                                 None
                             } else {
-                                let badge_names: Vec<String> = msg.badges
-                                    .iter()
-                                    .map(|badge| badge.name.clone())
-                                    .collect();
-                                serde_json::to_string(&badge_names).ok()
+                                Some(
+                                    msg.badges
+                                        .iter()
+                                        .map(|badge| badge.name.clone())
+                                        .collect::<Vec<String>>()
+                                )
                             };
                             
                             let chat_message = ChatMessage {
@@ -98,7 +99,7 @@ impl TwitchIrcManager {
                                 user_name: msg.sender.login.clone(),
                                 message: msg.message_text.clone(),
                                 message_type: "normal".to_string(),
-                                badges: badges_json,
+                                badges,
                             };
                             
                             batch.push(chat_message);

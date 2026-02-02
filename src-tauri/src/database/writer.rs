@@ -100,24 +100,39 @@ impl DatabaseWriter {
 
         // エラー時のROLLBACK処理を含むスコープ
         let result = (|| {
-            // プリペアドステートメントを使用した効率的なバッチインサート
-            let mut stmt = conn.prepare(
-                "INSERT INTO chat_messages (channel_id, stream_id, timestamp, platform, user_id, user_name, message, message_type, badges)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-            )?;
-
             for message in messages {
-                stmt.execute([
-                    &message.channel_id.map(|v| v.to_string()).unwrap_or_default(),
-                    &message.stream_id.map(|v| v.to_string()).unwrap_or_default(),
-                    &message.timestamp,
-                    &message.platform,
-                    &message.user_id.as_deref().unwrap_or("").to_string(),
-                    &message.user_name,
-                    &message.message,
-                    &message.message_type,
-                    &message.badges.as_deref().unwrap_or("").to_string(),
-                ])?;
+                // badges を DuckDB 配列リテラル形式に変換
+                let badges_literal = match &message.badges {
+                    None => "NULL".to_string(),
+                    Some(badges) if badges.is_empty() => "NULL".to_string(),
+                    Some(badges) => {
+                        // 配列要素をエスケープして ['elem1', 'elem2'] 形式に変換
+                        let escaped_badges: Vec<String> = badges
+                            .iter()
+                            .map(|b| format!("'{}'", b.replace("'", "''")))
+                            .collect();
+                        format!("ARRAY[{}]", escaped_badges.join(", "))
+                    }
+                };
+
+                // badges 以外のパラメータは ? で、badges だけは文字列補間
+                conn.execute(
+                    &format!(
+                        "INSERT INTO chat_messages (channel_id, stream_id, timestamp, platform, user_id, user_name, message, message_type, badges)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, {})",
+                        badges_literal
+                    ),
+                    [
+                        &message.channel_id.map(|v| v.to_string()).unwrap_or_default(),
+                        &message.stream_id.map(|v| v.to_string()).unwrap_or_default(),
+                        &message.timestamp,
+                        &message.platform,
+                        &message.user_id.as_deref().unwrap_or("").to_string(),
+                        &message.user_name,
+                        &message.message,
+                        &message.message_type,
+                    ]
+                )?;
             }
 
             Ok::<(), duckdb::Error>(())

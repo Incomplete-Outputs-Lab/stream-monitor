@@ -6,6 +6,8 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "keyring:default"
+    "keyring:default",
+    "core:window:allow-show",
+    "core:window:allow-hide"
   ]
 }

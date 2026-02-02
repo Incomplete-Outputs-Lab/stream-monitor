@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { DatabaseErrorDialog } from "./DatabaseErrorDialog";
 import { DbInitStatus } from "../../types";
 
@@ -12,6 +13,19 @@ export function SplashScreen({ onComplete }: { onComplete: () => void }) {
   const [showErrorDialog, setShowErrorDialog] = useState(false);
 
   useEffect(() => {
+    // Reactがマウントされたらウィンドウを表示
+    const showWindow = async () => {
+      try {
+        const window = getCurrentWindow();
+        await window.show();
+        console.log("Window shown");
+      } catch (error) {
+        console.error("Failed to show window:", error);
+      }
+    };
+
+    showWindow();
+
     let progressInterval: number;
     let fadeTimeout: number;
     let statusCheckInterval: number;

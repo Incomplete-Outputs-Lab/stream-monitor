@@ -251,8 +251,6 @@ pub fn run() {
                     match crate::database::schema::init_database(&conn) {
                         Ok(_) => {
                             logger_for_init.info("Database schema initialization successful, notifying frontend...");
-                            // フロントエンドのイベントリスナーが準備されるまで少し待つ
-                            std::thread::sleep(std::time::Duration::from_millis(500));
                             // フロントエンドにDB初期化成功を通知
                             let _ = app_handle_for_init.emit("database-init-success", ());
                         }

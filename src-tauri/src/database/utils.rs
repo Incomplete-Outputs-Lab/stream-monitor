@@ -103,6 +103,7 @@ pub fn row_to_chat_message(row: &Row) -> DuckResult<ChatMessage> {
         user_name: row.get(6)?,
         message: row.get(7)?,
         message_type: row.get(8)?,
+        badges: row.get::<_, Option<String>>(9)?,
     })
 }
 

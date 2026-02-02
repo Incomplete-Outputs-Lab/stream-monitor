@@ -88,6 +88,7 @@ pub struct ChatMessage {
     pub user_name: String,
     pub message: String,
     pub message_type: String,
+    pub badges: Option<String>,
 }
 
 #[cfg(test)]

@@ -102,8 +102,8 @@ impl DatabaseWriter {
         let result = (|| {
             // プリペアドステートメントを使用した効率的なバッチインサート
             let mut stmt = conn.prepare(
-                "INSERT INTO chat_messages (channel_id, stream_id, timestamp, platform, user_id, user_name, message, message_type)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO chat_messages (channel_id, stream_id, timestamp, platform, user_id, user_name, message, message_type, badges)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )?;
 
             for message in messages {
@@ -116,6 +116,7 @@ impl DatabaseWriter {
                     &message.user_name,
                     &message.message,
                     &message.message_type,
+                    &message.badges.as_deref().unwrap_or("").to_string(),
                 ])?;
             }
 

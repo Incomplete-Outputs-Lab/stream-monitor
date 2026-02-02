@@ -406,5 +406,17 @@ fn migrate_database_schema(conn: &Connection) -> Result<(), duckdb::Error> {
         eprintln!("[Migration] chat_messages table migration completed");
     }
 
+    // chat_messagesテーブルにbadgesフィールドを追加
+    let mut chat_messages_has_badges = conn.prepare(
+        "SELECT COUNT(*) FROM pragma_table_info('chat_messages') WHERE name = 'badges'",
+    )?;
+    let chat_messages_has_badges_count: i64 =
+        chat_messages_has_badges.query_row([], |row| row.get(0))?;
+
+    if chat_messages_has_badges_count == 0 {
+        eprintln!("[Migration] Adding badges column to chat_messages table");
+        conn.execute("ALTER TABLE chat_messages ADD COLUMN badges TEXT", [])?;
+    }
+
     Ok(())
 }

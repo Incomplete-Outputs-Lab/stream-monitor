@@ -42,7 +42,7 @@ use commands::{
         save_auto_discovery_settings, search_twitch_games, toggle_auto_discovery,
         DiscoveredStreamInfo,
     },
-    export::{export_to_csv, export_to_json},
+    export::{export_to_csv, export_to_delimited, preview_export_data},
     logs::get_logs,
     oauth::{poll_twitch_device_token, start_twitch_device_auth},
     sql::{
@@ -503,7 +503,8 @@ pub fn run() {
             get_stream_timeline,
             // Export commands
             export_to_csv,
-            export_to_json,
+            export_to_delimited,
+            preview_export_data,
             // Logs commands
             get_logs,
             // Twitch commands

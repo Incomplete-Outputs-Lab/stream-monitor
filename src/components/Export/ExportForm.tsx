@@ -1,6 +1,6 @@
 import { Channel } from "../../types";
 
-type ExportFormat = 'csv' | 'json';
+type ExportFormat = 'csv' | 'tsv' | 'custom';
 type AggregationType = 'raw' | '1min' | '5min' | '1hour';
 
 interface ExportConfig {
@@ -9,7 +9,7 @@ interface ExportConfig {
   endDate: string;
   format: ExportFormat;
   aggregation: AggregationType;
-  includeChatData: boolean;
+  customDelimiter: string;
 }
 
 interface ExportFormProps {
@@ -40,11 +40,13 @@ export function ExportForm({ config, onConfigChange, channels }: ExportFormProps
   };
 
   const formatOptions = [
-    { value: 'csv' as const, label: 'CSV', description: '表計算ソフト対応' },
-    { value: 'json' as const, label: 'JSON', description: '構造化データ' },
+    { value: 'csv' as const, label: 'CSV', description: 'カンマ区切り' },
+    { value: 'tsv' as const, label: 'TSV', description: 'タブ区切り' },
+    { value: 'custom' as const, label: 'カスタム', description: '任意の区切り文字' },
   ];
 
   const aggregationOptions = [
+    { value: 'raw' as const, label: '生データ', description: '収集間隔ごと' },
     { value: '1min' as const, label: '1分集計', description: '1分単位で平均化' },
     { value: '5min' as const, label: '5分集計', description: '5分単位で平均化' },
     { value: '1hour' as const, label: '1時間集計', description: '1時間単位で平均化' },
@@ -134,7 +136,7 @@ export function ExportForm({ config, onConfigChange, channels }: ExportFormProps
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
           エクスポート形式
         </label>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           {formatOptions.map((option) => (
             <label
               key={option.value}
@@ -172,6 +174,26 @@ export function ExportForm({ config, onConfigChange, channels }: ExportFormProps
             </label>
           ))}
         </div>
+
+        {/* カスタム区切り文字入力 */}
+        {config.format === 'custom' && (
+          <div className="mt-3">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              区切り文字を入力
+            </label>
+            <input
+              type="text"
+              value={config.customDelimiter}
+              onChange={(e) => updateConfig({ customDelimiter: e.target.value })}
+              placeholder="例: | または ;"
+              maxLength={5}
+              className="input-field max-w-xs"
+            />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              任意の文字列を区切り文字として使用できます（最大5文字）
+            </p>
+          </div>
+        )}
       </div>
 
       {/* 集計オプション */}
@@ -216,23 +238,6 @@ export function ExportForm({ config, onConfigChange, channels }: ExportFormProps
         </div>
       </div>
 
-      {/* 追加オプション */}
-      <div>
-        <label className="flex items-center">
-          <input
-            type="checkbox"
-            checked={config.includeChatData}
-            onChange={(e) => updateConfig({ includeChatData: e.target.checked })}
-            className="rounded border-gray-300 dark:border-slate-600 text-blue-600 dark:text-blue-400 focus:ring-blue-500 bg-white dark:bg-slate-700"
-          />
-          <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-            チャットデータをエクスポートに含める
-          </span>
-        </label>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 ml-6">
-          ※ チャットデータを含む場合、ファイルサイズが大幅に増加します
-        </p>
-      </div>
     </div>
   );
 }

@@ -45,6 +45,7 @@ export interface ExportQuery {
   end_time?: string;
   aggregation?: string;
   include_chat?: boolean;
+  delimiter?: string;
 }
 
 export interface ChatMessage {

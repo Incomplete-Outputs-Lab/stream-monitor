@@ -1,12 +1,10 @@
 use crate::database::{
-    aggregation::DataAggregator,
-    models::{ChatMessage, StreamStats},
+    models::StreamStats,
     utils, DatabaseManager,
 };
 use crate::error::ResultExt;
 use duckdb::Connection;
 use serde::{Deserialize, Serialize};
-use serde_json;
 use tauri::{AppHandle, State};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -15,7 +13,7 @@ pub struct ExportQuery {
     pub start_time: Option<String>,
     pub end_time: Option<String>,
     pub aggregation: Option<String>, // "raw", "1min", "5min", "1hour"
-    pub include_chat: Option<bool>,
+    pub delimiter: Option<String>, // Custom delimiter (default: comma)
 }
 
 #[tauri::command]
@@ -58,113 +56,12 @@ pub async fn export_to_csv(
     Ok(format!("Exported {} records to {}", stats_len, file_path))
 }
 
-#[tauri::command]
-pub async fn export_to_json(
-    _app_handle: AppHandle,
-    db_manager: State<'_, DatabaseManager>,
-    query: ExportQuery,
-    file_path: String,
-) -> Result<String, String> {
-    let conn = db_manager
-        .get_connection()
-        .db_context("get database connection")
-        .map_err(|e| e.to_string())?;
-
-    // ストリーム統計データを取得
-    let stats = get_stream_stats_internal(&conn, &query)
-        .db_context("query stats")
-        .map_err(|e| e.to_string())?;
-
-    // 集計処理
-    let processed_stats = if let Some(agg) = &query.aggregation {
-        match agg.as_str() {
-            "1min" => DataAggregator::aggregate_to_1min(&stats),
-            "5min" => DataAggregator::aggregate_to_5min(&stats),
-            "1hour" => DataAggregator::aggregate_to_1hour(&stats),
-            _ => stats
-                .into_iter()
-                .map(|s| crate::database::aggregation::AggregatedStreamStats {
-                    timestamp: s.collected_at,
-                    interval_minutes: 0,
-                    avg_viewer_count: s.viewer_count.map(|v| v as f64),
-                    max_viewer_count: s.viewer_count,
-                    min_viewer_count: s.viewer_count,
-                    chat_rate_avg: s.chat_rate_1min as f64,
-                    data_points: 1,
-                })
-                .collect(),
-        }
-    } else {
-        stats
-            .into_iter()
-            .map(|s| crate::database::aggregation::AggregatedStreamStats {
-                timestamp: s.collected_at,
-                interval_minutes: 0,
-                avg_viewer_count: s.viewer_count.map(|v| v as f64),
-                max_viewer_count: s.viewer_count,
-                min_viewer_count: s.viewer_count,
-                chat_rate_avg: s.chat_rate_1min as f64,
-                data_points: 1,
-            })
-            .collect()
-    };
-
-    let mut export_data = serde_json::Map::new();
-    export_data.insert(
-        "stream_stats".to_string(),
-        serde_json::to_value(&processed_stats).unwrap(),
-    );
-
-    // チャットデータを含む場合
-    if query.include_chat.unwrap_or(false) {
-        let chat_messages = get_chat_messages_internal(&conn, &query)
-            .db_context("query chat messages")
-            .map_err(|e| e.to_string())?;
-
-        export_data.insert(
-            "chat_messages".to_string(),
-            serde_json::to_value(&chat_messages).unwrap(),
-        );
-    }
-
-    // メタデータを追加
-    let mut metadata = serde_json::Map::new();
-    metadata.insert(
-        "exported_at".to_string(),
-        chrono::Local::now().to_rfc3339().into(),
-    );
-    metadata.insert("total_records".to_string(), processed_stats.len().into());
-    if query.include_chat.unwrap_or(false) {
-        let chat_count = if let Some(chat_data) = export_data.get("chat_messages") {
-            if let Some(arr) = chat_data.as_array() {
-                arr.len()
-            } else {
-                0
-            }
-        } else {
-            0
-        };
-        metadata.insert("chat_messages_count".to_string(), chat_count.into());
-    }
-    export_data.insert("metadata".to_string(), serde_json::Value::Object(metadata));
-
-    // JSONファイルに書き込み
-    let json_content = serde_json::to_string_pretty(&export_data)
-        .map_err(|e| format!("JSON serialization failed: {}", e))?;
-
-    std::fs::write(&file_path, json_content)
-        .io_context("write JSON file")
-        .map_err(|e| e.to_string())?;
-
-    Ok(format!("Exported data to {}", file_path))
-}
-
 fn get_stream_stats_internal(
     conn: &Connection,
     query: &ExportQuery,
 ) -> Result<Vec<StreamStats>, duckdb::Error> {
     let mut sql = String::from(
-        "SELECT ss.id, ss.stream_id, ss.collected_at, ss.viewer_count, ss.chat_rate_1min, ss.category, ss.title, ss.follower_count, ss.twitch_user_id, ss.channel_name 
+        "SELECT ss.id, ss.stream_id, CAST(ss.collected_at AS VARCHAR) as collected_at, ss.viewer_count, ss.chat_rate_1min, ss.category, ss.title, ss.follower_count, ss.twitch_user_id, ss.channel_name 
          FROM stream_stats ss
          INNER JOIN streams s ON ss.stream_id = s.id
          WHERE 1=1",
@@ -211,56 +108,147 @@ fn get_stream_stats_internal(
     stats
 }
 
-fn get_chat_messages_internal(
-    conn: &Connection,
-    query: &ExportQuery,
-) -> Result<Vec<ChatMessage>, duckdb::Error> {
-    let mut sql = String::from(
-        r#"
-        SELECT
-            cm.id, cm.stream_id, cm.timestamp, cm.platform,
-            cm.user_id, cm.user_name, cm.message, cm.message_type
-        FROM chat_messages cm
-        INNER JOIN streams s ON cm.stream_id = s.id
-        WHERE 1=1
-        "#,
-    );
+/// Helper function to escape field values for delimited output
+fn escape_field(value: &str, delimiter: &str) -> String {
+    // Check if field needs escaping (contains delimiter, quotes, or newlines)
+    if value.contains(delimiter) || value.contains('"') || value.contains('\n') || value.contains('\r') {
+        // Escape quotes by doubling them, then wrap in quotes
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value.to_string()
+    }
+}
 
-    let mut params: Vec<String> = Vec::new();
+#[tauri::command]
+pub async fn export_to_delimited(
+    _app_handle: AppHandle,
+    db_manager: State<'_, DatabaseManager>,
+    query: ExportQuery,
+    file_path: String,
+    include_bom: Option<bool>,
+) -> Result<String, String> {
+    let conn = db_manager
+        .get_connection()
+        .db_context("get database connection")
+        .map_err(|e| e.to_string())?;
 
-    if let Some(channel_id) = query.channel_id {
-        sql.push_str(" AND s.channel_id = ?");
-        params.push(channel_id.to_string());
+    let stats = get_stream_stats_internal(&conn, &query)
+        .db_context("query stats")
+        .map_err(|e| e.to_string())?;
+
+    let stats_len = stats.len();
+
+    // Determine delimiter (default to comma)
+    let delimiter = query.delimiter.as_deref().unwrap_or(",");
+    
+    // Build delimited file content
+    let mut output = String::new();
+    
+    // Add UTF-8 BOM if requested (helps Excel recognize UTF-8)
+    if include_bom.unwrap_or(false) {
+        output.push_str("\u{FEFF}");
     }
 
-    if let Some(start_time) = &query.start_time {
-        sql.push_str(" AND cm.timestamp >= ?");
-        params.push(start_time.clone());
+    // Header row with full columns
+    output.push_str(&format!(
+        "collected_at{}channel_name{}viewer_count{}category{}title{}chat_rate_1min\n",
+        delimiter, delimiter, delimiter, delimiter, delimiter
+    ));
+
+    // Data rows
+    for stat in &stats {
+        let collected_at = &stat.collected_at;
+        let channel_name = stat.channel_name.as_deref().unwrap_or("");
+        let viewer_count = stat.viewer_count.unwrap_or(0).to_string();
+        let category = stat.category.as_deref().unwrap_or("");
+        let title = stat.title.as_deref().unwrap_or("");
+        let chat_rate = stat.chat_rate_1min.to_string();
+
+        output.push_str(&format!(
+            "{}{}{}{}{}{}{}{}{}{}{}\n",
+            escape_field(collected_at, delimiter),
+            delimiter,
+            escape_field(channel_name, delimiter),
+            delimiter,
+            viewer_count,
+            delimiter,
+            escape_field(category, delimiter),
+            delimiter,
+            escape_field(title, delimiter),
+            delimiter,
+            chat_rate
+        ));
     }
 
-    if let Some(end_time) = &query.end_time {
-        sql.push_str(" AND cm.timestamp <= ?");
-        params.push(end_time.clone());
+    // Write to file
+    std::fs::write(&file_path, output)
+        .io_context("write file")
+        .map_err(|e| e.to_string())?;
+
+    Ok(format!(
+        "Exported {} records to {} (delimiter: {:?})",
+        stats_len,
+        file_path,
+        delimiter
+    ))
+}
+
+#[tauri::command]
+pub async fn preview_export_data(
+    _app_handle: AppHandle,
+    db_manager: State<'_, DatabaseManager>,
+    query: ExportQuery,
+    max_rows: Option<usize>,
+) -> Result<String, String> {
+    let conn = db_manager
+        .get_connection()
+        .db_context("get database connection")
+        .map_err(|e| e.to_string())?;
+
+    let stats = get_stream_stats_internal(&conn, &query)
+        .db_context("query stats")
+        .map_err(|e| e.to_string())?;
+
+    // Limit to max_rows (default 10)
+    let max_rows = max_rows.unwrap_or(10);
+    let preview_stats = stats.iter().take(max_rows);
+
+    // Determine delimiter (default to comma)
+    let delimiter = query.delimiter.as_deref().unwrap_or(",");
+    
+    // Build preview content
+    let mut output = String::new();
+
+    // Header row with full columns
+    output.push_str(&format!(
+        "collected_at{}channel_name{}viewer_count{}category{}title{}chat_rate_1min\n",
+        delimiter, delimiter, delimiter, delimiter, delimiter
+    ));
+
+    // Data rows (limited to max_rows)
+    for stat in preview_stats {
+        let collected_at = &stat.collected_at;
+        let channel_name = stat.channel_name.as_deref().unwrap_or("");
+        let viewer_count = stat.viewer_count.unwrap_or(0).to_string();
+        let category = stat.category.as_deref().unwrap_or("");
+        let title = stat.title.as_deref().unwrap_or("");
+        let chat_rate = stat.chat_rate_1min.to_string();
+
+        output.push_str(&format!(
+            "{}{}{}{}{}{}{}{}{}{}{}\n",
+            escape_field(collected_at, delimiter),
+            delimiter,
+            escape_field(channel_name, delimiter),
+            delimiter,
+            viewer_count,
+            delimiter,
+            escape_field(category, delimiter),
+            delimiter,
+            escape_field(title, delimiter),
+            delimiter,
+            chat_rate
+        ));
     }
 
-    sql.push_str(" ORDER BY cm.timestamp ASC");
-
-    let mut stmt = conn.prepare(&sql)?;
-
-    let messages: Result<Vec<ChatMessage>, _> =
-        utils::query_map_with_params(&mut stmt, &params, |row| {
-            Ok(ChatMessage {
-                id: Some(row.get(0)?),
-                stream_id: row.get(1)?,
-                timestamp: row.get(2)?,
-                platform: row.get(3)?,
-                user_id: row.get::<_, Option<String>>(4)?,
-                user_name: row.get(5)?,
-                message: row.get(6)?,
-                message_type: row.get(7)?,
-            })
-        })?
-        .collect();
-
-    messages
+    Ok(output)
 }

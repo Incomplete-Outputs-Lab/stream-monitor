@@ -25,28 +25,21 @@ tauri-plugin-keyring = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", features = ["json"] }
-duckdb = { version = "1", features = ["bundled"] }
+reqwest = { version = "0.12.28", features = ["json"] }
+duckdb = { version = "1.4", features = ["bundled"] }
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
-hyper = { version = "0.14", features = ["full"] }
 url = "2.5"
-base64 = "0.22"
-sha2 = "0.10"
-rand = "0.8"
-urlencoding = "2.1"
-open = "5.0"
 # Twitch API libraries
-twitch_api = { version = "0.7", features = ["helix", "client", "reqwest", "twitch_oauth2"] }
+twitch_api = { version = "0.7.2", features = ["helix", "client", "reqwest", "twitch_oauth2"] }
 twitch_oauth2 = { version = "0.16", features = ["reqwest"] }
 # YouTube API library
-google-youtube3 = "6"
-hyper-rustls = { version = "0.26", features = ["native-tokio"] }
+google-youtube3 = "7"
+yup-oauth2 = "12"
+hyper-rustls = "0.27"
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "http2", "tokio"] }
-yup-oauth2 = "9"
-# WebSocket and scraping libraries
-tungstenite = { version = "0.21", features = ["native-tls"] }
-scraper = "0.19"
+# WebSocket libraries
+tungstenite = { version = "0.28", features = ["native-tls"] }
 thiserror = "2.0.18"
 tauri-plugin-dialog = "2"
 tauri-plugin-process = "2"

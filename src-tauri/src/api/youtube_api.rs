@@ -1,8 +1,12 @@
 // Keyring is not used in this file as it doesn't have AppHandle access
 use crate::constants::youtube;
-use google_youtube3::{hyper_rustls, hyper_util, yup_oauth2, YouTube};
+use google_youtube3::YouTube;
+use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::client::legacy::connect::HttpConnector;
+use hyper_util::client::legacy::Client;
+use hyper_util::rt::TokioExecutor;
 use std::sync::Arc;
+use yup_oauth2::{ApplicationSecret, InstalledFlowAuthenticator, InstalledFlowReturnMethod};
 
 #[allow(dead_code)]
 pub struct YouTubeApiClient {
@@ -17,8 +21,7 @@ impl YouTubeApiClient {
         client_secret: String,
         _redirect_uri: String,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        // google_youtube3のyup_oauth2を使用
-        let secret = yup_oauth2::ApplicationSecret {
+        let secret = ApplicationSecret {
             client_id,
             client_secret,
             auth_uri: youtube::OAUTH_AUTH_URL.to_string(),
@@ -26,23 +29,21 @@ impl YouTubeApiClient {
             ..Default::default()
         };
 
-        let auth = yup_oauth2::InstalledFlowAuthenticator::builder(
+        let auth = InstalledFlowAuthenticator::builder(
             secret.clone(),
-            yup_oauth2::InstalledFlowReturnMethod::HTTPRedirect,
+            InstalledFlowReturnMethod::HTTPRedirect,
         )
         .build()
         .await?;
 
-        let https_connector = hyper_rustls::HttpsConnectorBuilder::new()
+        let https_connector = HttpsConnectorBuilder::new()
             .with_native_roots()
             .expect("Failed to load native roots")
             .https_or_http()
             .enable_http1()
             .build();
 
-        let client =
-            hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
-                .build(https_connector);
+        let client = Client::builder(TokioExecutor::new()).build(https_connector);
 
         let hub = Arc::new(YouTube::new(client, auth));
 

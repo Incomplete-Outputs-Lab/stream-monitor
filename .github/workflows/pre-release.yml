@@ -1,16 +1,16 @@
-name: 'Publish Release'
+name: 'Publish Pre-Release'
 
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*-beta*'
+      - 'v*-alpha*'
+      - 'v*-rc*'
 
 jobs:
-  publish-tauri:
+  publish-tauri-prerelease:
     permissions:
       contents: write
-    # Skip this job if the tag contains pre-release indicators
-    if: ${{ !contains(github.ref_name, 'alpha') && !contains(github.ref_name, 'beta') && !contains(github.ref_name, 'rc') }}
     strategy:
       fail-fast: false
       matrix:
@@ -69,6 +69,34 @@ jobs:
           echo "GIT_BRANCH=${GITHUB_REF_NAME}" >> $GITHUB_ENV
           echo "BUILD_TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> $GITHUB_ENV
 
+      - name: Determine pre-release type
+        shell: bash
+        run: |
+          TAG_NAME=${GITHUB_REF_NAME}
+          if [[ $TAG_NAME == *"alpha"* ]]; then
+            echo "PRERELEASE_TYPE=Alpha" >> $GITHUB_ENV
+            echo "PRERELEASE_EMOJI=🚧" >> $GITHUB_ENV
+            echo "TAG_PREFIX=alpha" >> $GITHUB_ENV
+          elif [[ $TAG_NAME == *"beta"* ]]; then
+            echo "PRERELEASE_TYPE=Beta" >> $GITHUB_ENV
+            echo "PRERELEASE_EMOJI=🧪" >> $GITHUB_ENV
+            echo "TAG_PREFIX=beta" >> $GITHUB_ENV
+          elif [[ $TAG_NAME == *"rc"* ]]; then
+            echo "PRERELEASE_TYPE=Release Candidate" >> $GITHUB_ENV
+            echo "PRERELEASE_EMOJI=🎯" >> $GITHUB_ENV
+            echo "TAG_PREFIX=rc" >> $GITHUB_ENV
+          else
+            echo "PRERELEASE_TYPE=Pre-Release" >> $GITHUB_ENV
+            echo "PRERELEASE_EMOJI=⚠️" >> $GITHUB_ENV
+            echo "TAG_PREFIX=pre" >> $GITHUB_ENV
+          fi
+          
+          # Extract version number from tag (e.g., v1.0.0-alpha.1 -> 1.0.0 and 1)
+          BASE_VERSION=$(echo $TAG_NAME | sed -E 's/v([0-9]+\.[0-9]+\.[0-9]+)-.*/\1/')
+          PRERELEASE_NUMBER=$(echo $TAG_NAME | sed -E 's/.*\.(.*)/\1/')
+          echo "BASE_VERSION=$BASE_VERSION" >> $GITHUB_ENV
+          echo "PRERELEASE_NUMBER=$PRERELEASE_NUMBER" >> $GITHUB_ENV
+
       - name: Build Tauri App
         uses: tauri-apps/tauri-action@v0
         env:
@@ -81,25 +109,40 @@ jobs:
           BUILD_TIMESTAMP: ${{ env.BUILD_TIMESTAMP }}
         with:
           projectPath: './src-tauri'
-          tagName: v__VERSION__
-          releaseName: 'Stream Stats Collector v__VERSION__'
+          tagName: ${{ github.ref_name }}
+          releaseName: '${{ env.PRERELEASE_EMOJI }} Stream Stats Collector ${{ github.ref_name }}'
           releaseBody: |
-            ## What's Changed
-            - Auto-generated release from GitHub Actions
+            ## ${{ env.PRERELEASE_EMOJI }} Pre-Release: ${{ env.PRERELEASE_TYPE }}
+            
+            **⚠️ This is a pre-release version intended for testing purposes.**
+            
+            ### What's New in This Pre-Release
+            - Auto-generated pre-release from GitHub Actions
             - Built from commit: ${{ env.GIT_COMMIT_HASH }}
             - Branch: ${{ env.GIT_BRANCH }}
             - Build time: ${{ env.BUILD_TIMESTAMP }}
-
-            ## Download
+            
+            ### Important Notes
+            - ⚠️ **Use at your own risk**: This version may contain bugs or unstable features
+            - 🧪 **For testing only**: Not recommended for production use
+            - 📝 **Feedback welcome**: Please report issues on GitHub
+            - 🔄 **Auto-update**: This version supports automatic updates to newer pre-releases and stable releases
+            
+            ### Download Instructions
             Select the appropriate installer for your platform:
             - **Windows**: `.msi` file
             - **macOS**: `.dmg` file  
             - **Linux**: `.AppImage` file
-
-            ## Auto-Update
-            This release supports automatic updates. The app will check for updates on startup.
-
-            See the assets below to download and install this version.
+            
+            ### How to Help
+            1. Download and test this pre-release
+            2. Report any issues you encounter
+            3. Provide feedback on new features
+            4. Help us make the stable release better!
+            
+            ---
+            📋 **Full changelog and stable releases**: [View all releases](https://github.com/${{ github.repository }}/releases)
           releaseDraft: false
+          prerelease: true
           includeUpdaterJson: true
           args: ${{ matrix.args }}

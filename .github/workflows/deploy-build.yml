@@ -1,121 +1,78 @@
-name: Build
+name: 'Test Build'
 
 on:
   push:
-    branches:
-      - main
-      - develop
+    branches: [main, master, develop, feature/*]
   pull_request:
-    branches:
-      - main
-      - develop
+    branches: [main, master, develop]
 
 jobs:
-  build:
-    name: Build Application
+  test-tauri:
     strategy:
       fail-fast: false
       matrix:
         include:
+          - platform: 'macos-latest'
+            args: '--target aarch64-apple-darwin'
           - platform: 'ubuntu-22.04'
-            target: 'x86_64-unknown-linux-gnu'
+            args: ''
           - platform: 'windows-latest'
-            target: 'x86_64-pc-windows-msvc'
-          - platform: 'macos-latest'
-            target: 'x86_64-apple-darwin'
-          - platform: 'macos-latest'
-            target: 'aarch64-apple-darwin'
+            args: ''
 
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Install Linux dependencies
+      - name: Install dependencies (ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
+            libwebkit2gtk-4.0-dev \
+            libappindicator3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
             build-essential \
             curl \
             wget \
             file \
             libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf \
+            libgtk-3-dev \
             cmake \
             pkg-config
 
-      - name: Verify Windows build tools
-        if: matrix.platform == 'windows-latest'
-        run: |
-          # CMakeとMSVCツールチェーンの確認（windows-latestには通常含まれている）
-          cmake --version || echo "CMake check failed"
-          where cl || echo "MSVC compiler check"
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Cache Cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.target }}-cargo-
-
-      - name: Install Tauri CLI (Non-Windows)
-        if: runner.os != 'Windows'
-        run: |
-          if ! command -v cargo-tauri &> /dev/null; then
-            echo "Installing Tauri CLI..."
-            cargo install tauri-cli --locked
-          else
-            echo "Tauri CLI already installed"
-            cargo tauri --version
-          fi
-
-      - name: Install Tauri CLI (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          if (-not (Get-Command cargo-tauri -ErrorAction SilentlyContinue)) {
-            Write-Host "Installing Tauri CLI..."
-            cargo install tauri-cli --locked
-          } else {
-            Write-Host "Tauri CLI already installed"
-            cargo tauri --version
-          }
-
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build frontend
-        run: bun run build
+      - name: Set build environment variables
+        shell: bash
+        run: |
+          echo "GIT_COMMIT_HASH=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "GIT_BRANCH=${GITHUB_REF_NAME}" >> $GITHUB_ENV
+          echo "BUILD_TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> $GITHUB_ENV
 
-      - name: Build Rust (check)
-        working-directory: src-tauri
+      - name: Test Build Tauri App
+        uses: tauri-apps/tauri-action@v0
         env:
-          # WindowsでのDuckDBビルド最適化
           DUCKDB_BUILD_SINGLE_THREADED: 1
-        run: cargo build --target ${{ matrix.target }} --release
-
-      - name: Build Tauri app (no bundle)
-        working-directory: src-tauri
-        env:
-          # WindowsでのDuckDBビルド最適化
-          DUCKDB_BUILD_SINGLE_THREADED: 1
-        run: cargo tauri build --target ${{ matrix.target }} --no-bundle || echo "Build check completed (bundle skipped)"
+          GIT_COMMIT_HASH: ${{ env.GIT_COMMIT_HASH }}
+          GIT_BRANCH: ${{ env.GIT_BRANCH }}
+          BUILD_TIMESTAMP: ${{ env.BUILD_TIMESTAMP }}
+        with:
+          projectPath: './src-tauri'
+          args: ${{ matrix.args }}
+          # Don't create releases for test builds
+          includeRelease: false

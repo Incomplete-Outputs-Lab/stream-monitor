@@ -1,6 +1,6 @@
 use crate::database::DatabaseManager;
 use crate::error::ResultExt;
-use chrono::{TimeZone, Utc};
+use chrono::{Local, TimeZone};
 use duckdb::{params, types::TimeUnit, types::ValueRef};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
@@ -137,13 +137,13 @@ pub async fn execute_sql(
                     Ok(ValueRef::Timestamp(unit, value)) => {
                         // Timestampを文字列に変換
                         let datetime = match unit {
-                            TimeUnit::Second => Utc.timestamp_opt(value, 0).single(),
-                            TimeUnit::Millisecond => Utc.timestamp_millis_opt(value).single(),
-                            TimeUnit::Microsecond => Utc.timestamp_micros(value).single(),
+                            TimeUnit::Second => Local.timestamp_opt(value, 0).single(),
+                            TimeUnit::Millisecond => Local.timestamp_millis_opt(value).single(),
+                            TimeUnit::Microsecond => Local.timestamp_micros(value).single(),
                             TimeUnit::Nanosecond => {
                                 let secs = value / 1_000_000_000;
                                 let nsecs = (value % 1_000_000_000) as u32;
-                                Utc.timestamp_opt(secs, nsecs).single()
+                                Local.timestamp_opt(secs, nsecs).single()
                             }
                         };
                         match datetime {
@@ -234,13 +234,13 @@ pub async fn execute_sql(
                     Ok(ValueRef::Timestamp(unit, value)) => {
                         // Timestampを文字列に変換
                         let datetime = match unit {
-                            TimeUnit::Second => Utc.timestamp_opt(value, 0).single(),
-                            TimeUnit::Millisecond => Utc.timestamp_millis_opt(value).single(),
-                            TimeUnit::Microsecond => Utc.timestamp_micros(value).single(),
+                            TimeUnit::Second => Local.timestamp_opt(value, 0).single(),
+                            TimeUnit::Millisecond => Local.timestamp_millis_opt(value).single(),
+                            TimeUnit::Microsecond => Local.timestamp_micros(value).single(),
                             TimeUnit::Nanosecond => {
                                 let secs = value / 1_000_000_000;
                                 let nsecs = (value % 1_000_000_000) as u32;
-                                Utc.timestamp_opt(secs, nsecs).single()
+                                Local.timestamp_opt(secs, nsecs).single()
                             }
                         };
                         match datetime {

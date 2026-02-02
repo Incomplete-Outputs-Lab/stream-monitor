@@ -276,3 +276,81 @@ export interface TwitchGame {
   name: string;
   box_art_url: string;
 }
+
+export interface StreamInfo {
+  id: number;
+  stream_id: string;
+  channel_id: number;
+  channel_name: string;
+  title: string;
+  category: string;
+  started_at: string;
+  ended_at?: string;
+  peak_viewers: number;
+  avg_viewers: number;
+  duration_minutes: number;
+  minutes_watched: number;
+  follower_gain: number;
+  total_chat_messages: number;
+  engagement_rate: number;
+}
+
+export interface TimelinePoint {
+  collected_at: string;
+  viewer_count?: number;
+  chat_rate_1min: number;
+  category?: string;
+  title?: string;
+  follower_count?: number;
+}
+
+export interface CategoryChange {
+  timestamp: string;
+  from_category?: string;
+  to_category: string;
+}
+
+export interface TitleChange {
+  timestamp: string;
+  from_title?: string;
+  to_title: string;
+}
+
+export interface StreamTimelineData {
+  stream_info: StreamInfo;
+  stats: TimelinePoint[];
+  category_changes: CategoryChange[];
+  title_changes: TitleChange[];
+}
+
+// ========== Timeline Comparison Types ==========
+
+// 比較用に正規化されたデータポイント
+export interface NormalizedTimelinePoint {
+  timestamp: string; // ISO8601形式の絶対時刻
+  timestampMs: number; // ミリ秒のUnix timestamp
+  viewer_count: number;
+  chat_rate_1min: number;
+  streamId: number; // どの配信のデータか識別
+  streamLabel: string; // 配信者名と配信タイトル
+}
+
+// 比較用イベントマーカー
+export interface ComparisonEvent {
+  timestamp: string; // ISO8601形式の絶対時刻
+  timestampMs: number; // ミリ秒のUnix timestamp
+  eventType: 'category' | 'title';
+  streamId: number;
+  streamLabel: string;
+  description: string;
+  color: string; // イベントマーカーの色
+}
+
+// 複数配信の選択状態
+export interface SelectedStream {
+  streamId: number;
+  channelName: string;
+  streamTitle: string;
+  startedAt: string;
+  color: string; // グラフ表示用の色
+}

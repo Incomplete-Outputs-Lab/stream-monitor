@@ -4,7 +4,7 @@ use crate::config::settings::{AutoDiscoverySettings, SettingsManager};
 use crate::database::DatabaseManager;
 use crate::error::ResultExt;
 use crate::DiscoveredStreamsCache;
-use chrono::Utc;
+use chrono::Local;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
@@ -208,7 +208,7 @@ impl AutoDiscoveryPoller {
 
         // メモリキャッシュに保存するための配信情報を構築
         let mut discovered_streams_info = Vec::new();
-        let now = Utc::now().to_rfc3339();
+        let now = Local::now().to_rfc3339();
 
         for stream in filtered_streams {
             let user_id = stream.user_id.to_string();

@@ -3,7 +3,7 @@ use crate::api::youtube_live_chat::YouTubeLiveChatCollector;
 use crate::collectors::collector_trait::Collector;
 use crate::database::models::{Channel, StreamData};
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::Local;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -57,7 +57,7 @@ impl Collector for YouTubeCollector {
                 .as_ref()
                 .and_then(|details| details.actual_start_time.as_ref())
                 .map(|dt| dt.to_rfc3339())
-                .unwrap_or_else(|| Utc::now().to_rfc3339());
+                .unwrap_or_else(|| Local::now().to_rfc3339());
 
             // ストリームIDは動画IDを使用
             let stream_id = video.id.as_ref().unwrap_or(&String::new()).clone();
@@ -81,7 +81,8 @@ impl Collector for YouTubeCollector {
                 thumbnail_url,
                 started_at,
                 viewer_count,
-                chat_rate_1min: 0, // Phase 2で実装（チャット機能）
+                chat_rate_1min: 0,    // Phase 2で実装（チャット機能）
+                follower_count: None, // YouTube APIではフォロワー数は取得していない
             }))
         } else {
             Ok(None)

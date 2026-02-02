@@ -7,7 +7,7 @@ use crate::database::{
     DatabaseManager,
 };
 use crate::logger::AppLogger;
-use chrono::Utc;
+use chrono::Local;
 use duckdb::Connection;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -151,7 +151,7 @@ impl ChannelPoller {
                 interval.tick().await;
 
                 // Update last poll time
-                let now = Utc::now().to_rfc3339();
+                let now = Local::now().to_rfc3339();
                 let poll_count = if let Ok(mut map) = status_map.write() {
                     if let Some(status) = map.get_mut(&channel_id) {
                         status.last_poll_at = Some(now.clone());
@@ -240,7 +240,7 @@ impl ChannelPoller {
                             }
                         } else {
                             // Update status with success
-                            let now = Utc::now().to_rfc3339();
+                            let now = Local::now().to_rfc3339();
                             if let Ok(mut map) = status_map.write() {
                                 if let Some(status) = map.get_mut(&channel_id) {
                                     status.last_success_at = Some(now);
@@ -261,7 +261,7 @@ impl ChannelPoller {
                     Ok(None) => {
                         // 配信していない - オフラインイベントを発行
                         // Update status with success (not live is valid state)
-                        let now = Utc::now().to_rfc3339();
+                        let now = Local::now().to_rfc3339();
                         if let Ok(mut map) = status_map.write() {
                             if let Some(status) = map.get_mut(&channel_id) {
                                 status.last_success_at = Some(now);
@@ -413,10 +413,12 @@ impl ChannelPoller {
         let stats = StreamStats {
             id: None,
             stream_id: stream_db_id,
-            collected_at: Utc::now().to_rfc3339(),
+            collected_at: Local::now().to_rfc3339(),
             viewer_count: stream_data.viewer_count,
             chat_rate_1min: stream_data.chat_rate_1min,
             category: stream_data.category.clone(),
+            title: stream_data.title.clone(),
+            follower_count: stream_data.follower_count,
             twitch_user_id,
             channel_name: Some(channel.channel_name.clone()),
         };

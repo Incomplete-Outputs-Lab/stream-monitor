@@ -1,6 +1,6 @@
 use crate::config::keyring_store::{KeyringStore, TokenMetadata};
 use crate::constants::database as db_constants;
-use chrono::{Duration, Utc};
+use chrono::{Duration, Local};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -188,7 +188,7 @@ impl TwitchOAuth {
 
                     // トークンメタデータを保存（有効期限情報）
                     if let Some(expires_in) = token_response.expires_in {
-                        let now = Utc::now();
+                        let now = Local::now();
                         let metadata = TokenMetadata {
                             expires_at: (now + Duration::seconds(expires_in as i64)).to_rfc3339(),
                             obtained_at: now.to_rfc3339(),
@@ -329,7 +329,7 @@ impl TwitchOAuth {
 
         // トークンメタデータを保存（有効期限情報）
         if let Some(expires_in) = token_response.expires_in {
-            let now = Utc::now();
+            let now = Local::now();
             let metadata = TokenMetadata {
                 expires_at: (now + Duration::seconds(expires_in as i64)).to_rfc3339(),
                 obtained_at: now.to_rfc3339(),

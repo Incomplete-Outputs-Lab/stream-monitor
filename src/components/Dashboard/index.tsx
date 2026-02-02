@@ -491,7 +491,7 @@ export function Dashboard() {
               </div>
             ) : uniqueLiveChannels.length > 0 ? (
               uniqueLiveChannels.map((channel) => (
-                <LiveChannelCard key={`${channel.platform}-${channel.channel_id}`} channel={channel} />
+                <LiveChannelCard key={channel.id ?? `${channel.platform}-${channel.channel_id}`} channel={channel} />
               ))
             ) : (
               <div className="text-center py-12">
@@ -535,7 +535,7 @@ export function Dashboard() {
                 
                 return (
                   <DiscoveredStreamCard
-                    key={stream.id}
+                    key={`discovered-${stream.twitch_user_id}-${stream.channel_id}`}
                     stream={stream}
                     onPromote={handlePromote}
                     isAlreadyRegistered={isAlreadyRegistered}

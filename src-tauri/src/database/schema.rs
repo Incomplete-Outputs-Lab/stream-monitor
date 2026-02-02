@@ -284,5 +284,31 @@ fn migrate_database_schema(conn: &Connection) -> Result<(), duckdb::Error> {
         eprintln!("[Migration] Created index on twitch_user_id");
     }
 
+    // stream_statsテーブルにtitleフィールドを追加
+    let mut stream_stats_has_title = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('stream_stats') WHERE name = 'title'")?;
+    let stream_stats_has_title_count: i64 =
+        stream_stats_has_title.query_row([], |row| row.get(0))?;
+
+    if stream_stats_has_title_count == 0 {
+        eprintln!("[Migration] Adding title column to stream_stats table");
+        conn.execute("ALTER TABLE stream_stats ADD COLUMN title TEXT", [])?;
+    }
+
+    // stream_statsテーブルにfollower_countフィールドを追加
+    let mut stream_stats_has_follower_count = conn.prepare(
+        "SELECT COUNT(*) FROM pragma_table_info('stream_stats') WHERE name = 'follower_count'",
+    )?;
+    let stream_stats_has_follower_count_count: i64 =
+        stream_stats_has_follower_count.query_row([], |row| row.get(0))?;
+
+    if stream_stats_has_follower_count_count == 0 {
+        eprintln!("[Migration] Adding follower_count column to stream_stats table");
+        conn.execute(
+            "ALTER TABLE stream_stats ADD COLUMN follower_count INTEGER",
+            [],
+        )?;
+    }
+
     Ok(())
 }

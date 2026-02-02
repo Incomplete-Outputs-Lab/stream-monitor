@@ -70,6 +70,22 @@ impl Collector for TwitchCollector {
             .await?;
 
         if let Some(stream) = stream_opt {
+            // フォロワー数を取得（エラー時は None）
+            let follower_count = match self
+                .api_client
+                .get_followers_batch(&[user_id_string.as_str()])
+                .await
+            {
+                Ok(results) => results.first().map(|(_, count)| *count),
+                Err(e) => {
+                    eprintln!(
+                        "[TwitchCollector] Failed to get follower count for {}: {}",
+                        channel.channel_id, e
+                    );
+                    None
+                }
+            };
+
             // Twitch APIから取得したストリーム情報を構造化して返す
             Ok(Some(StreamData {
                 stream_id: stream.id.to_string(),
@@ -79,6 +95,7 @@ impl Collector for TwitchCollector {
                 started_at: stream.started_at.as_str().to_string(),
                 viewer_count: Some(stream.viewer_count as i32),
                 chat_rate_1min: 0, // Phase 2で実装（チャット機能）
+                follower_count,
             }))
         } else {
             // 配信していない場合はNone

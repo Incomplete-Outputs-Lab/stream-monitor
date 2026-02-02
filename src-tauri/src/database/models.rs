@@ -40,6 +40,8 @@ pub struct StreamStats {
     pub viewer_count: Option<i32>,
     pub chat_rate_1min: i32,
     pub category: Option<String>,
+    pub title: Option<String>,
+    pub follower_count: Option<i32>,
     pub twitch_user_id: Option<String>,
     pub channel_name: Option<String>,
 }
@@ -54,6 +56,7 @@ pub struct StreamData {
     pub started_at: String,
     pub viewer_count: Option<i32>,
     pub chat_rate_1min: i32,
+    pub follower_count: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,6 +133,8 @@ mod tests {
             viewer_count: Some(100),
             chat_rate_1min: 10,
             category: Some("Just Chatting".to_string()),
+            title: Some("Test Stream Title".to_string()),
+            follower_count: Some(5000),
             twitch_user_id: Some("123456789".to_string()),
             channel_name: Some("test_channel".to_string()),
         };
@@ -140,6 +145,8 @@ mod tests {
         assert_eq!(stats.viewer_count, deserialized.viewer_count);
         assert_eq!(stats.chat_rate_1min, deserialized.chat_rate_1min);
         assert_eq!(stats.category, deserialized.category);
+        assert_eq!(stats.title, deserialized.title);
+        assert_eq!(stats.follower_count, deserialized.follower_count);
         assert_eq!(stats.twitch_user_id, deserialized.twitch_user_id);
         assert_eq!(stats.channel_name, deserialized.channel_name);
     }

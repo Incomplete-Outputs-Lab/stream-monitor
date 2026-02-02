@@ -131,7 +131,7 @@ pub async fn export_to_json(
     let mut metadata = serde_json::Map::new();
     metadata.insert(
         "exported_at".to_string(),
-        chrono::Utc::now().to_rfc3339().into(),
+        chrono::Local::now().to_rfc3339().into(),
     );
     metadata.insert("total_records".to_string(), processed_stats.len().into());
     if query.include_chat.unwrap_or(false) {
@@ -164,7 +164,7 @@ fn get_stream_stats_internal(
     query: &ExportQuery,
 ) -> Result<Vec<StreamStats>, duckdb::Error> {
     let mut sql = String::from(
-        "SELECT ss.id, ss.stream_id, ss.collected_at, ss.viewer_count, ss.chat_rate_1min, ss.category, ss.twitch_user_id, ss.channel_name 
+        "SELECT ss.id, ss.stream_id, ss.collected_at, ss.viewer_count, ss.chat_rate_1min, ss.category, ss.title, ss.follower_count, ss.twitch_user_id, ss.channel_name 
          FROM stream_stats ss
          INNER JOIN streams s ON ss.stream_id = s.id
          WHERE 1=1",
@@ -200,8 +200,10 @@ fn get_stream_stats_internal(
                 viewer_count: row.get(3)?,
                 chat_rate_1min: row.get(4)?,
                 category: row.get(5)?,
-                twitch_user_id: row.get(6)?,
-                channel_name: row.get(7)?,
+                title: row.get(6)?,
+                follower_count: row.get(7)?,
+                twitch_user_id: row.get(8)?,
+                channel_name: row.get(9)?,
             })
         })?
         .collect();

@@ -64,8 +64,8 @@ impl DatabaseWriter {
         stats: &StreamStats,
     ) -> Result<(), duckdb::Error> {
         conn.execute(
-            "INSERT INTO stream_stats (stream_id, collected_at, viewer_count, chat_rate_1min, category, twitch_user_id, channel_name)
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO stream_stats (stream_id, collected_at, viewer_count, chat_rate_1min, category, title, follower_count, twitch_user_id, channel_name)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 &stats.stream_id.to_string(),
                 &stats.collected_at,
@@ -75,6 +75,11 @@ impl DatabaseWriter {
                     .unwrap_or_default(),
                 &stats.chat_rate_1min.to_string(),
                 stats.category.as_deref().unwrap_or(""),
+                stats.title.as_deref().unwrap_or(""),
+                &stats
+                    .follower_count
+                    .map(|v| v.to_string())
+                    .unwrap_or_default(),
                 stats.twitch_user_id.as_deref().unwrap_or(""),
                 stats.channel_name.as_deref().unwrap_or(""),
             ],

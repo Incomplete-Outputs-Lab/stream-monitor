@@ -50,6 +50,7 @@ use commands::{
         list_sql_templates, save_sql_template,
     },
     stats::{get_channel_stats, get_collector_status, get_stream_stats},
+    timeline::{get_channel_streams, get_stream_timeline},
     twitch::{get_twitch_rate_limit_status, validate_twitch_channel},
 };
 use config::settings::SettingsManager;
@@ -73,7 +74,9 @@ async fn check_for_updates(app: tauri::AppHandle) {
         Err(_) => {
             // 署名鍵が未設定の場合
             app.dialog()
-                .message("アップデート機能は未設定です。\n署名鍵とエンドポイントを設定してください。")
+                .message(
+                    "アップデート機能は未設定です。\n署名鍵とエンドポイントを設定してください。",
+                )
                 .kind(MessageDialogKind::Warning)
                 .blocking_show();
             return;
@@ -495,6 +498,9 @@ pub fn run() {
             get_stream_stats,
             get_channel_stats,
             get_collector_status,
+            // Timeline commands
+            get_channel_streams,
+            get_stream_timeline,
             // Export commands
             export_to_csv,
             export_to_json,

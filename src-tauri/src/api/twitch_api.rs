@@ -1,7 +1,7 @@
 use crate::config::keyring_store::KeyringStore;
 use crate::constants::{database as db_constants, twitch};
 use crate::oauth::twitch::TwitchOAuth;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local};
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -199,7 +199,7 @@ impl TwitchApiClient {
             }
         };
 
-        let now = Utc::now();
+        let now = Local::now();
         let time_until_expiry = expires_at.signed_duration_since(now);
         let minutes_until_expiry = time_until_expiry.num_minutes();
 

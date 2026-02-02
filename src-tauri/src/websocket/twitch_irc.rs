@@ -1,5 +1,5 @@
 use crate::database::models::ChatMessage;
-use chrono::Utc;
+use chrono::Local;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
@@ -79,7 +79,7 @@ impl TwitchIrcClient {
                                             Some(ChatMessage {
                                                 id: None,
                                                 stream_id,
-                                                timestamp: Utc::now().to_rfc3339(),
+                                                timestamp: Local::now().to_rfc3339(),
                                                 platform: crate::constants::database::PLATFORM_TWITCH.to_string(),
                                                 user_id: None,
                                                 user_name,
@@ -158,7 +158,7 @@ impl TwitchIrcClient {
                     return Some(ChatMessage {
                         id: None,
                         stream_id: self.stream_id,
-                        timestamp: Utc::now().to_rfc3339(),
+                        timestamp: Local::now().to_rfc3339(),
                         platform: crate::constants::database::PLATFORM_TWITCH.to_string(),
                         user_id: None, // Twitch IRCではユーザーIDを取得できない
                         user_name,

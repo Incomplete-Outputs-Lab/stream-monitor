@@ -14,10 +14,11 @@ import { ConfirmDialog } from "./components/common/ConfirmDialog";
 import { useThemeStore } from "./stores/themeStore";
 import "./App.css";
 import { SQLViewer } from "./components/SQL";
+import Timeline from "./components/Timeline";
 
 const queryClient = new QueryClient();
 
-type Tab = "dashboard" | "channels" | "statistics" | "export" | "logs" | "settings" | "multiview" | "sqlviewer";
+type Tab = "dashboard" | "channels" | "statistics" | "timeline" | "export" | "logs" | "settings" | "multiview" | "sqlviewer";
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
@@ -93,6 +94,11 @@ function App() {
       id: "statistics",
       label: "統計閲覧",
       component: <Statistics />
+    },
+    {
+      id: "timeline",
+      label: "タイムライン",
+      component: <Timeline />
     },
     {
       id: "export",

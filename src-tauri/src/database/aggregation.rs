@@ -111,18 +111,18 @@ impl DataAggregator {
     fn get_interval_start(timestamp: &str, interval_minutes: i32) -> String {
         // RFC3339形式のタイムスタンプをパース
         if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(timestamp) {
-            let dt_utc = dt.with_timezone(&chrono::Utc);
+            let dt_local = dt.with_timezone(&chrono::Local);
 
             // 分単位で丸める
-            let minutes_since_epoch = dt_utc.timestamp() / 60;
+            let minutes_since_epoch = dt_local.timestamp() / 60;
             let interval_start_minutes =
                 (minutes_since_epoch / interval_minutes as i64) * interval_minutes as i64;
-            let interval_start = chrono::Utc
+            let interval_start = chrono::Local
                 .timestamp_opt(interval_start_minutes * 60, 0)
                 .unwrap();
 
-            // RFC3339形式で出力（+00:00をZに変換）
-            interval_start.to_rfc3339().replace("+00:00", "Z")
+            // RFC3339形式で出力
+            interval_start.to_rfc3339()
         } else {
             // パース失敗時は元のタイムスタンプを返す
             timestamp.to_string()
@@ -267,6 +267,8 @@ mod tests {
             viewer_count: Some(100),
             chat_rate_1min: 10,
             category: None,
+            title: None,
+            follower_count: None,
             twitch_user_id: None,
             channel_name: None,
         }];
@@ -290,6 +292,8 @@ mod tests {
                 viewer_count: Some(100),
                 chat_rate_1min: 10,
                 category: None,
+                title: None,
+                follower_count: None,
                 twitch_user_id: None,
                 channel_name: None,
             },
@@ -300,6 +304,8 @@ mod tests {
                 viewer_count: Some(150),
                 chat_rate_1min: 15,
                 category: None,
+                title: None,
+                follower_count: None,
                 twitch_user_id: None,
                 channel_name: None,
             },
@@ -348,22 +354,44 @@ mod tests {
 
     #[test]
     fn test_get_interval_start() {
-        // 1分間隔
-        assert_eq!(
-            DataAggregator::get_interval_start("2024-01-01T12:34:56Z", 1),
-            "2024-01-01T12:34:00Z"
-        );
+        use chrono::{TimeZone, Timelike};
 
-        // 5分間隔
-        assert_eq!(
-            DataAggregator::get_interval_start("2024-01-01T12:34:56Z", 5),
-            "2024-01-01T12:30:00Z"
-        );
+        // テスト用のタイムスタンプをLocalタイムゾーンで生成
+        let test_time = chrono::Utc
+            .with_ymd_and_hms(2024, 1, 1, 12, 34, 56)
+            .unwrap();
+        let test_time_local = test_time.with_timezone(&chrono::Local);
+        let input = test_time.to_rfc3339();
 
-        // 60分（1時間）間隔
-        assert_eq!(
-            DataAggregator::get_interval_start("2024-01-01T12:34:56Z", 60),
-            "2024-01-01T12:00:00Z"
-        );
+        // 1分間隔 - 34分に丸められる
+        let result_1min = DataAggregator::get_interval_start(&input, 1);
+        let expected_1min = test_time_local
+            .with_second(0)
+            .unwrap()
+            .with_nanosecond(0)
+            .unwrap();
+        assert_eq!(result_1min, expected_1min.to_rfc3339());
+
+        // 5分間隔 - 30分に丸められる
+        let result_5min = DataAggregator::get_interval_start(&input, 5);
+        let expected_5min = test_time_local
+            .with_minute(30)
+            .unwrap()
+            .with_second(0)
+            .unwrap()
+            .with_nanosecond(0)
+            .unwrap();
+        assert_eq!(result_5min, expected_5min.to_rfc3339());
+
+        // 60分（1時間）間隔 - 12時に丸められる
+        let result_60min = DataAggregator::get_interval_start(&input, 60);
+        let expected_60min = test_time_local
+            .with_minute(0)
+            .unwrap()
+            .with_second(0)
+            .unwrap()
+            .with_nanosecond(0)
+            .unwrap();
+        assert_eq!(result_60min, expected_60min.to_rfc3339());
     }
 }

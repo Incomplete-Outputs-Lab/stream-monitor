@@ -472,5 +472,30 @@ fn migrate_database_schema(conn: &Connection) -> Result<(), duckdb::Error> {
         eprintln!("[Migration] badge_info column added successfully");
     }
 
+    // 既存のchat_messagesのchannel_idをstreams経由で更新
+    eprintln!("[Migration] Updating chat_messages.channel_id from streams table");
+    let update_result = conn.execute(
+        r#"
+        UPDATE chat_messages cm
+        SET channel_id = (
+            SELECT s.channel_id 
+            FROM streams s 
+            WHERE s.id = cm.stream_id
+        )
+        WHERE cm.channel_id IS NULL 
+            AND cm.stream_id IS NOT NULL
+        "#,
+        [],
+    );
+    
+    match update_result {
+        Ok(updated_rows) => {
+            eprintln!("[Migration] Updated {} chat_messages with channel_id from streams", updated_rows);
+        }
+        Err(e) => {
+            eprintln!("[Migration] Warning: Failed to update chat_messages.channel_id: {}", e);
+        }
+    }
+
     Ok(())
 }

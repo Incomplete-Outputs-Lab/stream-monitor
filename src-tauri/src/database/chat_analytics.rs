@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// エンゲージメント統計（時系列）
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ChatEngagementStats {
     pub timestamp: String,
     pub chat_count: i64,
@@ -14,6 +15,7 @@ pub struct ChatEngagementStats {
 
 /// チャットスパイク情報
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ChatSpike {
     pub timestamp: String,
     pub chat_count: i64,
@@ -23,6 +25,7 @@ pub struct ChatSpike {
 
 /// ユーザーセグメント統計
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UserSegmentStats {
     pub segment: String, // "subscriber", "vip", "moderator", "regular"
     pub message_count: i64,
@@ -33,6 +36,7 @@ pub struct UserSegmentStats {
 
 /// 上位チャッター情報
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TopChatter {
     pub user_name: String,
     pub message_count: i64,
@@ -44,6 +48,7 @@ pub struct TopChatter {
 
 /// 時間パターン統計
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TimePatternStats {
     pub hour: i32, // 0-23
     pub day_of_week: Option<i32>, // 0-6 (Sunday-Saturday)
@@ -54,6 +59,7 @@ pub struct TimePatternStats {
 
 /// チャッター行動統計
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ChatterBehaviorStats {
     pub total_unique_chatters: i64,
     pub repeater_count: i64,
@@ -79,6 +85,7 @@ pub fn get_chat_engagement_timeline(
                 COUNT(*) as chat_count,
                 COUNT(DISTINCT cm.user_name) as unique_chatters
             FROM chat_messages cm
+            LEFT JOIN streams s ON cm.stream_id = s.id
             WHERE 1=1
         "#,
         interval_minutes
@@ -87,7 +94,8 @@ pub fn get_chat_engagement_timeline(
     let mut params: Vec<String> = Vec::new();
 
     if let Some(ch_id) = channel_id {
-        sql.push_str(" AND cm.channel_id = ?");
+        sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
+        params.push(ch_id.to_string());
         params.push(ch_id.to_string());
     }
 
@@ -200,6 +208,7 @@ pub fn detect_chat_spikes(
                 time_bucket(INTERVAL '5 minutes', cm.timestamp) as bucket,
                 COUNT(*) as chat_count
             FROM chat_messages cm
+            LEFT JOIN streams s ON cm.stream_id = s.id
             WHERE 1=1
         "#,
     );
@@ -207,7 +216,8 @@ pub fn detect_chat_spikes(
     let mut params: Vec<String> = Vec::new();
 
     if let Some(ch_id) = channel_id {
-        sql.push_str(" AND cm.channel_id = ?");
+        sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
+        params.push(ch_id.to_string());
         params.push(ch_id.to_string());
     }
 
@@ -284,6 +294,7 @@ pub fn get_user_segment_stats(
                 cm.badges,
                 COUNT(*) as message_count
             FROM chat_messages cm
+            LEFT JOIN streams s ON cm.stream_id = s.id
             WHERE 1=1
         "#,
     );
@@ -291,7 +302,8 @@ pub fn get_user_segment_stats(
     let mut params: Vec<String> = Vec::new();
 
     if let Some(ch_id) = channel_id {
-        sql.push_str(" AND cm.channel_id = ?");
+        sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
+        params.push(ch_id.to_string());
         params.push(ch_id.to_string());
     }
 
@@ -384,6 +396,7 @@ pub fn get_top_chatters(
             MAX(cm.timestamp)::VARCHAR as last_seen,
             COUNT(DISTINCT cm.stream_id) as stream_count
         FROM chat_messages cm
+        LEFT JOIN streams s ON cm.stream_id = s.id
         WHERE 1=1
         "#,
     );
@@ -391,7 +404,8 @@ pub fn get_top_chatters(
     let mut params: Vec<String> = Vec::new();
 
     if let Some(ch_id) = channel_id {
-        sql.push_str(" AND cm.channel_id = ?");
+        sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
+        params.push(ch_id.to_string());
         params.push(ch_id.to_string());
     }
 
@@ -494,6 +508,7 @@ pub fn get_time_pattern_stats(
                 COUNT(*) as message_count,
                 cm.stream_id
             FROM chat_messages cm
+            LEFT JOIN streams s ON cm.stream_id = s.id
             WHERE 1=1
         "#,
     );
@@ -501,7 +516,8 @@ pub fn get_time_pattern_stats(
     let mut params: Vec<String> = Vec::new();
 
     if let Some(ch_id) = channel_id {
-        sql.push_str(" AND cm.channel_id = ?");
+        sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
+        params.push(ch_id.to_string());
         params.push(ch_id.to_string());
     }
 
@@ -643,6 +659,7 @@ pub fn get_chatter_behavior_stats(
                 COUNT(DISTINCT cm.stream_id) as stream_count,
                 COUNT(*) as message_count
             FROM chat_messages cm
+            LEFT JOIN streams s ON cm.stream_id = s.id
             WHERE cm.stream_id IS NOT NULL
         "#,
     );
@@ -650,7 +667,8 @@ pub fn get_chatter_behavior_stats(
     let mut params: Vec<String> = Vec::new();
 
     if let Some(ch_id) = channel_id {
-        sql.push_str(" AND cm.channel_id = ?");
+        sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
+        params.push(ch_id.to_string());
         params.push(ch_id.to_string());
     }
 

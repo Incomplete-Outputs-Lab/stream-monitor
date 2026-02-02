@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import type { Channel } from '../../../types';
+import { DateRangePicker } from '../DateRangePicker';
 import EngagementTab from './EngagementTab';
 import UserSegmentTab from './UserSegmentTab';
 import ChatterBehaviorTab from './ChatterBehaviorTab';
@@ -19,10 +20,14 @@ const ChatAnalytics = ({ channels }: ChatAnalyticsProps) => {
     const start = new Date();
     start.setDate(start.getDate() - 7);
     return {
-      start: start.toISOString(),
-      end: end.toISOString(),
+      start: start.toISOString().split('T')[0],
+      end: end.toISOString().split('T')[0],
     };
   });
+
+  const handleDateRangeChange = (start: string, end: string) => {
+    setDateRange({ start, end });
+  };
 
   const tabs = [
     { id: 'engagement' as const, label: 'エンゲージメント' },
@@ -42,61 +47,36 @@ const ChatAnalytics = ({ channels }: ChatAnalyticsProps) => {
       </div>
 
       {/* Filters */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Channel Filter */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              チャンネル
-            </label>
-            <select
-              value={selectedChannelId || ''}
-              onChange={(e) => setSelectedChannelId(e.target.value ? Number(e.target.value) : null)}
-              className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white"
-            >
-              <option value="">全てのチャンネル</option>
-              {channels.map((ch) => (
-                <option key={ch.id} value={ch.id}>
-                  {ch.channel_name}
-                </option>
-              ))}
-            </select>
-          </div>
+      <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow space-y-4">
+        {/* Channel Filter */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            チャンネル
+          </label>
+          <select
+            value={selectedChannelId || ''}
+            onChange={(e) => setSelectedChannelId(e.target.value ? Number(e.target.value) : null)}
+            className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white"
+          >
+            <option value="">全てのチャンネル</option>
+            {channels.map((ch) => (
+              <option key={ch.id} value={ch.id}>
+                {ch.channel_name}
+              </option>
+            ))}
+          </select>
+        </div>
 
-          {/* Date Range */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              開始日
-            </label>
-            <input
-              type="datetime-local"
-              value={dateRange.start.slice(0, 16)}
-              onChange={(e) =>
-                setDateRange((prev) => ({
-                  ...prev,
-                  start: new Date(e.target.value).toISOString(),
-                }))
-              }
-              className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              終了日
-            </label>
-            <input
-              type="datetime-local"
-              value={dateRange.end.slice(0, 16)}
-              onChange={(e) =>
-                setDateRange((prev) => ({
-                  ...prev,
-                  end: new Date(e.target.value).toISOString(),
-                }))
-              }
-              className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white"
-            />
-          </div>
+        {/* Date Range */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            期間
+          </label>
+          <DateRangePicker
+            startDate={dateRange.start}
+            endDate={dateRange.end}
+            onChange={handleDateRangeChange}
+          />
         </div>
       </div>
 
@@ -127,29 +107,29 @@ const ChatAnalytics = ({ channels }: ChatAnalyticsProps) => {
         {selectedTab === 'engagement' && (
           <EngagementTab
             channelId={selectedChannelId}
-            startTime={dateRange.start}
-            endTime={dateRange.end}
+            startTime={dateRange.start + 'T00:00:00'}
+            endTime={dateRange.end + 'T23:59:59'}
           />
         )}
         {selectedTab === 'segment' && (
           <UserSegmentTab
             channelId={selectedChannelId}
-            startTime={dateRange.start}
-            endTime={dateRange.end}
+            startTime={dateRange.start + 'T00:00:00'}
+            endTime={dateRange.end + 'T23:59:59'}
           />
         )}
         {selectedTab === 'behavior' && (
           <ChatterBehaviorTab
             channelId={selectedChannelId}
-            startTime={dateRange.start}
-            endTime={dateRange.end}
+            startTime={dateRange.start + 'T00:00:00'}
+            endTime={dateRange.end + 'T23:59:59'}
           />
         )}
         {selectedTab === 'time' && (
           <TimePatternTab
             channelId={selectedChannelId}
-            startTime={dateRange.start}
-            endTime={dateRange.end}
+            startTime={dateRange.start + 'T00:00:00'}
+            endTime={dateRange.end + 'T23:59:59'}
           />
         )}
       </div>

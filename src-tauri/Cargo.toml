@@ -19,7 +19,7 @@ tauri-build = { version = "2", features = [] }
 chrono = "0.4"
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
 tauri-plugin-keyring = "0.1"
 serde = { version = "1", features = ["derive"] }
@@ -48,6 +48,8 @@ yup-oauth2 = "9"
 tungstenite = { version = "0.21", features = ["native-tls"] }
 scraper = "0.19"
 thiserror = "2.0.18"
+tauri-plugin-dialog = "2"
+tauri-plugin-process = "2"
 # JSON export uses existing serde_json dependency
 # Workaround for upstream scrypt bug
 [profile.dev.package.scrypt]
@@ -56,4 +58,8 @@ opt-level = 3
 # Test dependencies
 [dev-dependencies]
 tempfile = "3"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-autostart = "2"
+tauri-plugin-updater = "2"
 

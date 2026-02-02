@@ -10,7 +10,11 @@ mod logger;
 mod oauth;
 mod websocket;
 
-use tauri::{Emitter, Manager};
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Emitter, Manager, WindowEvent,
+};
 use tokio::sync::Mutex;
 
 use collectors::{
@@ -56,6 +60,58 @@ use std::sync::Arc;
 /// メモリキャッシュ: 自動発見された配信の最新結果
 pub struct DiscoveredStreamsCache {
     pub streams: Mutex<Vec<DiscoveredStreamInfo>>,
+}
+
+/// アップデート確認関数
+async fn check_for_updates(app: tauri::AppHandle) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+    use tauri_plugin_updater::UpdaterExt;
+
+    // updaterが設定されているか確認
+    let updater = match app.updater_builder().build() {
+        Ok(u) => u,
+        Err(_) => {
+            // 署名鍵が未設定の場合
+            app.dialog()
+                .message("アップデート機能は未設定です。\n署名鍵とエンドポイントを設定してください。")
+                .kind(MessageDialogKind::Warning)
+                .blocking_show();
+            return;
+        }
+    };
+
+    match updater.check().await {
+        Ok(Some(update)) => {
+            // アップデートダイアログを表示
+            let confirmed = app
+                .dialog()
+                .message(format!(
+                    "新しいバージョン {} が利用可能です。アップデートしますか?",
+                    update.version
+                ))
+                .kind(MessageDialogKind::Info)
+                .title("アップデート利用可能")
+                .blocking_show();
+
+            if confirmed {
+                let _ = update.download_and_install(|_, _| {}, || {}).await;
+            }
+        }
+        Ok(None) => {
+            app.dialog()
+                .message("最新バージョンを使用中です。")
+                .kind(MessageDialogKind::Info)
+                .title("アップデート")
+                .blocking_show();
+        }
+        Err(e) => {
+            app.dialog()
+                .message(format!("アップデート確認に失敗しました: {}", e))
+                .kind(MessageDialogKind::Error)
+                .title("エラー")
+                .blocking_show();
+        }
+    }
 }
 
 #[tauri::command]
@@ -122,6 +178,10 @@ fn start_existing_channels_polling(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let app_handle = app.handle().clone();
@@ -166,11 +226,12 @@ pub fn run() {
             logger.info("Starting database initialization on startup...");
             let poller_for_init = poller_arc.clone();
             let logger_for_init = logger.clone();
+            let app_handle_for_init = app_handle.clone();
             std::thread::Builder::new()
                 .stack_size(512 * 1024 * 1024) // 512MB stack for DuckDB initialization
                 .spawn(move || {
                     // DatabaseManagerを取得
-                    let db_manager: tauri::State<'_, DatabaseManager> = app_handle.state();
+                    let db_manager: tauri::State<'_, DatabaseManager> = app_handle_for_init.state();
 
                     // まずデータベース接続を取得
                     let conn = match db_manager.get_connection() {
@@ -178,7 +239,7 @@ pub fn run() {
                         Err(e) => {
                             logger_for_init.error(&format!("Database connection failed: {}", e));
                             // フロントエンドにDB初期化失敗を通知
-                            let _ = app_handle.emit("database-init-error", e.to_string());
+                            let _ = app_handle_for_init.emit("database-init-error", e.to_string());
                             return; // DB接続失敗時は以降の処理を中止
                         }
                     };
@@ -190,12 +251,12 @@ pub fn run() {
                             // フロントエンドのイベントリスナーが準備されるまで少し待つ
                             std::thread::sleep(std::time::Duration::from_millis(500));
                             // フロントエンドにDB初期化成功を通知
-                            let _ = app_handle.emit("database-init-success", ());
+                            let _ = app_handle_for_init.emit("database-init-success", ());
                         }
                         Err(e) => {
                             logger_for_init.error(&format!("Database schema initialization failed: {}", e));
                             // フロントエンドにDB初期化失敗を通知
-                            let _ = app_handle.emit("database-init-error", format!("Schema initialization failed: {}", e));
+                            let _ = app_handle_for_init.emit("database-init-error", format!("Schema initialization failed: {}", e));
                             return; // DBスキーマ初期化失敗時は以降の処理を中止
                         }
                     }
@@ -206,7 +267,7 @@ pub fn run() {
                     // Initialize collectors from settings
                     tauri::async_runtime::block_on(async {
                         // Load settings
-                        let settings = match SettingsManager::load_settings(&app_handle) {
+                        let settings = match SettingsManager::load_settings(&app_handle_for_init) {
                             Ok(settings) => settings,
                             Err(e) => {
                                 logger_for_init.error(&format!("Failed to load settings: {}", e));
@@ -219,7 +280,7 @@ pub fn run() {
                         // Initialize Twitch collector if credentials are available
                         // Device Code Flow uses only client_id (no client_secret required)
                         if let Some(client_id) = &settings.twitch.client_id {
-                            let collector = Arc::new(TwitchCollector::new_with_app(client_id.clone(), None, app_handle.clone()));
+                            let collector = Arc::new(TwitchCollector::new_with_app(client_id.clone(), None, app_handle_for_init.clone()));
                             poller.register_twitch_collector(collector);
                             logger_for_init.info("Twitch collector initialized successfully");
                         } else {
@@ -252,7 +313,7 @@ pub fn run() {
 
                         // Start polling for existing enabled channels
                         logger_for_init.info("Starting polling for existing enabled channels...");
-                        match start_existing_channels_polling(&db_manager, &mut poller, &app_handle) {
+                        match start_existing_channels_polling(&db_manager, &mut poller, &app_handle_for_init) {
                             Ok(count) => {
                                 logger_for_init.info(&format!("Started polling for {} existing enabled channel(s)", count));
                             }
@@ -280,7 +341,7 @@ pub fn run() {
                         let discovery_poller = AutoDiscoveryPoller::new(
                             twitch_api_client,
                             Arc::new(db_manager.inner().clone()),
-                            app_handle.clone(),
+                            app_handle_for_init.clone(),
                         );
 
                         // Start AutoDiscoveryPoller if enabled
@@ -306,7 +367,7 @@ pub fn run() {
 
                         // Store the AutoDiscoveryPoller in app state
                         let auto_discovery_state: tauri::State<'_, Arc<tokio::sync::Mutex<Option<AutoDiscoveryPoller>>>> =
-                            app_handle.state();
+                            app_handle_for_init.state();
                         let mut state = auto_discovery_state.lock().await;
                         *state = Some(discovery_poller);
                     });
@@ -315,15 +376,65 @@ pub fn run() {
                 })
                 .expect("Failed to spawn thread for collector initialization");
 
+            // Initialize system tray icon and menu
+            let show_i = MenuItem::with_id(app, "show", "表示", true, None::<&str>)?;
+            let update_i = MenuItem::with_id(app, "check_update", "アップデートを確認", true, None::<&str>)?;
+            let quit_i = MenuItem::with_id(app, "quit", "終了", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_i, &update_i, &quit_i])?;
+
+            // Clone app_handle for use in tray event handlers before it's moved
+            let app_handle_for_menu = app_handle.clone();
+            let app_handle_for_tray = app_handle.clone();
+            TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(move |_app, event| {
+                    match event.id.as_ref() {
+                        "show" => {
+                            if let Some(window) = app_handle_for_menu.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "check_update" => {
+                            let app_handle_clone = app_handle_for_menu.clone();
+                            tauri::async_runtime::spawn(async move {
+                                check_for_updates(app_handle_clone).await;
+                            });
+                        }
+                        "quit" => {
+                            std::process::exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(move |_tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        if let Some(window) = app_handle_for_tray.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            logger.info("System tray initialized successfully");
+
             Ok(())
         })
         .on_window_event(|window, event| {
-            use tauri::WindowEvent;
-            if let WindowEvent::CloseRequested { .. } = event {
+            if let WindowEvent::CloseRequested { api, .. } = event {
                 let logger = window.state::<AppLogger>();
-                logger.info("Window close requested");
-                // Note: DatabaseManager now uses file-based DuckDB with WAL
-                // No explicit shutdown needed - DuckDB handles persistence automatically
+                logger.info("Window close requested - hiding window instead of exiting");
+                // アプリを終了せず、ウィンドウを非表示にする
+                api.prevent_close();
+                let _ = window.hide();
             }
         })
         .invoke_handler(tauri::generate_handler![

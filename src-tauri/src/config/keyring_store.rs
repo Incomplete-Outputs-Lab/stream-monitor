@@ -18,7 +18,7 @@ impl KeyringStore {
         app: &AppHandle<R>,
         platform: &str,
         token: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         use tauri_plugin_keyring::KeyringExt;
 
         let key = format!("{}_token", platform);
@@ -33,7 +33,7 @@ impl KeyringStore {
     pub fn get_token_with_app<R: Runtime>(
         app: &AppHandle<R>,
         platform: &str,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         use tauri_plugin_keyring::KeyringExt;
 
         let key = format!("{}_token", platform);
@@ -49,7 +49,7 @@ impl KeyringStore {
     pub fn delete_token_with_app<R: Runtime>(
         app: &AppHandle<R>,
         platform: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         use tauri_plugin_keyring::KeyringExt;
 
         let key = format!("{}_token", platform);
@@ -69,7 +69,7 @@ impl KeyringStore {
         app: &AppHandle<R>,
         platform: &str,
         secret: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         use tauri_plugin_keyring::KeyringExt;
 
         let key = format!("{}_oauth_secret", platform);
@@ -87,7 +87,7 @@ impl KeyringStore {
     pub fn get_oauth_secret_with_app<R: Runtime>(
         app: &AppHandle<R>,
         platform: &str,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         use tauri_plugin_keyring::KeyringExt;
 
         let key = format!("{}_oauth_secret", platform);
@@ -104,7 +104,7 @@ impl KeyringStore {
         app: &AppHandle<R>,
         platform: &str,
         metadata: &TokenMetadata,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         use tauri_plugin_keyring::KeyringExt;
 
         let key = format!("{}_token_metadata", platform);
@@ -124,7 +124,7 @@ impl KeyringStore {
     pub fn get_token_metadata_with_app<R: Runtime>(
         app: &AppHandle<R>,
         platform: &str,
-    ) -> Result<TokenMetadata, Box<dyn std::error::Error>> {
+    ) -> Result<TokenMetadata, Box<dyn std::error::Error + Send + Sync>> {
         use tauri_plugin_keyring::KeyringExt;
 
         let key = format!("{}_token_metadata", platform);
@@ -135,5 +135,22 @@ impl KeyringStore {
 
         let metadata: TokenMetadata = serde_json::from_str(&metadata_json)?;
         Ok(metadata)
+    }
+
+    /// Delete token metadata from OS keychain
+    pub fn delete_token_metadata_with_app<R: Runtime>(
+        app: &AppHandle<R>,
+        platform: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        use tauri_plugin_keyring::KeyringExt;
+
+        let key = format!("{}_token_metadata", platform);
+        app.keyring().delete_password(Self::SERVICE_NAME, &key)?;
+
+        eprintln!(
+            "[KeyringStore] Token metadata deleted for platform: '{}'",
+            platform
+        );
+        Ok(())
     }
 }

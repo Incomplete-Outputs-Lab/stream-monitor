@@ -225,7 +225,7 @@ pub async fn get_stream_timeline(
 fn get_stream_timeline_internal(
     conn: &Connection,
     stream_id: i64,
-) -> Result<StreamTimelineData, Box<dyn std::error::Error>> {
+) -> Result<StreamTimelineData, Box<dyn std::error::Error + Send + Sync>> {
     // ストリーム基本情報を取得
     let stream_info = get_stream_info_by_id(conn, stream_id)?;
 
@@ -249,7 +249,7 @@ fn get_stream_timeline_internal(
 fn get_stream_info_by_id(
     conn: &Connection,
     stream_id: i64,
-) -> Result<StreamInfo, Box<dyn std::error::Error>> {
+) -> Result<StreamInfo, Box<dyn std::error::Error + Send + Sync>> {
     let query = r#"
         WITH stream_metrics AS (
             SELECT 
@@ -377,7 +377,7 @@ fn get_stream_info_by_id(
 fn get_timeline_stats(
     conn: &Connection,
     stream_id: i64,
-) -> Result<Vec<TimelinePoint>, Box<dyn std::error::Error>> {
+) -> Result<Vec<TimelinePoint>, Box<dyn std::error::Error + Send + Sync>> {
     let query = r#"
         SELECT 
             CAST(collected_at AS VARCHAR) as collected_at,

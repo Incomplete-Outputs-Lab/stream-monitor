@@ -4,9 +4,19 @@ interface ChartDataPoint {
   [key: string]: string | number | undefined;
 }
 
+interface LineConfig {
+  key: string;
+  color?: string;
+  yAxisId?: 'left' | 'right';
+}
+
 interface LineChartProps {
   data: ChartDataPoint[];
-  dataKey: string;
+  // 新規: 複数ライン用
+  lines?: LineConfig[];
+  xKey?: string;  // xAxisKeyのエイリアス
+  // 既存互換
+  dataKey?: string;
   xAxisKey?: string;
   color?: string;
   title?: string;
@@ -17,33 +27,53 @@ interface LineChartProps {
 
 export function LineChart({
   data,
+  lines,
+  xKey,
   dataKey,
-  xAxisKey = "time",
+  xAxisKey,
   color = "#3b82f6",
   title,
   height = 300,
   showLegend = false,
   yAxisLabel,
 }: LineChartProps) {
+  // xKeyとxAxisKeyの統一（xKeyを優先）
+  const finalXAxisKey = xKey || xAxisKey || "time";
+  
+  // 複数ライン or 単一ライン
+  const lineConfigs: LineConfig[] = lines || (dataKey ? [{ key: dataKey, color, yAxisId: 'left' }] : []);
+  
+  // 右軸が必要かどうかを判定
+  const hasRightAxis = lineConfigs.some(line => line.yAxisId === 'right');
+  
   return (
     <div className="w-full">
       {title && (
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">{title}</h3>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">{title}</h3>
       )}
       <div style={{ height: `${height}px` }}>
         <ResponsiveContainer width="100%" height="100%">
           <RechartsLineChart data={data} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis
-              dataKey={xAxisKey}
+              dataKey={finalXAxisKey}
               tick={{ fontSize: 12 }}
               tickLine={{ stroke: '#e0e0e0' }}
             />
             <YAxis
+              yAxisId="left"
               tick={{ fontSize: 12 }}
               tickLine={{ stroke: '#e0e0e0' }}
               label={yAxisLabel ? { value: yAxisLabel, angle: -90, position: 'insideLeft' } : undefined}
             />
+            {hasRightAxis && (
+              <YAxis
+                yAxisId="right"
+                orientation="right"
+                tick={{ fontSize: 12 }}
+                tickLine={{ stroke: '#e0e0e0' }}
+              />
+            )}
             <Tooltip
               contentStyle={{
                 backgroundColor: '#ffffff',
@@ -53,14 +83,18 @@ export function LineChart({
               }}
             />
             {showLegend && <Legend />}
-            <Line
-              type="monotone"
-              dataKey={dataKey}
-              stroke={color}
-              strokeWidth={2}
-              dot={{ fill: color, strokeWidth: 2, r: 4 }}
-              activeDot={{ r: 6, stroke: color, strokeWidth: 2, fill: '#ffffff' }}
-            />
+            {lineConfigs.map((lineConfig, index) => (
+              <Line
+                key={lineConfig.key}
+                yAxisId={lineConfig.yAxisId || 'left'}
+                type="monotone"
+                dataKey={lineConfig.key}
+                stroke={lineConfig.color || `hsl(${(index * 60) % 360}, 70%, 50%)`}
+                strokeWidth={2}
+                dot={{ fill: lineConfig.color || `hsl(${(index * 60) % 360}, 70%, 50%)`, strokeWidth: 2, r: 4 }}
+                activeDot={{ r: 6, strokeWidth: 2, fill: '#ffffff' }}
+              />
+            ))}
           </RechartsLineChart>
         </ResponsiveContainer>
       </div>

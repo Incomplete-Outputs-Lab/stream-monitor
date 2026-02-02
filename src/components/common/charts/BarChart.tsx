@@ -5,9 +5,18 @@ interface ChartDataPoint {
   [key: string]: string | number | undefined;
 }
 
+interface BarConfig {
+  key: string;
+  color?: string;
+}
+
 interface BarChartProps {
   data: ChartDataPoint[];
-  dataKey: string;
+  // 新規: 複数バー用
+  bars?: BarConfig[];
+  xKey?: string;  // xAxisKeyのエイリアス
+  // 既存互換
+  dataKey?: string;
   xAxisKey?: string;
   color?: string;
   title?: string;
@@ -19,8 +28,10 @@ interface BarChartProps {
 
 export function BarChart({
   data,
+  bars,
+  xKey,
   dataKey,
-  xAxisKey = "name",
+  xAxisKey,
   color = "#10b981",
   title,
   tooltipDescription,
@@ -28,6 +39,12 @@ export function BarChart({
   showLegend = false,
   yAxisLabel,
 }: BarChartProps) {
+  // xKeyとxAxisKeyの統一（xKeyを優先）
+  const finalXAxisKey = xKey || xAxisKey || "name";
+  
+  // 複数バー or 単一バー
+  const barConfigs: BarConfig[] = bars || (dataKey ? [{ key: dataKey, color }] : []);
+  
   return (
     <div className="w-full">
       {title && (
@@ -45,7 +62,7 @@ export function BarChart({
           <RechartsBarChart data={data} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis
-              dataKey={xAxisKey}
+              dataKey={finalXAxisKey}
               tick={{ fontSize: 12 }}
               tickLine={{ stroke: '#e0e0e0' }}
             />
@@ -63,11 +80,14 @@ export function BarChart({
               }}
             />
             {showLegend && <Legend />}
-            <Bar
-              dataKey={dataKey}
-              fill={color}
-              radius={[4, 4, 0, 0]}
-            />
+            {barConfigs.map((barConfig, index) => (
+              <Bar
+                key={barConfig.key}
+                dataKey={barConfig.key}
+                fill={barConfig.color || `hsl(${(index * 60) % 360}, 70%, 50%)`}
+                radius={[4, 4, 0, 0]}
+              />
+            ))}
           </RechartsBarChart>
         </ResponsiveContainer>
       </div>

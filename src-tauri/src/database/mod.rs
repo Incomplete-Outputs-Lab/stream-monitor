@@ -1,5 +1,7 @@
 pub mod aggregation;
 pub mod analytics;
+pub mod chat_analytics;
+pub mod data_science_analytics;
 pub mod models;
 pub mod schema;
 pub mod utils;
@@ -60,7 +62,7 @@ impl DatabaseManager {
     }
 
     /// データベース接続を取得
-    pub fn get_connection(&self) -> Result<Connection, Box<dyn std::error::Error>> {
+    pub fn get_connection(&self) -> Result<Connection, Box<dyn std::error::Error + Send + Sync>> {
         let conn = self
             .conn
             .lock()
@@ -71,32 +73,6 @@ impl DatabaseManager {
     }
 
     /// 手動バックアップを作成
-    pub fn create_backup(&self) -> Result<PathBuf, Box<dyn std::error::Error>> {
-        // インメモリDB使用時はバックアップを作成できない
-        if cfg!(debug_assertions) {
-            return Err(
-                "Cannot create backup in development mode (using in-memory database)".into(),
-            );
-        }
-
-        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-        let backup_path = self
-            .db_path
-            .with_extension(format!("db.backup.{}", timestamp));
-
-        // CHECKPOINTでWALをフラッシュしてからコピー
-        if let Ok(conn) = self.conn.lock() {
-            conn.execute("CHECKPOINT", []).ok();
-        }
-
-        std::fs::copy(&self.db_path, &backup_path)
-            .io_context("create backup")
-            .map_err(|e| e.to_string())?;
-
-        eprintln!("Backup created at: {}", backup_path.display());
-        Ok(backup_path)
-    }
-
     /// データベースファイルのパスを取得
     pub fn get_db_path(&self) -> &PathBuf {
         &self.db_path
@@ -104,7 +80,9 @@ impl DatabaseManager {
 }
 
 // 後方互換性のための関数
-pub fn get_connection(app_handle: &AppHandle) -> Result<Connection, Box<dyn std::error::Error>> {
+pub fn get_connection(
+    app_handle: &AppHandle,
+) -> Result<Connection, Box<dyn std::error::Error + Send + Sync>> {
     let db_manager: tauri::State<'_, DatabaseManager> = app_handle.state();
     db_manager.get_connection()
 }

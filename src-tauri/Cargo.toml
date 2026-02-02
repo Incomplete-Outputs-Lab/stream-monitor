@@ -33,13 +33,12 @@ url = "2.5"
 # Twitch API libraries
 twitch_api = { version = "0.7.2", features = ["helix", "client", "reqwest", "twitch_oauth2"] }
 twitch_oauth2 = { version = "0.16", features = ["reqwest"] }
+twitch-irc = { version = "5.0", features = ["transport-tcp", "transport-tcp-native-tls"] }
 # YouTube API library
 google-youtube3 = "7"
 yup-oauth2 = "12"
 hyper-rustls = "0.27"
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "http2", "tokio"] }
-# WebSocket libraries
-tungstenite = { version = "0.28", features = ["native-tls"] }
 thiserror = "2.0.18"
 tauri-plugin-dialog = "2"
 tauri-plugin-process = "2"

@@ -165,7 +165,7 @@ impl AutoDiscoveryPoller {
         settings: &AutoDiscoverySettings,
         db_manager: &Arc<DatabaseManager>,
         app_handle: &AppHandle,
-    ) -> Result<usize, Box<dyn std::error::Error>> {
+    ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
         // フィルター条件を準備
         let game_ids = if settings.filters.game_ids.is_empty() {
             None
@@ -311,7 +311,7 @@ impl AutoDiscoveryPoller {
     async fn cleanup_offline_channels(
         db_manager: &Arc<DatabaseManager>,
         app_handle: &AppHandle,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let conn = db_manager.get_connection()?;
 
         // 自動発見されたチャンネルで、最新の配信が終了しているものを取得

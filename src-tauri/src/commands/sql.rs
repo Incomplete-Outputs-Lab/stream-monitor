@@ -1,10 +1,260 @@
 use crate::database::DatabaseManager;
 use crate::error::ResultExt;
 use chrono::{Local, TimeZone};
-use duckdb::{params, types::TimeUnit, types::ValueRef};
+use duckdb::{params, types::TimeUnit, types::ValueRef, Connection, Row};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tauri::State;
+
+/// SQLクエリが有効かどうかを基本的にチェック
+fn validate_sql_query(query: &str) -> Result<(), String> {
+    let query_trimmed = query.trim();
+
+    if query_trimmed.is_empty() {
+        return Err("クエリが空です".to_string());
+    }
+
+    // コメントをスキップして最初のキーワードを取得
+    let first_keyword = query_trimmed
+        .lines()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty() && !line.starts_with("--"))
+        .flat_map(|line| line.split_whitespace())
+        .find(|word| !word.is_empty())
+        .unwrap_or("")
+        .to_uppercase();
+
+    // 有効なSQLキーワードのリスト
+    let valid_keywords = [
+        "SELECT", "INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "ALTER", "TRUNCATE", "PRAGMA",
+        "SHOW", "DESCRIBE", "DESC", "EXPLAIN", "WITH", "COPY", "IMPORT", "EXPORT", "ATTACH",
+        "DETACH", "BEGIN", "COMMIT", "ROLLBACK", "SET", "CALL", "LOAD",
+    ];
+
+    if !valid_keywords.contains(&first_keyword.as_str()) {
+        return Err(format!(
+            "無効なSQLクエリです: '{}' は認識されないSQLキーワードです。\n有効なキーワード: SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, PRAGMA, SHOW, DESCRIBE, WITH など",
+            first_keyword
+        ));
+    }
+
+    Ok(())
+}
+
+/// クエリを前処理してLIST型カラムを文字列に変換
+fn preprocess_query_for_list_columns(conn: &Connection, query: &str) -> Result<String, String> {
+    // SELECT * FROM table のようなクエリの場合、LIST型カラムを検出して自動変換
+    // より複雑なクエリの場合は元のクエリをそのまま使用
+
+    // クエリを正規化
+    let query_normalized = query.trim();
+
+    // 複数のステートメントがある場合は前処理をスキップ
+    let semicolon_count = query_normalized.matches(';').count();
+    if semicolon_count > 1 || (semicolon_count == 1 && !query_normalized.trim_end().ends_with(';'))
+    {
+        eprintln!("[SQL] Multiple statements detected, skipping LIST preprocessing");
+        return Ok(query.to_string());
+    }
+
+    // セミコロンを削除して単一のステートメントとして処理
+    let single_statement = query_normalized.trim_end_matches(';').trim();
+
+    // シンプルなヒューリスティック: "SELECT * FROM" パターンを検出
+    let trimmed_upper = single_statement.to_uppercase();
+    if !trimmed_upper.starts_with("SELECT * FROM") {
+        // 複雑なクエリはそのまま返す
+        return Ok(query.to_string());
+    }
+
+    // テーブル名を抽出（簡易版）
+    let parts: Vec<&str> = single_statement.split_whitespace().collect();
+    let table_name = if let Some(idx) = parts.iter().position(|&p| p.to_uppercase() == "FROM") {
+        if idx + 1 < parts.len() {
+            // テーブル名から記号を削除
+            parts[idx + 1]
+                .trim_end_matches(';')
+                .trim_end_matches(',')
+                .trim()
+        } else {
+            return Ok(query.to_string());
+        }
+    } else {
+        return Ok(query.to_string());
+    };
+
+    // テーブルのスキーマを取得してLIST型カラムを検出
+    let schema_query = format!(
+        "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '{}'",
+        table_name
+    );
+
+    let mut stmt = match conn.prepare(&schema_query) {
+        Ok(s) => s,
+        Err(_) => return Ok(query.to_string()), // エラー時は元のクエリを返す
+    };
+
+    let mut list_columns = Vec::new();
+    let rows_result = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    });
+
+    if let Ok(rows) = rows_result {
+        for row in rows.flatten() {
+            let (col_name, data_type) = row;
+            if data_type.contains("[]") || data_type.to_uppercase().contains("LIST") {
+                list_columns.push(col_name);
+            }
+        }
+    }
+
+    // LIST型カラムがない場合は元のクエリを返す
+    if list_columns.is_empty() {
+        return Ok(query.to_string());
+    }
+
+    // SELECT * をカラム名に展開し、LIST型カラムにlist_to_string()を適用
+    let all_columns_query = format!("SELECT column_name FROM information_schema.columns WHERE table_name = '{}' ORDER BY ordinal_position", table_name);
+    let mut stmt = match conn.prepare(&all_columns_query) {
+        Ok(s) => s,
+        Err(_) => return Ok(query.to_string()),
+    };
+
+    let mut columns = Vec::new();
+    if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
+        for row in rows.flatten() {
+            if list_columns.contains(&row) {
+                // LIST型カラムは CAST で VARCHAR に変換
+                // DuckDBではLIST型をVARCHARにCASTすると ['elem1', 'elem2'] 形式の文字列になる
+                columns.push(format!("CAST({} AS VARCHAR) as {}", row, row));
+            } else {
+                columns.push(row);
+            }
+        }
+    }
+
+    if columns.is_empty() {
+        return Ok(query.to_string());
+    }
+
+    // クエリを再構築
+    let select_clause = columns.join(", ");
+
+    // FROM以降の部分を安全に取得（single_statementから）
+    let from_pos = match single_statement.to_uppercase().find("FROM") {
+        Some(pos) => pos,
+        None => return Ok(query.to_string()),
+    };
+
+    let rest_of_query = &single_statement[from_pos..];
+    let new_query = format!("SELECT {} {}", select_clause, rest_of_query);
+
+    eprintln!(
+        "[SQL] Transformed query to handle LIST columns: {}",
+        new_query
+    );
+    Ok(new_query)
+}
+
+/// DuckDBのLIST型をJSON配列に変換
+fn extract_list_from_row(row: &Row, col_index: usize) -> serde_json::Value {
+    // ValueRefとして取得
+    match row.get_ref(col_index) {
+        Ok(ValueRef::Null) => serde_json::Value::Null,
+        Ok(ValueRef::List(_, _)) => {
+            // LIST型の場合、文字列化を試みる（自動変換が適用されていない場合）
+            serde_json::Value::String("[LIST型カラム]".to_string())
+        }
+        Ok(ValueRef::Text(s)) => {
+            // すでに文字列化されている場合（CAST AS VARCHAR適用済み）
+            let text = String::from_utf8_lossy(s).to_string();
+            // DuckDBの配列文字列形式 ['elem1', 'elem2'] をパース
+            parse_duckdb_list_to_json(&text)
+        }
+        Ok(_) => {
+            // その他の型は文字列として取得を試みる
+            match row.get::<_, String>(col_index) {
+                Ok(s) => {
+                    // DuckDBの配列文字列形式をパース
+                    parse_duckdb_list_to_json(&s)
+                }
+                Err(_) => serde_json::Value::String("<型変換エラー>".to_string()),
+            }
+        }
+        Err(_) => serde_json::Value::String("<取得エラー>".to_string()),
+    }
+}
+
+/// DuckDBのList文字列をJSON配列に変換
+/// 例: ['elem1', 'elem2'] または ["elem1", "elem2"] → ["elem1", "elem2"]
+fn parse_duckdb_list_to_json(s: &str) -> serde_json::Value {
+    let trimmed = s.trim();
+
+    // 空配列チェック
+    if trimmed == "[]" || trimmed.is_empty() {
+        return serde_json::Value::Array(vec![]);
+    }
+
+    // DuckDBのList形式を解析: ['elem1', 'elem2']
+    if trimmed.starts_with('[') && trimmed.ends_with(']') {
+        let inner = &trimmed[1..trimmed.len() - 1];
+
+        // 要素をパース
+        let mut elements = Vec::new();
+        let mut current = String::new();
+        let mut in_quotes = false;
+        let mut quote_char = ' ';
+        let mut escape_next = false;
+
+        for ch in inner.chars() {
+            if escape_next {
+                current.push(ch);
+                escape_next = false;
+                continue;
+            }
+
+            match ch {
+                '\\' => {
+                    escape_next = true;
+                }
+                '\'' | '"' if !in_quotes => {
+                    in_quotes = true;
+                    quote_char = ch;
+                }
+                c if c == quote_char && in_quotes => {
+                    in_quotes = false;
+                    // クォートを閉じた後、要素を追加
+                }
+                ',' if !in_quotes => {
+                    // 要素の区切り
+                    let elem = current.trim();
+                    if !elem.is_empty() {
+                        elements.push(serde_json::Value::String(elem.to_string()));
+                    }
+                    current.clear();
+                }
+                _ if in_quotes => {
+                    current.push(ch);
+                }
+                _ if !in_quotes && !ch.is_whitespace() => {
+                    current.push(ch);
+                }
+                _ => {}
+            }
+        }
+
+        // 最後の要素を追加
+        let elem = current.trim();
+        if !elem.is_empty() {
+            elements.push(serde_json::Value::String(elem.to_string()));
+        }
+
+        return serde_json::Value::Array(elements);
+    }
+
+    // パースに失敗した場合は文字列として返す
+    serde_json::Value::String(s.to_string())
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SqlQueryResult {
@@ -53,14 +303,38 @@ pub async fn execute_sql(
     // クエリをトリムして、空の場合はエラーを返す
     let query = query.trim();
     if query.is_empty() {
-        return Err("Query cannot be empty".to_string());
+        return Err("クエリが空です".to_string());
     }
 
     eprintln!("[SQL] Executing query: {}", query);
 
+    // 基本的なクエリ検証：セミコロンで複数のステートメントに分割されている場合、
+    // 最初のステートメントのみを実行（セキュリティとエラー防止のため）
+    let query_parts: Vec<&str> = query.split(';').collect();
+    let query_to_execute = if query_parts.len() > 1 {
+        let first_stmt = query_parts[0].trim();
+        // 2番目以降のステートメントが空でない場合は警告
+        if query_parts.iter().skip(1).any(|s| !s.trim().is_empty()) {
+            eprintln!(
+                "[SQL WARN] Multiple statements detected. Only executing the first statement."
+            );
+            eprintln!("[SQL WARN] Original query: {}", query);
+            eprintln!("[SQL WARN] Executing: {}", first_stmt);
+        }
+        first_stmt
+    } else {
+        query
+    };
+
+    // SQLクエリの基本的な妥当性チェック（DuckDBに渡す前に検証）
+    if let Err(e) = validate_sql_query(query_to_execute) {
+        eprintln!("[SQL ERROR] Query validation failed: {}", e);
+        return Err(e);
+    }
+
     // クエリの種類を判定（SELECT系かそれ以外か）
     // コメント（-- や /* */）をスキップして最初のSQLキーワードを取得
-    let query_type = query
+    let query_type = query_to_execute
         .lines()
         .map(|line| line.trim())
         .filter(|line| !line.is_empty() && !line.starts_with("--"))
@@ -76,18 +350,36 @@ pub async fn execute_sql(
         || query_type == "PRAGMA"
     {
         // SELECT系クエリの処理
-        let mut stmt = conn.prepare(query).map_err(|e| {
-            eprintln!("[SQL ERROR] Failed to prepare: {}", e);
-            e.to_string()
-        })?;
+        // LIST型カラムを自動変換するための前処理
+        let processed_query = match preprocess_query_for_list_columns(&conn, query_to_execute) {
+            Ok(q) => q,
+            Err(e) => {
+                eprintln!(
+                    "[SQL WARN] Failed to preprocess query: {}, using original query",
+                    e
+                );
+                query_to_execute.to_string()
+            }
+        };
+
+        let mut stmt = match conn.prepare(&processed_query) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("[SQL ERROR] Failed to prepare: {}", e);
+                return Err(format!("SQL構文エラー: {}", e));
+            }
+        };
 
         eprintln!("[SQL] Statement prepared successfully");
 
         // クエリを実行してRowsを取得
-        let mut rows = stmt.query([]).map_err(|e| {
-            eprintln!("[SQL ERROR] Failed to execute query: {}", e);
-            e.to_string()
-        })?;
+        let mut rows = match stmt.query([]) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("[SQL ERROR] Failed to execute query: {}", e);
+                return Err(format!("クエリ実行エラー: {}", e));
+            }
+        };
 
         eprintln!("[SQL] Query executed, collecting rows...");
 
@@ -97,10 +389,15 @@ pub async fn execute_sql(
         let mut column_count = 0;
 
         // 最初の行からカラム情報を取得
-        if let Some(first_row) = rows.next().map_err(|e| {
-            eprintln!("[SQL ERROR] Failed to fetch first row: {}", e);
-            e.to_string()
-        })? {
+        let first_row_result = match rows.next() {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("[SQL ERROR] Failed to fetch first row: {}", e);
+                return Err(format!("行データ取得エラー: {}", e));
+            }
+        };
+
+        if let Some(first_row) = first_row_result {
             column_count = first_row.as_ref().column_count();
             eprintln!("[SQL] Column count: {}", column_count);
 
@@ -179,11 +476,8 @@ pub async fn execute_sql(
                         serde_json::Value::String("<INTERVAL>".to_string())
                     }
                     Ok(ValueRef::List(_, _)) => {
-                        // Listを文字列に変換
-                        match first_row.get::<_, String>(i) {
-                            Ok(s) => serde_json::Value::String(s),
-                            Err(_) => serde_json::Value::String("<LIST>".to_string()),
-                        }
+                        // 専用の関数でListを処理
+                        extract_list_from_row(first_row, i)
                     }
                     Ok(ValueRef::Enum(_, _)) => {
                         // Enumを文字列に変換
@@ -210,10 +504,19 @@ pub async fn execute_sql(
         }
 
         // 残りの行データを収集
-        while let Some(row) = rows.next().map_err(|e| {
-            eprintln!("[SQL ERROR] Failed to fetch row: {}", e);
-            e.to_string()
-        })? {
+        loop {
+            let row_result = match rows.next() {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("[SQL ERROR] Failed to fetch row: {}", e);
+                    return Err(format!("行データ取得エラー: {}", e));
+                }
+            };
+
+            let row = match row_result {
+                Some(r) => r,
+                None => break,
+            };
             let mut row_values = Vec::new();
             for i in 0..column_count {
                 let value = match row.get_ref(i) {
@@ -276,11 +579,8 @@ pub async fn execute_sql(
                         serde_json::Value::String("<INTERVAL>".to_string())
                     }
                     Ok(ValueRef::List(_, _)) => {
-                        // Listを文字列に変換
-                        match row.get::<_, String>(i) {
-                            Ok(s) => serde_json::Value::String(s),
-                            Err(_) => serde_json::Value::String("<LIST>".to_string()),
-                        }
+                        // 専用の関数でListを処理
+                        extract_list_from_row(row, i)
                     }
                     Ok(ValueRef::Enum(_, _)) => {
                         // Enumを文字列に変換
@@ -323,10 +623,13 @@ pub async fn execute_sql(
         }
     } else {
         // INSERT/UPDATE/DELETE/CREATE/DROP等の処理
-        let affected = conn
-            .execute(query, &[] as &[&dyn duckdb::ToSql])
-            .db_context("execute query")
-            .map_err(|e| e.to_string())?;
+        let affected = match conn.execute(query_to_execute, &[] as &[&dyn duckdb::ToSql]) {
+            Ok(n) => n,
+            Err(e) => {
+                eprintln!("[SQL ERROR] Failed to execute: {}", e);
+                return Err(format!("SQL実行エラー: {}", e));
+            }
+        };
 
         let execution_time = start_time.elapsed().as_millis();
 
@@ -382,17 +685,51 @@ pub async fn list_sql_templates(
     Ok(templates)
 }
 
-/// 特定のSQLテンプレートを取得
+/// SQLテンプレートを保存（新規作成または更新）
 #[tauri::command]
-pub async fn get_sql_template(
+pub async fn save_sql_template(
     db_manager: State<'_, DatabaseManager>,
-    id: i64,
+    request: SaveTemplateRequest,
 ) -> Result<SqlTemplate, String> {
     let conn = db_manager
         .get_connection()
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 
+    let id = if let Some(id) = request.id {
+        // 更新
+        conn.execute(
+            "UPDATE sql_templates 
+             SET name = ?, description = ?, query = ?, updated_at = CURRENT_TIMESTAMP 
+             WHERE id = ?",
+            params![&request.name, &request.description, &request.query, id],
+        )
+        .db_context("update template")
+        .map_err(|e| e.to_string())?;
+
+        id
+    } else {
+        // 新規作成
+        conn.execute(
+            "INSERT INTO sql_templates (name, description, query) 
+             VALUES (?, ?, ?)",
+            params![&request.name, &request.description, &request.query],
+        )
+        .db_context("insert template")
+        .map_err(|e| e.to_string())?;
+
+        // 最後に挿入されたIDを取得
+        let mut stmt = conn
+            .prepare("SELECT currval('sql_templates_id_seq')")
+            .db_context("get last insert id")
+            .map_err(|e| e.to_string())?;
+
+        stmt.query_row([], |row| row.get(0))
+            .db_context("fetch last insert id")
+            .map_err(|e| e.to_string())?
+    };
+
+    // 保存したテンプレートを取得して返す
     let mut stmt = conn
         .prepare(
             "SELECT id, name, description, query, 
@@ -415,58 +752,9 @@ pub async fn get_sql_template(
                 updated_at: Some(row.get(5)?),
             })
         })
-        .map_err(|e| format!("Template not found: {}", e))?;
+        .map_err(|e| format!("Failed to retrieve saved template: {}", e))?;
 
     Ok(template)
-}
-
-/// SQLテンプレートを保存（新規作成または更新）
-#[tauri::command]
-pub async fn save_sql_template(
-    db_manager: State<'_, DatabaseManager>,
-    request: SaveTemplateRequest,
-) -> Result<SqlTemplate, String> {
-    let id = {
-        let conn = db_manager
-            .get_connection()
-            .db_context("get database connection")
-            .map_err(|e| e.to_string())?;
-
-        if let Some(id) = request.id {
-            // 更新
-            conn.execute(
-                "UPDATE sql_templates 
-                 SET name = ?, description = ?, query = ?, updated_at = CURRENT_TIMESTAMP 
-                 WHERE id = ?",
-                params![&request.name, &request.description, &request.query, id],
-            )
-            .db_context("update template")
-            .map_err(|e| e.to_string())?;
-
-            id
-        } else {
-            // 新規作成
-            conn.execute(
-                "INSERT INTO sql_templates (name, description, query) 
-                 VALUES (?, ?, ?)",
-                params![&request.name, &request.description, &request.query],
-            )
-            .db_context("insert template")
-            .map_err(|e| e.to_string())?;
-
-            // 最後に挿入されたIDを取得
-            let mut stmt = conn
-                .prepare("SELECT currval('sql_templates_id_seq')")
-                .db_context("get last insert id")
-                .map_err(|e| e.to_string())?;
-
-            stmt.query_row([], |row| row.get(0))
-                .db_context("fetch last insert id")
-                .map_err(|e| e.to_string())?
-        }
-    };
-
-    get_sql_template(db_manager, id).await
 }
 
 /// SQLテンプレートを削除

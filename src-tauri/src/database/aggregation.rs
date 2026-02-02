@@ -330,23 +330,29 @@ mod tests {
         let messages = vec![
             ChatMessage {
                 id: Some(1),
-                stream_id: 1,
+                channel_id: Some(1),
+                stream_id: Some(1),
                 timestamp: "2024-01-01T12:00:00Z".to_string(),
                 platform: crate::constants::database::PLATFORM_TWITCH.to_string(),
                 user_id: Some("user1".to_string()),
                 user_name: "User1".to_string(),
                 message: "Hello".to_string(),
                 message_type: "normal".to_string(),
+                badges: Some(vec!["broadcaster".to_string()]),
+                badge_info: None,
             },
             ChatMessage {
                 id: Some(2),
-                stream_id: 1,
+                channel_id: Some(1),
+                stream_id: Some(1),
                 timestamp: "2024-01-01T12:01:00Z".to_string(),
                 platform: crate::constants::database::PLATFORM_TWITCH.to_string(),
                 user_id: Some("user2".to_string()),
                 user_name: "User2".to_string(),
                 message: "Hi".to_string(),
                 message_type: "normal".to_string(),
+                badges: None,
+                badge_info: None,
             },
         ];
 

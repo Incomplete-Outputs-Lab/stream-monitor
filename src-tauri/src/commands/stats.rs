@@ -1,9 +1,7 @@
-use crate::collectors::poller::{ChannelPoller, CollectorStatus};
 use crate::database::{models::StreamStats, utils, DatabaseManager};
 use crate::error::ResultExt;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
-use tokio::sync::Mutex;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StreamStatsQuery {
@@ -80,31 +78,4 @@ pub async fn get_stream_stats(
         .collect();
 
     stats.db_context("collect stats").map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn get_channel_stats(
-    app_handle: AppHandle,
-    db_manager: State<'_, DatabaseManager>,
-    channel_id: i64,
-) -> Result<Vec<StreamStats>, String> {
-    get_stream_stats(
-        app_handle,
-        db_manager,
-        StreamStatsQuery {
-            stream_id: None,
-            channel_id: Some(channel_id),
-            start_time: None,
-            end_time: None,
-        },
-    )
-    .await
-}
-
-#[tauri::command]
-pub async fn get_collector_status(
-    poller: State<'_, std::sync::Arc<Mutex<ChannelPoller>>>,
-) -> Result<Vec<CollectorStatus>, String> {
-    let poller = poller.lock().await;
-    Ok(poller.get_all_status())
 }

@@ -7,10 +7,12 @@ import TopGamesAnalytics from "./TopGamesAnalytics";
 import GameDetailAnalytics from "./GameDetailAnalytics";
 import TopChannelsAnalytics from "./TopChannelsAnalytics";
 import ChannelDetailAnalytics from "./ChannelDetailAnalytics";
+import ChatAnalytics from "./ChatAnalytics";
+import DataScience from "./DataScience";
 import { DateRangePicker } from "./DateRangePicker";
 import { Channel } from "../../types";
 
-type TabType = "overview" | "broadcaster" | "game" | "topGames" | "gameDetail" | "topChannels" | "channelDetail";
+type TabType = "overview" | "broadcaster" | "game" | "topGames" | "gameDetail" | "topChannels" | "channelDetail" | "chatAnalytics" | "dataScience";
 
 export function Statistics() {
   const [activeTab, setActiveTab] = useState<TabType>("overview");
@@ -51,6 +53,8 @@ export function Statistics() {
     { id: "game" as TabType, label: "ゲーム分析", icon: "🎮" },
     { id: "topGames" as TabType, label: "トップゲーム", icon: "🏆" },
     { id: "topChannels" as TabType, label: "トップチャンネル", icon: "⭐" },
+    { id: "chatAnalytics" as TabType, label: "チャット分析", icon: "💬" },
+    { id: "dataScience" as TabType, label: "データサイエンス", icon: "🔬" },
   ];
   
   // ドリルダウンナビゲーションハンドラー
@@ -176,6 +180,26 @@ export function Statistics() {
                       チャンネルランキング
                     </div>
                   </button>
+                  <button
+                    onClick={() => setActiveTab("chatAnalytics")}
+                    className="p-6 bg-purple-50 dark:bg-purple-900/20 rounded-lg hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors"
+                  >
+                    <div className="text-3xl mb-2">💬</div>
+                    <div className="font-semibold text-gray-900 dark:text-gray-100">チャット分析</div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                      エンゲージメント・セグメント分析
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("dataScience")}
+                    className="p-6 bg-cyan-50 dark:bg-cyan-900/20 rounded-lg hover:bg-cyan-100 dark:hover:bg-cyan-900/30 transition-colors"
+                  >
+                    <div className="text-3xl mb-2">🔬</div>
+                    <div className="font-semibold text-gray-900 dark:text-gray-100">データサイエンス</div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                      高度な統計分析・機械学習
+                    </div>
+                  </button>
                 </div>
               </div>
             </div>
@@ -230,6 +254,14 @@ export function Statistics() {
               onBackClick={handleBackToTopChannels}
               onGameClick={handleGameClick}
             />
+          )}
+
+          {activeTab === "chatAnalytics" && (
+            <ChatAnalytics channels={channels || []} />
+          )}
+
+          {activeTab === "dataScience" && (
+            <DataScience channels={channels || []} />
           )}
         </div>
       </div>

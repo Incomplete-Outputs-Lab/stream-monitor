@@ -22,7 +22,7 @@ impl YouTubeCollector {
         client_secret: String,
         redirect_uri: String,
         db_conn: Arc<Mutex<duckdb::Connection>>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let api_client = YouTubeApiClient::new(client_id, client_secret, redirect_uri).await?;
         Ok(Self {
             api_client: Arc::new(Mutex::new(api_client)),
@@ -37,7 +37,7 @@ impl Collector for YouTubeCollector {
     async fn poll_channel(
         &self,
         channel: &Channel,
-    ) -> Result<Option<StreamData>, Box<dyn std::error::Error>> {
+    ) -> Result<Option<StreamData>, Box<dyn std::error::Error + Send + Sync>> {
         let mut client = self.api_client.lock().await;
 
         // チャンネルIDからライブストリームを取得
@@ -89,7 +89,10 @@ impl Collector for YouTubeCollector {
         }
     }
 
-    async fn start_collection(&self, _channel: &Channel) -> Result<(), Box<dyn std::error::Error>> {
+    async fn start_collection(
+        &self,
+        _channel: &Channel,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // 認証はOAuthモジュールで行われているため、ここでは確認のみ
         Ok(())
     }
@@ -104,7 +107,7 @@ impl YouTubeCollector {
         _stream_id: i64,
         _video_id: &str,
         _poll_interval_secs: u64,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // チャット機能は現在無効化中
         // let mut client = self.api_client.lock().await;
         // let hub = client.get_hub().clone();

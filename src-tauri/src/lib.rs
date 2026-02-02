@@ -23,33 +23,37 @@ use collectors::{
 };
 use commands::{
     analytics::{
-        get_broadcaster_analytics, get_channel_daily_stats, get_data_availability,
-        get_game_analytics, get_game_daily_stats, list_game_categories,
+        detect_chat_spikes, get_broadcaster_analytics, get_channel_daily_stats,
+        get_chat_engagement_timeline, get_chatter_behavior_stats, get_data_availability,
+        get_game_analytics, get_game_daily_stats, get_time_pattern_stats, get_top_chatters,
+        get_user_segment_stats, list_game_categories,
     },
-    channels::{
-        add_channel, list_channels, migrate_twitch_user_ids, remove_channel, toggle_channel,
-        update_channel,
-    },
-    chat::{get_chat_messages, get_chat_rate, get_chat_stats},
+    channels::{add_channel, list_channels, remove_channel, toggle_channel, update_channel},
+    chat::get_chat_messages,
     config::{
         delete_oauth_config, delete_token, get_build_info, get_database_init_status,
-        get_oauth_config, get_token, has_oauth_config, has_token, initialize_database,
-        recreate_database, save_oauth_config, save_token, verify_token,
+        get_oauth_config, has_oauth_config, recreate_database, save_oauth_config, save_token,
+        verify_token,
     },
-    database::{create_database_backup, get_database_info},
+    data_science::{
+        detect_anomalies, get_category_change_impact, get_chatter_activity_scores,
+        get_emote_analysis, get_message_length_stats, get_viewer_chat_correlation,
+        get_word_frequency_analysis,
+    },
+    database::get_database_info,
     discovery::{
         get_auto_discovery_settings, get_discovered_streams, get_games_by_ids,
         promote_discovered_channel, save_auto_discovery_settings, search_twitch_games,
         toggle_auto_discovery, DiscoveredStreamInfo,
     },
-    export::{export_to_csv, export_to_delimited, preview_export_data},
+    export::{export_to_delimited, preview_export_data},
     logs::get_logs,
     oauth::{poll_twitch_device_token, start_twitch_device_auth},
     sql::{
-        delete_sql_template, execute_sql, get_sql_template, list_database_tables,
-        list_sql_templates, save_sql_template,
+        delete_sql_template, execute_sql, list_database_tables, list_sql_templates,
+        save_sql_template,
     },
-    stats::{get_channel_stats, get_collector_status, get_stream_stats},
+    stats::get_stream_stats,
     timeline::{get_channel_streams, get_stream_timeline},
     twitch::{get_twitch_rate_limit_status, validate_twitch_channel},
     window::show_main_window,
@@ -118,17 +122,12 @@ async fn check_for_updates(app: tauri::AppHandle) {
     }
 }
 
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 /// Helper function to start polling for existing enabled channels
 fn start_existing_channels_polling(
     db_manager: &tauri::State<'_, DatabaseManager>,
     poller: &mut ChannelPoller,
     app_handle: &tauri::AppHandle,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
     let conn = db_manager.get_connection()?;
 
     // Get all enabled channels
@@ -293,9 +292,26 @@ pub fn run() {
                         // Initialize Twitch collector if credentials are available
                         // Device Code Flow uses only client_id (no client_secret required)
                         if let Some(client_id) = &settings.twitch.client_id {
-                            let collector = Arc::new(TwitchCollector::new_with_app(client_id.clone(), None, app_handle_for_init.clone()));
-                            poller.register_twitch_collector(collector);
-                            logger_for_init.info("Twitch collector initialized successfully");
+                            // Twitch Collector 用の DB 接続を取得
+                            match db_manager.get_connection() {
+                                Ok(twitch_conn) => {
+                                    let db_conn = Arc::new(Mutex::new(twitch_conn));
+                                    let collector = Arc::new(TwitchCollector::new_with_app(
+                                        client_id.clone(),
+                                        None,
+                                        app_handle_for_init.clone(),
+                                        db_conn,
+                                        Arc::new(logger_for_init.clone()),
+                                    ));
+                                    // IRC DB ハンドラーを初期化
+                                    collector.initialize_irc().await;
+                                    poller.register_twitch_collector(collector);
+                                    logger_for_init.info("Twitch collector initialized successfully with IRC support");
+                                }
+                                Err(e) => {
+                                    logger_for_init.error(&format!("Failed to get database connection for Twitch collector: {}", e));
+                                }
+                            }
                         } else {
                             logger_for_init.info("Twitch credentials not configured, skipping collector initialization");
                         }
@@ -451,7 +467,6 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            greet,
             // Analytics commands
             get_broadcaster_analytics,
             get_game_analytics,
@@ -459,33 +474,41 @@ pub fn run() {
             get_data_availability,
             get_game_daily_stats,
             get_channel_daily_stats,
+            // Chat Analytics commands
+            get_chat_engagement_timeline,
+            detect_chat_spikes,
+            get_user_segment_stats,
+            get_top_chatters,
+            get_time_pattern_stats,
+            get_chatter_behavior_stats,
+            // Data Science commands
+            get_word_frequency_analysis,
+            get_emote_analysis,
+            get_message_length_stats,
+            get_viewer_chat_correlation,
+            get_category_change_impact,
+            get_chatter_activity_scores,
+            detect_anomalies,
             // Channel commands
             add_channel,
             remove_channel,
             update_channel,
             list_channels,
             toggle_channel,
-            migrate_twitch_user_ids,
             // Chat commands
             get_chat_messages,
-            get_chat_stats,
-            get_chat_rate,
             // Config commands
             save_token,
-            get_token,
             delete_token,
-            has_token,
             verify_token,
             get_build_info,
             get_database_init_status,
-            initialize_database,
             recreate_database,
             get_oauth_config,
             save_oauth_config,
             delete_oauth_config,
             has_oauth_config,
             // Database commands
-            create_database_backup,
             get_database_info,
             // Discovery commands
             get_auto_discovery_settings,
@@ -498,7 +521,6 @@ pub fn run() {
             // SQL commands
             execute_sql,
             list_sql_templates,
-            get_sql_template,
             save_sql_template,
             delete_sql_template,
             list_database_tables,
@@ -507,13 +529,10 @@ pub fn run() {
             poll_twitch_device_token,
             // Stats commands
             get_stream_stats,
-            get_channel_stats,
-            get_collector_status,
             // Timeline commands
             get_channel_streams,
             get_stream_timeline,
             // Export commands
-            export_to_csv,
             export_to_delimited,
             preview_export_data,
             // Logs commands

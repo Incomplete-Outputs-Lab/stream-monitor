@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ErrorBoundary } from '../common/ErrorBoundary';
 import StreamSelector from './StreamSelector';
-import TimelineChart from './TimelineChart';
+import TimelineWithChat from './TimelineWithChat';
 import StreamSummary from './StreamSummary';
 import ComparisonSelector from './ComparisonSelector';
 import ComparisonChart from './ComparisonChart';
@@ -58,7 +58,11 @@ const Timeline: React.FC = () => {
             {selectedTimeline && (
               <div className="space-y-6">
                 <StreamSummary streamInfo={selectedTimeline.stream_info} />
-                <TimelineChart timelineData={selectedTimeline} />
+                <TimelineWithChat
+                  timelineData={selectedTimeline}
+                  streamId={selectedTimeline.stream_info.id}
+                  channelId={selectedTimeline.stream_info.channel_id}
+                />
               </div>
             )}
 

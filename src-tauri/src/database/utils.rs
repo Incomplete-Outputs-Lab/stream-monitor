@@ -79,30 +79,78 @@ where
     dispatch_params!(|p| stmt.query_map(p, f), params)
 }
 
-pub fn query_row_with_params<T, F>(
-    conn: &Connection,
-    sql: &str,
-    params: &[String],
-    f: F,
-) -> DuckResult<T>
-where
-    F: FnOnce(&duckdb::Row) -> DuckResult<T>,
-{
-    dispatch_params!(|p| conn.query_row(sql, p, f), params)
-}
-
 /// RowからChatMessageを作成するヘルパー関数
 pub fn row_to_chat_message(row: &Row) -> DuckResult<ChatMessage> {
+    // badges を文字列として取得し、配列にパース
+    let badges: Option<Vec<String>> = match row.get::<_, Option<String>>(9)? {
+        None => None,
+        Some(badges_str) if badges_str.is_empty() => None,
+        Some(badges_str) => {
+            // DuckDB の配列は ['elem1', 'elem2'] 形式または JSON 配列形式で返される
+            // JSON としてパースを試みる
+            serde_json::from_str::<Vec<String>>(&badges_str)
+                .ok()
+                .or_else(|| {
+                    // JSON パースに失敗した場合は DuckDB 配列リテラル形式をパース
+                    // ['elem1', 'elem2'] → ["elem1", "elem2"]
+                    let json_like = badges_str
+                        .trim()
+                        .trim_start_matches('[')
+                        .trim_end_matches(']')
+                        .split(',')
+                        .map(|s| s.trim().trim_matches('\'').trim_matches('"').to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect::<Vec<String>>();
+                    if json_like.is_empty() {
+                        None
+                    } else {
+                        Some(json_like)
+                    }
+                })
+        }
+    };
+
     Ok(ChatMessage {
         id: Some(row.get(0)?),
-        stream_id: row.get(1)?,
-        timestamp: row.get(2)?,
-        platform: row.get(3)?,
-        user_id: row.get::<_, Option<String>>(4)?,
-        user_name: row.get(5)?,
-        message: row.get(6)?,
-        message_type: row.get(7)?,
+        channel_id: row.get::<_, Option<i64>>(1)?,
+        stream_id: row.get::<_, Option<i64>>(2)?,
+        timestamp: row.get(3)?,
+        platform: row.get(4)?,
+        user_id: row.get::<_, Option<String>>(5)?,
+        user_name: row.get(6)?,
+        message: row.get(7)?,
+        message_type: row.get(8)?,
+        badges,
+        badge_info: row.get::<_, Option<String>>(10).ok().flatten(),
     })
+}
+
+/// バッジ文字列をVec<String>にパースするヘルパー関数
+pub fn parse_badges(badges_str: &str) -> Option<Vec<String>> {
+    if badges_str.is_empty() {
+        return None;
+    }
+
+    // JSON としてパースを試みる
+    serde_json::from_str::<Vec<String>>(badges_str)
+        .ok()
+        .or_else(|| {
+            // JSON パースに失敗した場合は DuckDB 配列リテラル形式をパース
+            // ['elem1', 'elem2'] → ["elem1", "elem2"]
+            let json_like = badges_str
+                .trim()
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .split(',')
+                .map(|s| s.trim().trim_matches('\'').trim_matches('"').to_string())
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<String>>();
+            if json_like.is_empty() {
+                None
+            } else {
+                Some(json_like)
+            }
+        })
 }
 
 /// チャットメッセージのクエリ結果をChatMessageベクターに変換するヘルパー関数

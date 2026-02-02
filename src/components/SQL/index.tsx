@@ -448,22 +448,59 @@ export function SQLViewer() {
                           key={`row-${i}`}
                           className="border-b border-gray-100 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/50"
                         >
-                          {row.map((cell, j) => (
-                            <td
-                              key={`cell-${i}-${j}`}
-                              className="px-3 py-2 text-gray-900 dark:text-gray-100 font-mono text-xs select-text"
-                            >
-                              {cell === null ? (
-                                <span className="text-gray-400 dark:text-gray-600 italic">
-                                  NULL
-                                </span>
-                              ) : typeof cell === "object" ? (
-                                JSON.stringify(cell)
-                              ) : (
-                                String(cell)
-                              )}
-                            </td>
-                          ))}
+                          {row.map((cell, j) => {
+                            // 配列かどうかを判定
+                            const isArray = Array.isArray(cell);
+                            
+                            return (
+                              <td
+                                key={`cell-${i}-${j}`}
+                                className="px-3 py-2 text-gray-900 dark:text-gray-100 font-mono text-xs select-text"
+                              >
+                                {cell === null ? (
+                                  <span className="text-gray-400 dark:text-gray-600 italic">
+                                    NULL
+                                  </span>
+                                ) : isArray ? (
+                                  // 配列の場合は見やすく表示（カンマ区切りまたはバッジ形式）
+                                  <div className="flex flex-col gap-1">
+                                    {(cell as unknown[]).length === 0 ? (
+                                      <span className="text-gray-400 dark:text-gray-600 italic text-xs">
+                                        []
+                                      </span>
+                                    ) : (
+                                      <>
+                                        {/* カンマ区切り表示 */}
+                                        <div className="text-xs text-gray-700 dark:text-gray-300">
+                                          {(cell as unknown[]).map(String).join(", ")}
+                                        </div>
+                                        {/* バッジ形式表示（要素が10個以下の場合のみ） */}
+                                        {(cell as unknown[]).length <= 10 && (
+                                          <div className="flex flex-wrap gap-1">
+                                            {(cell as unknown[]).map((item, idx) => (
+                                              <span
+                                                key={idx}
+                                                className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800"
+                                              >
+                                                {String(item)}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </>
+                                    )}
+                                  </div>
+                                ) : typeof cell === "object" ? (
+                                  // その他のオブジェクトはJSON表示
+                                  <span className="text-xs">
+                                    {JSON.stringify(cell)}
+                                  </span>
+                                ) : (
+                                  String(cell)
+                                )}
+                              </td>
+                            );
+                          })}
                         </tr>
                       ))}
                     </tbody>

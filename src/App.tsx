@@ -13,6 +13,7 @@ import { ConfirmDialog } from "./components/common/ConfirmDialog";
 import { DonationModal, useDonationModal } from "./components/common/DonationModal";
 import { DatabaseErrorDialog } from "./components/common/DatabaseErrorDialog";
 import { useThemeStore } from "./stores/themeStore";
+import { useToastStore } from "./stores/toastStore";
 import "./App.css";
 import { SQLViewer } from "./components/SQL";
 import Timeline from "./components/Timeline";
@@ -29,6 +30,7 @@ function App() {
   const [dbErrorMessage, setDbErrorMessage] = useState<string>("");
   const { theme } = useThemeStore();
   const { show: showDonation, close: closeDonation } = useDonationModal();
+  const addToast = useToastStore((state) => state.addToast);
 
   useEffect(() => {
     // テーマを適用
@@ -75,9 +77,20 @@ function App() {
         setShowErrorDialog(true);
       });
 
+      // Twitch再認証が必要なイベント（リフレッシュトークン無効化時）
+      const twitchAuthRequiredUnlisten = await listen("twitch-auth-required", () => {
+        console.log("Twitch re-authentication required");
+        addToast(
+          "Twitch認証の有効期限が切れました。設定画面から再認証してください。",
+          "warning",
+          10000 // 10秒間表示
+        );
+      });
+
       return () => {
         successUnlisten();
         errorUnlisten();
+        twitchAuthRequiredUnlisten();
       };
     };
 
@@ -88,7 +101,7 @@ function App() {
     return () => {
       if (cleanup) cleanup();
     };
-  }, []);
+  }, [addToast]);
 
   // ネイティブアプリらしい動作を設定
   useEffect(() => {

@@ -63,7 +63,7 @@ impl TwitchOAuth {
     pub async fn start_device_flow(
         &self,
         scopes: Vec<&str>,
-    ) -> Result<DeviceAuthStatus, Box<dyn std::error::Error>> {
+    ) -> Result<DeviceAuthStatus, Box<dyn std::error::Error + Send + Sync>> {
         let scope_string = scopes.join(" ");
 
         let mut params = HashMap::new();
@@ -122,7 +122,7 @@ impl TwitchOAuth {
         device_code: &str,
         interval_secs: u64,
         app_handle: Option<tauri::AppHandle>,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let mut params = HashMap::new();
         params.insert("client_id", self.client_id.as_str());
         params.insert("device_code", device_code);
@@ -280,7 +280,7 @@ impl TwitchOAuth {
     pub async fn refresh_device_token(
         &self,
         app_handle: Option<tauri::AppHandle>,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         // リフレッシュトークンを取得
         let handle = app_handle
             .or_else(|| self.app_handle.clone())

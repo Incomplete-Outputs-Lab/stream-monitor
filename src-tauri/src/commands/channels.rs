@@ -79,7 +79,7 @@ pub async fn remove_channel(
     // 削除前にポーリングを停止
     if let Some(poller) = app_handle.try_state::<Arc<Mutex<ChannelPoller>>>() {
         let mut poller = poller.lock().await;
-        poller.stop_polling(id);
+        poller.stop_polling(id).await;
     }
 
     let conn = db_manager
@@ -164,7 +164,7 @@ pub async fn update_channel(
                 }
             } else if !enabled && old_channel.enabled {
                 // 有効→無効になった場合、ポーリングを停止
-                poller.stop_polling(id);
+                poller.stop_polling(id).await;
             }
         }
     }
@@ -478,7 +478,7 @@ pub async fn toggle_channel(
             }
         } else {
             // 無効化された場合、ポーリングを停止
-            poller.stop_polling(id);
+            poller.stop_polling(id).await;
         }
     }
 
@@ -515,142 +515,4 @@ fn get_channel_by_id(conn: &Connection, id: i64) -> Option<Channel> {
         .ok()?;
 
     rows.next()?.ok()
-}
-
-/// 既存のTwitchチャンネルのtwitch_user_idを更新（マイグレーション用）
-#[tauri::command]
-pub async fn migrate_twitch_user_ids(
-    app_handle: AppHandle,
-    db_manager: State<'_, DatabaseManager>,
-) -> Result<MigrationResult, String> {
-    // twitch_user_idがNULLのTwitchチャンネルを取得
-    let channels: Vec<(i64, String)> = {
-        let conn = db_manager
-            .get_connection()
-            .db_context("get database connection")
-            .map_err(|e| e.to_string())?;
-
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, channel_id FROM channels WHERE platform = 'twitch' AND twitch_user_id IS NULL",
-            )
-            .db_context("prepare statement")
-            .map_err(|e| e.to_string())?;
-
-        let result: Vec<(i64, String)> = stmt
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
-            .db_context("query channels")
-            .map_err(|e| e.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .db_context("collect channels")
-            .map_err(|e| e.to_string())?;
-
-        result
-        // conn and stmt are dropped here
-    };
-
-    if channels.is_empty() {
-        return Ok(MigrationResult {
-            total: 0,
-            updated: 0,
-            failed: 0,
-            message: "マイグレーション対象のチャンネルがありません".to_string(),
-        });
-    }
-
-    eprintln!(
-        "[Migration] Found {} Twitch channels without user_id",
-        channels.len()
-    );
-
-    // Twitch APIクライアントを取得
-    let twitch_collector = if let Some(poller) = app_handle.try_state::<Arc<Mutex<ChannelPoller>>>()
-    {
-        let poller = poller.lock().await;
-        poller.get_twitch_collector().cloned()
-    } else {
-        return Err("Twitch collector not initialized".to_string());
-    };
-
-    let collector = twitch_collector.ok_or_else(|| "Twitch collector not available".to_string())?;
-    let api_client = collector.get_api_client();
-
-    let mut updated = 0;
-    let mut failed = 0;
-
-    // 100件ずつバッチ処理
-    for chunk in channels.chunks(100) {
-        let logins: Vec<&str> = chunk.iter().map(|(_, login)| login.as_str()).collect();
-
-        match api_client.get_users_by_logins(&logins).await {
-            Ok(users) => {
-                for user in users {
-                    let login = user.login.to_string();
-                    let user_id_str = user.id.to_string();
-                    let user_id: i64 = match user_id_str.parse() {
-                        Ok(id) => id,
-                        Err(e) => {
-                            eprintln!("[Migration] Failed to parse user_id for {}: {}", login, e);
-                            failed += 1;
-                            continue;
-                        }
-                    };
-
-                    // 該当するチャンネルのIDを取得
-                    if let Some((channel_id, _)) = chunk.iter().find(|(_, l)| l == &login) {
-                        let conn = db_manager
-                            .get_connection()
-                            .db_context("get connection for update")
-                            .map_err(|e| e.to_string())?;
-
-                        match conn.execute(
-                            "UPDATE channels SET twitch_user_id = ? WHERE id = ?",
-                            duckdb::params![user_id, channel_id],
-                        ) {
-                            Ok(_) => {
-                                eprintln!(
-                                    "[Migration] Updated channel {} (login: {}) with user_id: {}",
-                                    channel_id, login, user_id
-                                );
-                                updated += 1;
-                            }
-                            Err(e) => {
-                                eprintln!(
-                                    "[Migration] Failed to update channel {}: {}",
-                                    channel_id, e
-                                );
-                                failed += 1;
-                            }
-                        }
-                        // Drop conn before next iteration
-                        drop(conn);
-                    }
-                }
-            }
-            Err(e) => {
-                eprintln!("[Migration] Failed to fetch user info batch: {}", e);
-                failed += logins.len();
-            }
-        }
-    }
-
-    Ok(MigrationResult {
-        total: channels.len(),
-        updated,
-        failed,
-        message: format!(
-            "マイグレーション完了: {}/{} チャンネルを更新しました（失敗: {}）",
-            updated,
-            channels.len(),
-            failed
-        ),
-    })
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct MigrationResult {
-    pub total: usize,
-    pub updated: usize,
-    pub failed: usize,
-    pub message: String,
 }

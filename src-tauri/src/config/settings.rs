@@ -113,7 +113,7 @@ pub struct SettingsManager;
 impl SettingsManager {
     pub fn get_settings_path(
         app_handle: &AppHandle,
-    ) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    ) -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
         use tauri::Manager;
 
         // Tauri 2.xのapp_data_dir()を取得（ログファイルやDBファイルと同じ場所）
@@ -132,7 +132,7 @@ impl SettingsManager {
 
     pub fn load_settings(
         app_handle: &AppHandle,
-    ) -> Result<AppSettings, Box<dyn std::error::Error>> {
+    ) -> Result<AppSettings, Box<dyn std::error::Error + Send + Sync>> {
         let settings_path = Self::get_settings_path(app_handle)?;
 
         if !settings_path.exists() {
@@ -147,7 +147,7 @@ impl SettingsManager {
     pub fn save_settings(
         app_handle: &AppHandle,
         settings: &AppSettings,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let settings_path = Self::get_settings_path(app_handle)?;
 
         // ディレクトリが存在しない場合は作成
@@ -170,7 +170,7 @@ pub mod youtube_scraping {
     pub async fn scrape_game_title(
         _video_url: &str,
         _settings: &YouTubeScrapingSettings,
-    ) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    ) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
         // TODO: 将来的に実装
         // 1. Chromiumヘッドレスブラウザを起動
         // 2. YouTubeページをロード

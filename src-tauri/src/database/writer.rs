@@ -1,5 +1,5 @@
 use crate::database::models::{ChatMessage, Stream, StreamStats};
-use duckdb::Connection;
+use duckdb::{Connection, OptionalExt};
 
 pub struct DatabaseWriter;
 
@@ -9,53 +9,58 @@ impl DatabaseWriter {
         channel_id: i64,
         stream: &Stream,
     ) -> Result<i64, duckdb::Error> {
-        // 既存のストリームを確認
-        let mut stmt =
-            conn.prepare("SELECT id FROM streams WHERE channel_id = ? AND stream_id = ?")?;
+        // 外部キー制約の問題を回避するため、SELECTでチェックしてからINSERT/UPDATEを実行
+        let ended_at_value = stream.ended_at.as_deref();
 
-        let channel_id_str = channel_id.to_string();
-        let stream_id_str = stream.stream_id.clone();
+        // まず既存レコードを検索
+        let existing_id: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM streams WHERE channel_id = ? AND stream_id = ?",
+                duckdb::params![channel_id, &stream.stream_id],
+                |row| row.get(0),
+            )
+            .optional()?;
 
-        let existing_id: Option<i64> = stmt
-            .query_map([&channel_id_str as &str, &stream_id_str as &str], |row| {
-                row.get(0)
-            })?
-            .next()
-            .transpose()?;
-
-        if let Some(id) = existing_id {
-            // 更新
-            let ended_at_value = stream.ended_at.as_deref();
-
-            conn.execute(
-                "UPDATE streams SET title = ?, category = ?, ended_at = ? WHERE id = ?",
-                duckdb::params![
-                    stream.title.as_deref().unwrap_or(""),
-                    stream.category.as_deref().unwrap_or(""),
-                    ended_at_value,
-                    id,
-                ],
-            )?;
-            Ok(id)
-        } else {
-            // 挿入 - DuckDBではRETURNING句を使用してINSERTと同時にIDを取得
-            // ended_atはOptionなので、Noneの場合はNULLとして扱う
-            let ended_at_value = stream.ended_at.as_deref();
-
-            let id: i64 = conn.query_row(
-                "INSERT INTO streams (channel_id, stream_id, title, category, started_at, ended_at) 
-                 VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
-                duckdb::params![
-                    channel_id,
-                    &stream.stream_id,
-                    stream.title.as_deref().unwrap_or(""),
-                    stream.category.as_deref().unwrap_or(""),
-                    &stream.started_at,
-                    ended_at_value,
-                ],
-                |row| row.get(0)
-            )?;
-            Ok(id)
+        match existing_id {
+            Some(id) => {
+                // 既存レコードがあればUPDATE
+                conn.execute(
+                    r#"
+                    UPDATE streams 
+                    SET title = ?,
+                        category = ?,
+                        ended_at = ?
+                    WHERE id = ?
+                    "#,
+                    duckdb::params![
+                        stream.title.as_deref().unwrap_or(""),
+                        stream.category.as_deref().unwrap_or(""),
+                        ended_at_value,
+                        id,
+                    ],
+                )?;
+                Ok(id)
+            }
+            None => {
+                // 新規レコードならINSERT
+                let id: i64 = conn.query_row(
+                    r#"
+                    INSERT INTO streams (channel_id, stream_id, title, category, started_at, ended_at) 
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    RETURNING id
+                    "#,
+                    duckdb::params![
+                        channel_id,
+                        &stream.stream_id,
+                        stream.title.as_deref().unwrap_or(""),
+                        stream.category.as_deref().unwrap_or(""),
+                        &stream.started_at,
+                        ended_at_value,
+                    ],
+                    |row| row.get(0)
+                )?;
+                Ok(id)
+            }
         }
     }
 
@@ -100,23 +105,53 @@ impl DatabaseWriter {
 
         // エラー時のROLLBACK処理を含むスコープ
         let result = (|| {
-            // プリペアドステートメントを使用した効率的なバッチインサート
-            let mut stmt = conn.prepare(
-                "INSERT INTO chat_messages (stream_id, timestamp, platform, user_id, user_name, message, message_type)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)"
-            )?;
+            // パフォーマンス最適化: マルチロウINSERTを使用
+            // DuckDBでは大量の行を一度にINSERTする方が効率的
 
+            // VALUES句を構築
+            let values_placeholders: Vec<String> = messages
+                .iter()
+                .map(|msg| {
+                    // badges を DuckDB 配列リテラル形式に変換
+                    let badges_literal = match &msg.badges {
+                        None => "NULL".to_string(),
+                        Some(badges) if badges.is_empty() => "NULL".to_string(),
+                        Some(badges) => {
+                            let escaped_badges: Vec<String> = badges
+                                .iter()
+                                .map(|b| format!("'{}'", b.replace("'", "''")))
+                                .collect();
+                            format!("ARRAY[{}]", escaped_badges.join(", "))
+                        }
+                    };
+                    format!("(?, ?, ?, ?, ?, ?, ?, ?, {}, ?)", badges_literal)
+                })
+                .collect();
+
+            let sql = format!(
+                "INSERT INTO chat_messages (channel_id, stream_id, timestamp, platform, user_id, user_name, message, message_type, badges, badge_info) VALUES {}",
+                values_placeholders.join(", ")
+            );
+
+            // すべてのパラメータを順番に配列に格納
+            let mut params: Vec<Box<dyn duckdb::ToSql>> = Vec::new();
             for message in messages {
-                stmt.execute([
-                    &message.stream_id.to_string(),
-                    &message.timestamp,
-                    &message.platform,
-                    &message.user_id.as_deref().unwrap_or("").to_string(),
-                    &message.user_name,
-                    &message.message,
-                    &message.message_type,
-                ])?;
+                params.push(Box::new(message.channel_id));
+                params.push(Box::new(message.stream_id));
+                params.push(Box::new(message.timestamp.clone()));
+                params.push(Box::new(message.platform.clone()));
+                params.push(Box::new(message.user_id.clone()));
+                params.push(Box::new(message.user_name.clone()));
+                params.push(Box::new(message.message.clone()));
+                params.push(Box::new(message.message_type.clone()));
+                // badges はリテラルで埋め込み済みのためスキップ
+                params.push(Box::new(message.badge_info.clone()));
             }
+
+            // パラメータ参照を作成
+            let param_refs: Vec<&dyn duckdb::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+            conn.execute(&sql, param_refs.as_slice())?;
 
             Ok::<(), duckdb::Error>(())
         })();

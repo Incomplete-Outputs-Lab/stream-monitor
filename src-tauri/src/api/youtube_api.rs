@@ -20,7 +20,7 @@ impl YouTubeApiClient {
         client_id: String,
         client_secret: String,
         _redirect_uri: String,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let secret = ApplicationSecret {
             client_id,
             client_secret,
@@ -61,7 +61,8 @@ impl YouTubeApiClient {
     pub async fn get_channel_by_username(
         &mut self,
         username: &str,
-    ) -> Result<Option<google_youtube3::api::Channel>, Box<dyn std::error::Error>> {
+    ) -> Result<Option<google_youtube3::api::Channel>, Box<dyn std::error::Error + Send + Sync>>
+    {
         // 認証はhubに組み込まれているため、直接呼び出す
         let part = vec![
             youtube::PART_ID.to_string(),
@@ -82,7 +83,7 @@ impl YouTubeApiClient {
     pub async fn get_live_stream(
         &mut self,
         channel_id: &str,
-    ) -> Result<Option<google_youtube3::api::Video>, Box<dyn std::error::Error>> {
+    ) -> Result<Option<google_youtube3::api::Video>, Box<dyn std::error::Error + Send + Sync>> {
         // チャンネルのライブストリームを検索
         let part = vec![
             youtube::PART_ID.to_string(),
@@ -127,7 +128,8 @@ impl YouTubeApiClient {
     pub async fn get_channel_by_id(
         &mut self,
         channel_id: &str,
-    ) -> Result<Option<google_youtube3::api::Channel>, Box<dyn std::error::Error>> {
+    ) -> Result<Option<google_youtube3::api::Channel>, Box<dyn std::error::Error + Send + Sync>>
+    {
         let part = vec![
             "id".to_string(),
             "snippet".to_string(),
@@ -157,7 +159,7 @@ impl YouTubeApiClient {
     pub async fn authenticate_with_token(
         &mut self,
         token: String,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         self.set_access_token(token);
         Ok(())
     }

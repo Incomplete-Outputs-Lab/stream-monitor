@@ -2,6 +2,7 @@ pub mod analytics;
 pub mod channels;
 pub mod chat;
 pub mod config;
+pub mod data_science;
 pub mod database;
 pub mod discovery;
 pub mod export;

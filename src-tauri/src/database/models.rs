@@ -80,13 +80,16 @@ pub struct ChannelStatsEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub id: Option<i64>,
-    pub stream_id: i64,
+    pub channel_id: Option<i64>,
+    pub stream_id: Option<i64>,
     pub timestamp: String,
     pub platform: String,
     pub user_id: Option<String>,
     pub user_name: String,
     pub message: String,
     pub message_type: String,
+    pub badges: Option<Vec<String>>,
+    pub badge_info: Option<String>, // サブスク月数等の詳細情報 (例: "subscriber:24")
 }
 
 #[cfg(test)]

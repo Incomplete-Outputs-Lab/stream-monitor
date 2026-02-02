@@ -36,10 +36,12 @@ export function TwitchAuthPanel({ onClose, onSuccess }: TwitchAuthPanelProps) {
 
   // バックエンドからの認証成功イベントをリッスン
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    let unlistenSuccess: (() => void) | undefined;
+    let unlistenRequired: (() => void) | undefined;
 
-    const setupListener = async () => {
-      unlisten = await listen('twitch-auth-success', async () => {
+    const setupListeners = async () => {
+      // 認証成功イベント
+      unlistenSuccess = await listen('twitch-auth-success', async () => {
         console.log('[TwitchAuthPanel] Received twitch-auth-success event');
         
         // Strongholdへの保存が完全に完了するまで少し待機
@@ -67,13 +69,30 @@ export function TwitchAuthPanel({ onClose, onSuccess }: TwitchAuthPanelProps) {
           setTimeout(() => onClose(), 2000);
         }
       });
+
+      // 再認証が必要なイベント（リフレッシュトークンが無効になった場合）
+      unlistenRequired = await listen('twitch-auth-required', async () => {
+        console.log('[TwitchAuthPanel] Received twitch-auth-required event');
+        
+        // トークンステータスを更新
+        await checkTokens();
+        
+        // UIを更新
+        setError('Twitch認証の有効期限が切れました。再度認証してください。');
+        setPollingActive(false);
+        setDeviceAuth(null);
+        setSuccess(null);
+      });
     };
 
-    setupListener();
+    setupListeners();
 
     return () => {
-      if (unlisten) {
-        unlisten();
+      if (unlistenSuccess) {
+        unlistenSuccess();
+      }
+      if (unlistenRequired) {
+        unlistenRequired();
       }
     };
   }, [checkTokens, onSuccess, onClose]);

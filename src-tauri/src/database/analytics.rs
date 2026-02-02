@@ -63,8 +63,8 @@ pub fn get_broadcaster_analytics(
         r#"
         WITH stats_with_interval AS (
             SELECT 
-                COALESCE(s.channel_id, c.id) as channel_id,
-                COALESCE(c.channel_name, ss.channel_name) as channel_name,
+                COALESCE(s.channel_id, c2.id) as channel_id,
+                COALESCE(c1.channel_name, c2.channel_name, ss.channel_name) as channel_name,
                 ss.stream_id,
                 ss.viewer_count,
                 ss.category,
@@ -77,7 +77,8 @@ pub fn get_broadcaster_analytics(
                 )) / 60.0 AS interval_minutes
             FROM stream_stats ss
             LEFT JOIN streams s ON ss.stream_id = s.id
-            LEFT JOIN channels c ON (s.channel_id = c.id OR (ss.channel_name = c.channel_id AND c.platform = 'twitch'))
+            LEFT JOIN channels c1 ON s.channel_id = c1.id
+            LEFT JOIN channels c2 ON ss.channel_name = c2.channel_id AND c2.platform = 'twitch'
             WHERE 1=1
         "#,
     );
@@ -297,8 +298,8 @@ pub fn get_game_analytics(
         r#"
         WITH stats_with_interval AS (
             SELECT 
-                COALESCE(s.channel_id, c.id) as channel_id,
-                COALESCE(c.channel_name, ss.channel_name) as channel_name,
+                COALESCE(s.channel_id, c2.id) as channel_id,
+                COALESCE(c1.channel_name, c2.channel_name, ss.channel_name) as channel_name,
                 ss.category,
                 ss.viewer_count,
                 ss.collected_at,
@@ -310,7 +311,8 @@ pub fn get_game_analytics(
                 )) / 60.0 AS interval_minutes
             FROM stream_stats ss
             LEFT JOIN streams s ON ss.stream_id = s.id
-            LEFT JOIN channels c ON (s.channel_id = c.id OR (ss.channel_name = c.channel_id AND c.platform = 'twitch'))
+            LEFT JOIN channels c1 ON s.channel_id = c1.id
+            LEFT JOIN channels c2 ON ss.channel_name = c2.channel_id AND c2.platform = 'twitch'
             WHERE ss.category IS NOT NULL
         "#,
     );
@@ -453,40 +455,46 @@ pub fn list_categories(
 
 /// データ可用性情報を取得
 pub fn get_data_availability(conn: &Connection) -> Result<DataAvailability, duckdb::Error> {
-    let sql = r#"
-        WITH date_stats AS (
-            SELECT 
-                DATE(collected_at) as date,
-                COUNT(*) as records
-            FROM stream_stats
-            GROUP BY DATE(collected_at)
+    // パフォーマンス最適化: 別々のクエリに分割してインデックスを使用
+    
+    // MIN(collected_at) - インデックスを使用
+    let first_record: String = conn
+        .query_row(
+            "SELECT MIN(collected_at)::VARCHAR FROM stream_stats WHERE collected_at IS NOT NULL",
+            [],
+            |row| row.get(0),
         )
-        SELECT 
-            MIN(ss.collected_at)::VARCHAR as first_record,
-            MAX(ss.collected_at)::VARCHAR as last_record,
-            COUNT(DISTINCT DATE(ss.collected_at)) as total_days_with_data,
-            COUNT(*) as total_records
-        FROM stream_stats ss
-    "#;
+        .unwrap_or_else(|_| String::new());
 
-    let mut stmt = conn.prepare(sql)?;
-    let mut rows = stmt.query([])?;
+    // MAX(collected_at) - インデックスを使用
+    let last_record: String = conn
+        .query_row(
+            "SELECT MAX(collected_at)::VARCHAR FROM stream_stats WHERE collected_at IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or_else(|_| String::new());
 
-    if let Some(row) = rows.next()? {
-        Ok(DataAvailability {
-            first_record: row.get(0)?,
-            last_record: row.get(1)?,
-            total_days_with_data: row.get(2)?,
-            total_records: row.get(3)?,
-        })
-    } else {
-        Ok(DataAvailability {
-            first_record: String::new(),
-            last_record: String::new(),
-            total_days_with_data: 0,
-            total_records: 0,
-        })
-    }
+    // COUNT DISTINCT DATE - 集計が必要
+    let total_days_with_data: i64 = conn
+        .query_row(
+            "SELECT COUNT(DISTINCT DATE(collected_at)) FROM stream_stats WHERE collected_at IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    // COUNT(*) - 全件カウント（これは避けられない）
+    let total_records: i64 = conn
+        .query_row("SELECT COUNT(*) FROM stream_stats", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    Ok(DataAvailability {
+        first_record,
+        last_record,
+        total_days_with_data: total_days_with_data as i32,
+        total_records,
+    })
 }
 
 /// ゲーム別日次統計を取得

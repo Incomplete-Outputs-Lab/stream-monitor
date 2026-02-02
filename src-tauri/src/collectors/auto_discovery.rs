@@ -358,4 +358,3 @@ impl AutoDiscoveryPoller {
         Ok(())
     }
 }
-

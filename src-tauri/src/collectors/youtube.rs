@@ -23,7 +23,7 @@ impl YouTubeCollector {
         redirect_uri: String,
         db_conn: Arc<Mutex<duckdb::Connection>>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let api_client = YouTubeApiClient::new(client_id, client_secret, redirect_uri).await.map_err(|e| format!("{}", e))?;
+        let api_client = YouTubeApiClient::new(client_id, client_secret, redirect_uri).await?;
         Ok(Self {
             api_client: Arc::new(Mutex::new(api_client)),
             chat_collectors: Arc::new(Mutex::new(HashMap::new())),
@@ -127,4 +127,3 @@ impl YouTubeCollector {
         // }
     }
 }
-

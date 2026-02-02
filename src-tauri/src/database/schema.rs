@@ -184,6 +184,61 @@ pub fn init_database(conn: &Connection) -> Result<(), duckdb::Error> {
     )?;
     eprintln!("[Schema] Index 7 created");
 
+    // 追加のパフォーマンス最適化インデックス
+    eprintln!("[Schema] Creating additional performance optimization indexes...");
+
+    // stream_stats テーブルの最適化インデックス
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_stream_stats_category ON stream_stats(category)",
+        [],
+    )?;
+    eprintln!("[Schema] Index 8: stream_stats.category created");
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_stream_stats_channel_name ON stream_stats(channel_name)",
+        [],
+    )?;
+    eprintln!("[Schema] Index 9: stream_stats.channel_name created");
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_stream_stats_channel_collected ON stream_stats(channel_name, collected_at)",
+        [],
+    )?;
+    eprintln!("[Schema] Index 10: stream_stats(channel_name, collected_at) created");
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_stream_stats_category_collected ON stream_stats(category, collected_at)",
+        [],
+    )?;
+    eprintln!("[Schema] Index 11: stream_stats(category, collected_at) created");
+
+    // chat_messages テーブルの最適化インデックス
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chat_messages_user_name ON chat_messages(user_name)",
+        [],
+    )?;
+    eprintln!("[Schema] Index 12: chat_messages.user_name created");
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chat_messages_user_timestamp ON chat_messages(user_name, timestamp)",
+        [],
+    )?;
+    eprintln!("[Schema] Index 13: chat_messages(user_name, timestamp) created");
+
+    // streams テーブルの複合インデックス
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_streams_channel_started ON streams(channel_id, started_at)",
+        [],
+    )?;
+    eprintln!("[Schema] Index 14: streams(channel_id, started_at) created");
+
+    // channels テーブルの最適化インデックス
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_channels_platform ON channels(platform)",
+        [],
+    )?;
+    eprintln!("[Schema] Index 15: channels.platform created");
+
     eprintln!("[Schema] All steps completed successfully");
     Ok(())
 }

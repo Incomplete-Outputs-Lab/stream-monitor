@@ -308,6 +308,9 @@ pub fn get_word_frequency_analysis(
         params.push(end.to_string());
     }
 
+    // パフォーマンス最適化: 最新100,000件に制限
+    sql.push_str(" ORDER BY cm.timestamp DESC LIMIT 100000");
+
     let mut stmt = conn.prepare(&sql)?;
     let messages: Vec<String> = utils::query_map_with_params(&mut stmt, &params, |row| {
         row.get::<_, String>(0)
@@ -417,6 +420,9 @@ pub fn get_emote_analysis(
         sql.push_str(" AND cm.timestamp <= ?");
         params.push(end.to_string());
     }
+
+    // パフォーマンス最適化: 最新100,000件に制限
+    sql.push_str(" ORDER BY cm.timestamp DESC LIMIT 100000");
 
     let mut stmt = conn.prepare(&sql)?;
     let data: Vec<(String, String, i32)> =
@@ -556,6 +562,9 @@ pub fn get_message_length_stats(
         sql.push_str(" AND cm.timestamp <= ?");
         params.push(end.to_string());
     }
+
+    // パフォーマンス最適化: 最新100,000件に制限
+    sql.push_str(" ORDER BY cm.timestamp DESC LIMIT 100000");
 
     let mut stmt = conn.prepare(&sql)?;
     let data: Vec<(i32, Option<String>)> =
@@ -1143,10 +1152,18 @@ pub fn get_chatter_activity_scores(
     end_time: Option<&str>,
     limit: i32,
 ) -> Result<ChatterScoreResult, duckdb::Error> {
-    // Get chatter data
+    // Get chatter data with badges - N+1クエリを避けるため一度に取得
     let mut sql = String::from(
         r#"
-        WITH chatter_stats AS (
+        WITH user_badges AS (
+            SELECT 
+                user_name,
+                badges,
+                ROW_NUMBER() OVER (PARTITION BY user_name ORDER BY timestamp DESC) as rn
+            FROM chat_messages
+            WHERE badges IS NOT NULL
+        ),
+        chatter_stats AS (
             SELECT 
                 cm.user_name,
                 COUNT(*) as message_count,
@@ -1186,45 +1203,33 @@ pub fn get_chatter_activity_scores(
             GROUP BY cm.user_name
         )
         SELECT 
-            user_name,
-            message_count,
-            stream_count,
-            active_days
-        FROM chatter_stats
-        ORDER BY message_count DESC
+            cs.user_name,
+            cs.message_count,
+            cs.stream_count,
+            cs.active_days,
+            ub.badges
+        FROM chatter_stats cs
+        LEFT JOIN user_badges ub ON cs.user_name = ub.user_name AND ub.rn = 1
+        ORDER BY cs.message_count DESC
         "#,
     );
 
     let mut stmt = conn.prepare(&sql)?;
-    let data: Vec<(String, i64, i64, i64)> =
+    let data: Vec<(String, i64, i64, i64, Option<String>)> =
         utils::query_map_with_params(&mut stmt, &params, |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4).ok()))
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    // Calculate scores
-    let mut scores_with_users: Vec<(String, f64, i64, i64)> = Vec::new();
+    // Calculate scores and cache badges
+    let mut scores_with_users: Vec<(String, f64, i64, i64, Vec<String>)> = Vec::new();
 
-    for (user_name, message_count, stream_count, active_days) in data {
-        // Get badges for this user
-        let badges_sql = r#"
-            SELECT badges
-            FROM chat_messages
-            WHERE user_name = ? AND badges IS NOT NULL
-            ORDER BY timestamp DESC
-            LIMIT 1
-        "#;
-
-        let badges: Vec<String> = conn
-            .query_row(badges_sql, [&user_name], |row| {
-                let badges_str: Option<String> = row.get(0).ok();
-                if let Some(b) = badges_str {
-                    Ok(utils::parse_badges(&b).unwrap_or_default())
-                } else {
-                    Ok(Vec::new())
-                }
-            })
-            .unwrap_or_else(|_| Vec::new());
+    for (user_name, message_count, stream_count, active_days, badges_str) in data {
+        let badges = if let Some(b) = badges_str {
+            utils::parse_badges(&b).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
 
         // Calculate badge weight
         let badge_weight = if badges.contains(&"broadcaster".to_string()) {
@@ -1249,44 +1254,24 @@ pub fn get_chatter_activity_scores(
             + (consistency * 0.2)
             + (badge_weight * 10.0 * 0.2);
 
-        scores_with_users.push((user_name, score, message_count, stream_count));
+        scores_with_users.push((user_name, score, message_count, stream_count, badges));
     }
 
     // Sort by score
     scores_with_users.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
 
-    // Get top N
+    // Get top N - バッジはキャッシュされているため追加クエリ不要
     let top_scores: Vec<ChatterActivityScore> = scores_with_users
         .iter()
         .take(limit as usize)
         .enumerate()
-        .map(|(idx, (user, score, msg_count, str_count))| {
-            // Get badges again for final result
-            let badges_sql = r#"
-                SELECT badges
-                FROM chat_messages
-                WHERE user_name = ? AND badges IS NOT NULL
-                ORDER BY timestamp DESC
-                LIMIT 1
-            "#;
-
-            let badges: Vec<String> = conn
-                .query_row(badges_sql, [user], |row| {
-                    let badges_str: Option<String> = row.get(0).ok();
-                    if let Some(b) = badges_str {
-                        Ok(utils::parse_badges(&b).unwrap_or_default())
-                    } else {
-                        Ok(Vec::new())
-                    }
-                })
-                .unwrap_or_else(|_| Vec::new());
-
+        .map(|(idx, (user, score, msg_count, str_count, badges))| {
             ChatterActivityScore {
                 user_name: user.clone(),
                 score: *score,
                 message_count: *msg_count,
                 stream_count: *str_count,
-                badges,
+                badges: badges.clone(),
                 rank: (idx + 1) as i32,
             }
         })
@@ -1308,7 +1293,7 @@ pub fn get_chatter_activity_scores(
         .map(|(label, min, max)| {
             let count = scores_with_users
                 .iter()
-                .filter(|(_, score, _, _)| *score >= *min && *score < *max)
+                .filter(|(_, score, _, _, _)| *score >= *min && *score < *max)
                 .count() as i64;
             ScoreDistribution {
                 score_range: label.to_string(),

@@ -6,7 +6,6 @@ use serde::Serialize;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-#[allow(unused_imports)]
 use tauri::Emitter;
 use tokio::sync::Mutex as TokioMutex;
 use twitch_api::{
@@ -32,11 +31,6 @@ pub struct TwitchApiClient {
 }
 
 impl TwitchApiClient {
-    /// Helper function to convert twitch_api errors to Send + Sync errors
-    fn convert_error<E: std::fmt::Display>(e: E) -> Box<dyn std::error::Error + Send + Sync> {
-        format!("{}", e).into()
-    }
-
     /// Create a new TwitchApiClient
     ///
     /// For Device Code Flow (user authentication), client_secret can be None.
@@ -120,7 +114,7 @@ impl TwitchApiClient {
         
         // ロックを取得した後、現在のトークンがすでに有効かチェック
         // （別のリクエストがすでにリフレッシュを完了した可能性がある）
-        // Note: KeyringStoreの結果をawaitの前に完全に解決する（Send境界の問題を回避）
+        // Note: KeyringStoreの結果をawaitの前に解決してからasync操作を行う
         let maybe_current_token: Option<String> = self.app_handle.as_ref().and_then(|handle| {
             KeyringStore::get_token_with_app(handle, db_constants::PLATFORM_TWITCH).ok()
         });
@@ -131,7 +125,7 @@ impl TwitchApiClient {
             if let Ok(mut limiter) = self.rate_limiter.lock() {
                 limiter.track_request();
             }
-            if TwitchApiUserToken::from_token(&*self.client, access_token_typed).await.map_err(Self::convert_error).is_ok() {
+            if TwitchApiUserToken::from_token(&*self.client, access_token_typed).await.is_ok() {
                 eprintln!("[TwitchAPI] Token is already valid (refreshed by another request), skipping refresh");
                 return Ok(AccessToken::from(current_token));
             }
@@ -178,7 +172,8 @@ impl TwitchApiClient {
                     
                     Err("Twitch authentication expired. Please re-authenticate via Device Code Flow.".into())
                 } else {
-                    Err(e)
+                    // Convert to Send + Sync error
+                    Err(error_str.into())
                 }
             }
         }
@@ -193,7 +188,7 @@ impl TwitchApiClient {
         }
 
         let access_token_typed = AccessToken::from(access_token);
-        match TwitchApiUserToken::from_token(&*self.client, access_token_typed).await.map_err(Self::convert_error) {
+        match TwitchApiUserToken::from_token(&*self.client, access_token_typed).await {
             Ok(token) => Ok(token),
             Err(e) => {
                 // トークン検証失敗 - リフレッシュを試行
@@ -315,7 +310,7 @@ impl TwitchApiClient {
             limiter.track_request();
         }
 
-        match self.client.req_get(request, &token).await.map_err(Self::convert_error).map_err(Self::convert_error) {
+        match self.client.req_get(request, &token).await {
             Ok(response) => response
                 .data
                 .into_iter()
@@ -338,14 +333,14 @@ impl TwitchApiClient {
                     let response = self
                         .client
                         .req_get(GetUsersRequest::logins(login_refs), &refreshed_token)
-                        .await.map_err(Self::convert_error)?;
+                        .await?;
                     response
                         .data
                         .into_iter()
                         .next()
                         .ok_or_else(|| "User not found".into())
                 } else {
-                    Err(format!("{}", e).into())
+                    Err(e.into())
                 }
             }
         }
@@ -365,7 +360,7 @@ impl TwitchApiClient {
             limiter.track_request();
         }
 
-        match self.client.req_get(request, &token).await.map_err(Self::convert_error) {
+        match self.client.req_get(request, &token).await {
             Ok(response) => Ok(response.data.into_iter().next()),
             Err(e) => {
                 // 401エラーの場合、トークンをリフレッシュして再試行
@@ -384,10 +379,10 @@ impl TwitchApiClient {
                     let response = self
                         .client
                         .req_get(GetStreamsRequest::user_ids(user_id_refs), &refreshed_token)
-                        .await.map_err(Self::convert_error)?;
+                        .await?;
                     Ok(response.data.into_iter().next())
                 } else {
-                    Err(format!("{}", e).into())
+                    Err(e.into())
                 }
             }
         }
@@ -412,7 +407,7 @@ impl TwitchApiClient {
             limiter.track_request();
         }
 
-        match self.client.req_get(request, &token).await.map_err(Self::convert_error) {
+        match self.client.req_get(request, &token).await {
             Ok(response) => Ok(response.data),
             Err(e) => {
                 // 401エラーの場合、トークンをリフレッシュして再試行
@@ -437,7 +432,7 @@ impl TwitchApiClient {
                         .await?;
                     Ok(response.data)
                 } else {
-                    Err(format!("{}", e).into())
+                    Err(e.into())
                 }
             }
         }
@@ -458,7 +453,7 @@ impl TwitchApiClient {
             limiter.track_request();
         }
 
-        match self.client.req_get(request, &token).await.map_err(Self::convert_error) {
+        match self.client.req_get(request, &token).await {
             Ok(response) => Ok(response.data),
             Err(e) => {
                 // 401エラーの場合、トークンをリフレッシュして再試行
@@ -483,7 +478,7 @@ impl TwitchApiClient {
                         .await?;
                     Ok(response.data)
                 } else {
-                    Err(format!("{}", e).into())
+                    Err(e.into())
                 }
             }
         }
@@ -505,7 +500,7 @@ impl TwitchApiClient {
             limiter.track_request();
         }
 
-        match self.client.req_get(request, &token).await.map_err(Self::convert_error) {
+        match self.client.req_get(request, &token).await {
             Ok(response) => Ok(response.data),
             Err(e) => {
                 // 401エラーの場合、トークンをリフレッシュして再試行
@@ -530,7 +525,7 @@ impl TwitchApiClient {
                         .await?;
                     Ok(response.data)
                 } else {
-                    Err(format!("{}", e).into())
+                    Err(e.into())
                 }
             }
         }
@@ -563,7 +558,7 @@ impl TwitchApiClient {
                 limiter.track_request();
             }
 
-            match self.client.req_get(request, &token).await.map_err(Self::convert_error) {
+            match self.client.req_get(request, &token).await {
                 Ok(response) => {
                     let follower_count = response.total.unwrap_or(0) as i32;
                     results.push((user_id.to_string(), follower_count));
@@ -620,7 +615,7 @@ impl TwitchApiClient {
             limiter.track_request();
         }
 
-        let response = match self.client.req_get(request, &token).await.map_err(Self::convert_error) {
+        let response = match self.client.req_get(request, &token).await {
             Ok(response) => response,
             Err(e) => {
                 // 401エラーの場合、トークンをリフレッシュして再試行
@@ -638,9 +633,9 @@ impl TwitchApiClient {
 
                     let mut retry_request = GetStreamsRequest::default();
                     retry_request.first = Some(100);
-                    self.client.req_get(retry_request, &refreshed_token).await.map_err(Self::convert_error).map_err(Self::convert_error)?
+                    self.client.req_get(retry_request, &refreshed_token).await?
                 } else {
-                    return Err(format!("{}", e).into());
+                    return Err(e.into());
                 }
             }
         };
@@ -674,7 +669,7 @@ impl TwitchApiClient {
             limiter.track_request();
         }
 
-        let response = match self.client.req_get(request.clone(), &token).await.map_err(Self::convert_error) {
+        let response = match self.client.req_get(request.clone(), &token).await {
             Ok(response) => response,
             Err(e) => {
                 // 401エラーの場合、トークンをリフレッシュして再試行
@@ -690,9 +685,9 @@ impl TwitchApiClient {
                         limiter.track_request();
                     }
 
-                    self.client.req_get(request, &refreshed_token).await.map_err(Self::convert_error).map_err(Self::convert_error)?
+                    self.client.req_get(request, &refreshed_token).await?
                 } else {
-                    return Err(format!("{}", e).into());
+                    return Err(e.into());
                 }
             }
         };
@@ -724,7 +719,7 @@ impl TwitchApiClient {
             limiter.track_request();
         }
 
-        match self.client.req_get(request.clone(), &token).await.map_err(Self::convert_error) {
+        match self.client.req_get(request.clone(), &token).await {
             Ok(response) => Ok(response.data),
             Err(e) => {
                 // 401エラーの場合、トークンをリフレッシュして再試行
@@ -740,10 +735,10 @@ impl TwitchApiClient {
                         limiter.track_request();
                     }
 
-                    let response = self.client.req_get(request, &refreshed_token).await.map_err(Self::convert_error).map_err(Self::convert_error)?;
+                    let response = self.client.req_get(request, &refreshed_token).await?;
                     Ok(response.data)
                 } else {
-                    Err(format!("{}", e).into())
+                    Err(e.into())
                 }
             }
         }
@@ -872,4 +867,3 @@ pub struct TwitchRateLimitStatus {
 pub struct RateLimiter {
     // 将来的に実装
 }
-

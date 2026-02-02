@@ -54,7 +54,7 @@ impl YouTubeApiClient {
     }
 
     // アクセストークンの取得は不要（hubに組み込まれている）
-    // async fn get_access_token(&mut self) -> Result<AccessToken, Box<dyn std::error::Error + Send + Sync>> {
+    // async fn get_access_token(&mut self) -> Result<AccessToken, Box<dyn std::error::Error>> {
     //     ...
     // }
 
@@ -162,4 +162,3 @@ impl YouTubeApiClient {
         Ok(())
     }
 }
-

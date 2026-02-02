@@ -136,6 +136,31 @@ impl<T> ResultExt<T> for Result<T, std::io::Error> {
     }
 }
 
+impl<T> ResultExt<T> for Result<T, Box<dyn std::error::Error>> {
+    fn db_context(self, _context: &str) -> Result<T, AppError> {
+        self.map_err(|e| AppError::General(e.to_string()))
+    }
+
+    fn api_context(self, context: &str) -> Result<T, AppError> {
+        self.map_err(|e| AppError::Api {
+            context: context.to_string(),
+            message: e.to_string(),
+        })
+    }
+
+    fn io_context(self, _context: &str) -> Result<T, AppError> {
+        self.map_err(|e| AppError::General(e.to_string()))
+    }
+
+    fn config_context(self, context: &str) -> Result<T, AppError> {
+        self.map_err(|e| AppError::Config(format!("{}: {}", context, e)))
+    }
+
+    fn context(self, context: &str) -> Result<T, AppError> {
+        self.map_err(|e| AppError::General(format!("{}: {}", context, e)))
+    }
+}
+
 impl<T> ResultExt<T> for Result<T, Box<dyn std::error::Error + Send + Sync>> {
     fn db_context(self, _context: &str) -> Result<T, AppError> {
         self.map_err(|e| AppError::General(e.to_string()))
@@ -197,4 +222,3 @@ impl<T> OptionExt<T> for Option<T> {
         self.ok_or_else(|| AppError::NotFound(message.to_string()))
     }
 }
-

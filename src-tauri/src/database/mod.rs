@@ -21,7 +21,7 @@ pub struct DatabaseManager {
 }
 
 impl DatabaseManager {
-    pub fn new(app_handle: &AppHandle) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn new(app_handle: &AppHandle) -> Result<Self, Box<dyn std::error::Error>> {
         // データベースファイルパスの取得
         let db_path = if let Ok(app_data_dir) = app_handle.path().app_data_dir() {
             std::fs::create_dir_all(&app_data_dir)
@@ -73,7 +73,7 @@ impl DatabaseManager {
     }
 
     /// 手動バックアップを作成
-    pub fn create_backup(&self) -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn create_backup(&self) -> Result<PathBuf, Box<dyn std::error::Error>> {
         // インメモリDB使用時はバックアップを作成できない
         if cfg!(debug_assertions) {
             return Err(
@@ -119,7 +119,7 @@ mod tests {
     // テスト用のヘルパー関数
     fn get_connection_with_path(
         db_path: PathBuf,
-    ) -> Result<Connection, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<Connection, Box<dyn std::error::Error>> {
         let conn = Connection::open(&db_path)
             .db_context("open test database")
             .map_err(|e| e.to_string())?;
@@ -177,4 +177,3 @@ mod tests {
         assert!(db_path.exists());
     }
 }
-

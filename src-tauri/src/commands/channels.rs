@@ -578,12 +578,28 @@ pub async fn migrate_twitch_user_ids(
     let mut updated = 0;
     let mut failed = 0;
 
+    // DB接続を一度だけ取得してトランザクション内で更新
+    let conn = db_manager
+        .get_connection()
+        .db_context("get database connection for migration")
+        .map_err(|e| e.to_string())?;
+
     // 100件ずつバッチ処理
     for chunk in channels.chunks(100) {
         let logins: Vec<&str> = chunk.iter().map(|(_, login)| login.as_str()).collect();
 
         match api_client.get_users_by_logins(&logins).await {
             Ok(users) => {
+                // トランザクション開始
+                if let Err(e) = conn.execute("BEGIN TRANSACTION", []) {
+                    eprintln!("[Migration] Failed to begin transaction: {}", e);
+                    failed += users.len();
+                    continue;
+                }
+
+                let mut batch_updated = 0;
+                let mut batch_failed = 0;
+
                 for user in users {
                     let login = user.login.to_string();
                     let user_id_str = user.id.to_string();
@@ -591,18 +607,13 @@ pub async fn migrate_twitch_user_ids(
                         Ok(id) => id,
                         Err(e) => {
                             eprintln!("[Migration] Failed to parse user_id for {}: {}", login, e);
-                            failed += 1;
+                            batch_failed += 1;
                             continue;
                         }
                     };
 
                     // 該当するチャンネルのIDを取得
                     if let Some((channel_id, _)) = chunk.iter().find(|(_, l)| l == &login) {
-                        let conn = db_manager
-                            .get_connection()
-                            .db_context("get connection for update")
-                            .map_err(|e| e.to_string())?;
-
                         match conn.execute(
                             "UPDATE channels SET twitch_user_id = ? WHERE id = ?",
                             duckdb::params![user_id, channel_id],
@@ -612,19 +623,28 @@ pub async fn migrate_twitch_user_ids(
                                     "[Migration] Updated channel {} (login: {}) with user_id: {}",
                                     channel_id, login, user_id
                                 );
-                                updated += 1;
+                                batch_updated += 1;
                             }
                             Err(e) => {
                                 eprintln!(
                                     "[Migration] Failed to update channel {}: {}",
                                     channel_id, e
                                 );
-                                failed += 1;
+                                batch_failed += 1;
                             }
                         }
-                        // Drop conn before next iteration
-                        drop(conn);
                     }
+                }
+
+                // トランザクションコミット
+                if let Err(e) = conn.execute("COMMIT", []) {
+                    eprintln!("[Migration] Failed to commit transaction: {}", e);
+                    // ロールバック試行
+                    let _ = conn.execute("ROLLBACK", []);
+                    failed += batch_updated + batch_failed;
+                } else {
+                    updated += batch_updated;
+                    failed += batch_failed;
                 }
             }
             Err(e) => {
@@ -633,6 +653,9 @@ pub async fn migrate_twitch_user_ids(
             }
         }
     }
+
+    // 接続を明示的に解放
+    drop(conn);
 
     Ok(MigrationResult {
         total: channels.len(),

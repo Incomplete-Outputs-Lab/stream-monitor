@@ -387,22 +387,63 @@ pub fn get_top_chatters(
     end_time: Option<&str>,
     limit: i32,
 ) -> Result<Vec<TopChatter>, duckdb::Error> {
+    // N+1クエリを避けるため、バッジ取得をメインクエリに統合
     let mut sql = String::from(
         r#"
-        SELECT 
-            cm.user_name,
-            COUNT(*) as message_count,
-            MIN(cm.timestamp)::VARCHAR as first_seen,
-            MAX(cm.timestamp)::VARCHAR as last_seen,
-            COUNT(DISTINCT cm.stream_id) as stream_count
-        FROM chat_messages cm
-        LEFT JOIN streams s ON cm.stream_id = s.id
-        WHERE 1=1
+        WITH user_badges AS (
+            SELECT 
+                user_name,
+                badges,
+                ROW_NUMBER() OVER (PARTITION BY user_name ORDER BY timestamp DESC) as rn
+            FROM chat_messages
+            WHERE badges IS NOT NULL
         "#,
     );
 
     let mut params: Vec<String> = Vec::new();
 
+    // CTEにも同じフィルタを適用
+    let mut cte_filters = Vec::new();
+    
+    if let Some(ch_id) = channel_id {
+        cte_filters.push(" AND channel_id = ?");
+        params.push(ch_id.to_string());
+    }
+
+    if let Some(st_id) = stream_id {
+        cte_filters.push(" AND stream_id = ?");
+        params.push(st_id.to_string());
+    }
+
+    if let Some(start) = start_time {
+        cte_filters.push(" AND timestamp >= ?");
+        params.push(start.to_string());
+    }
+
+    if let Some(end) = end_time {
+        cte_filters.push(" AND timestamp <= ?");
+        params.push(end.to_string());
+    }
+
+    sql.push_str(&cte_filters.join(""));
+    sql.push_str(
+        r#"
+        )
+        SELECT 
+            cm.user_name,
+            COUNT(*) as message_count,
+            MIN(cm.timestamp)::VARCHAR as first_seen,
+            MAX(cm.timestamp)::VARCHAR as last_seen,
+            COUNT(DISTINCT cm.stream_id) as stream_count,
+            ub.badges
+        FROM chat_messages cm
+        LEFT JOIN streams s ON cm.stream_id = s.id
+        LEFT JOIN user_badges ub ON cm.user_name = ub.user_name AND ub.rn = 1
+        WHERE 1=1
+        "#,
+    );
+
+    // メインクエリのWHERE句（CTEとは別にパラメータを追加）
     if let Some(ch_id) = channel_id {
         sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
         params.push(ch_id.to_string());
@@ -426,7 +467,7 @@ pub fn get_top_chatters(
 
     sql.push_str(&format!(
         r#"
-        GROUP BY cm.user_name
+        GROUP BY cm.user_name, ub.badges
         ORDER BY message_count DESC
         LIMIT ?
         "#
@@ -434,50 +475,26 @@ pub fn get_top_chatters(
     params.push(limit.to_string());
 
     let mut stmt = conn.prepare(&sql)?;
-    let chatter_data: Vec<(String, i64, String, String, i64)> =
+    let results: Vec<TopChatter> =
         utils::query_map_with_params(&mut stmt, &params, |row| {
-            Ok((
-                row.get(0)?, // user_name
-                row.get(1)?, // message_count
-                row.get(2)?, // first_seen
-                row.get(3)?, // last_seen
-                row.get(4)?, // stream_count
-            ))
+            let badges_str: Option<String> = row.get(5).ok();
+            let badges = if let Some(b) = badges_str {
+                // DuckDBのARRAY型をパース
+                crate::database::utils::parse_badges(&b).unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+
+            Ok(TopChatter {
+                user_name: row.get(0)?,
+                message_count: row.get(1)?,
+                badges,
+                first_seen: row.get(2)?,
+                last_seen: row.get(3)?,
+                stream_count: row.get(4)?,
+            })
         })?
         .collect::<Result<Vec<_>, _>>()?;
-
-    // バッジ情報を取得
-    let mut results = Vec::new();
-    for (user_name, message_count, first_seen, last_seen, stream_count) in chatter_data {
-        let badges_sql = r#"
-            SELECT badges
-            FROM chat_messages
-            WHERE user_name = ? AND badges IS NOT NULL
-            ORDER BY timestamp DESC
-            LIMIT 1
-        "#;
-
-        let badges: Vec<String> = conn
-            .query_row(badges_sql, [&user_name], |row| {
-                let badges_str: Option<String> = row.get(0).ok();
-                if let Some(b) = badges_str {
-                    // DuckDBのARRAY型をパース
-                    Ok(crate::database::utils::parse_badges(&b).unwrap_or_default())
-                } else {
-                    Ok(Vec::new())
-                }
-            })
-            .unwrap_or_else(|_| Vec::new());
-
-        results.push(TopChatter {
-            user_name,
-            message_count,
-            badges,
-            first_seen,
-            last_seen,
-            stream_count,
-        });
-    }
 
     Ok(results)
 }

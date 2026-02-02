@@ -186,6 +186,17 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::Builder::new().build())
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // 2回目以降の起動時に既存のウィンドウを表示してフォーカス
+            let logger = app.state::<AppLogger>();
+            logger.info("Second instance detected - showing existing window");
+            
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+                let _ = window.unminimize();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let app_handle = app.handle().clone();

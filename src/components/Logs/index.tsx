@@ -126,7 +126,7 @@ export function Logs() {
           <div className="space-y-2 max-h-[600px] overflow-y-auto">
             {logs.slice().reverse().map((log, index) => (
               <div
-                key={index}
+                key={`log-${log.timestamp}-${index}`}
                 className="border border-gray-200 dark:border-slate-700 rounded-lg p-3 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors"
               >
                 <div className="flex items-start gap-3">

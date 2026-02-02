@@ -434,7 +434,7 @@ export function SQLViewer() {
                       <tr>
                         {result.columns.map((col, i) => (
                           <th
-                            key={i}
+                            key={`col-${col}-${i}`}
                             className="px-3 py-2 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-slate-700"
                           >
                             {col}
@@ -445,12 +445,12 @@ export function SQLViewer() {
                     <tbody className="bg-white dark:bg-slate-900">
                       {result.rows.map((row, i) => (
                         <tr
-                          key={i}
+                          key={`row-${i}`}
                           className="border-b border-gray-100 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/50"
                         >
                           {row.map((cell, j) => (
                             <td
-                              key={j}
+                              key={`cell-${i}-${j}`}
                               className="px-3 py-2 text-gray-900 dark:text-gray-100 font-mono text-xs select-text"
                             >
                               {cell === null ? (

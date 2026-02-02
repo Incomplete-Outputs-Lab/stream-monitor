@@ -6,23 +6,76 @@ use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tauri::State;
 
+/// SQLクエリが有効かどうかを基本的にチェック
+fn validate_sql_query(query: &str) -> Result<(), String> {
+    let query_trimmed = query.trim();
+    
+    if query_trimmed.is_empty() {
+        return Err("クエリが空です".to_string());
+    }
+    
+    // コメントをスキップして最初のキーワードを取得
+    let first_keyword = query_trimmed
+        .lines()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty() && !line.starts_with("--"))
+        .flat_map(|line| line.split_whitespace())
+        .find(|word| !word.is_empty())
+        .unwrap_or("")
+        .to_uppercase();
+    
+    // 有効なSQLキーワードのリスト
+    let valid_keywords = [
+        "SELECT", "INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "ALTER",
+        "TRUNCATE", "PRAGMA", "SHOW", "DESCRIBE", "DESC", "EXPLAIN",
+        "WITH", "COPY", "IMPORT", "EXPORT", "ATTACH", "DETACH",
+        "BEGIN", "COMMIT", "ROLLBACK", "SET", "CALL", "LOAD"
+    ];
+    
+    if !valid_keywords.contains(&first_keyword.as_str()) {
+        return Err(format!(
+            "無効なSQLクエリです: '{}' は認識されないSQLキーワードです。\n有効なキーワード: SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, PRAGMA, SHOW, DESCRIBE, WITH など",
+            first_keyword
+        ));
+    }
+    
+    Ok(())
+}
+
 /// クエリを前処理してLIST型カラムを文字列に変換
 fn preprocess_query_for_list_columns(conn: &Connection, query: &str) -> Result<String, String> {
     // SELECT * FROM table のようなクエリの場合、LIST型カラムを検出して自動変換
     // より複雑なクエリの場合は元のクエリをそのまま使用
     
+    // クエリを正規化
+    let query_normalized = query.trim();
+    
+    // 複数のステートメントがある場合は前処理をスキップ
+    let semicolon_count = query_normalized.matches(';').count();
+    if semicolon_count > 1 || (semicolon_count == 1 && !query_normalized.trim_end().ends_with(';')) {
+        eprintln!("[SQL] Multiple statements detected, skipping LIST preprocessing");
+        return Ok(query.to_string());
+    }
+    
+    // セミコロンを削除して単一のステートメントとして処理
+    let single_statement = query_normalized.trim_end_matches(';').trim();
+    
     // シンプルなヒューリスティック: "SELECT * FROM" パターンを検出
-    let trimmed = query.trim().to_uppercase();
-    if !trimmed.starts_with("SELECT * FROM") {
+    let trimmed_upper = single_statement.to_uppercase();
+    if !trimmed_upper.starts_with("SELECT * FROM") {
         // 複雑なクエリはそのまま返す
         return Ok(query.to_string());
     }
     
     // テーブル名を抽出（簡易版）
-    let parts: Vec<&str> = query.split_whitespace().collect();
+    let parts: Vec<&str> = single_statement.split_whitespace().collect();
     let table_name = if let Some(idx) = parts.iter().position(|&p| p.to_uppercase() == "FROM") {
         if idx + 1 < parts.len() {
-            parts[idx + 1].trim_end_matches(';')
+            // テーブル名から記号を削除
+            parts[idx + 1]
+                .trim_end_matches(';')
+                .trim_end_matches(',')
+                .trim()
         } else {
             return Ok(query.to_string());
         }
@@ -83,7 +136,14 @@ fn preprocess_query_for_list_columns(conn: &Connection, query: &str) -> Result<S
     
     // クエリを再構築
     let select_clause = columns.join(", ");
-    let rest_of_query = &query[query.to_uppercase().find("FROM").unwrap_or(0)..];
+    
+    // FROM以降の部分を安全に取得（single_statementから）
+    let from_pos = match single_statement.to_uppercase().find("FROM") {
+        Some(pos) => pos,
+        None => return Ok(query.to_string()),
+    };
+    
+    let rest_of_query = &single_statement[from_pos..];
     let new_query = format!("SELECT {} {}", select_clause, rest_of_query);
     
     eprintln!("[SQL] Transformed query to handle LIST columns: {}", new_query);
@@ -237,14 +297,36 @@ pub async fn execute_sql(
     // クエリをトリムして、空の場合はエラーを返す
     let query = query.trim();
     if query.is_empty() {
-        return Err("Query cannot be empty".to_string());
+        return Err("クエリが空です".to_string());
     }
 
     eprintln!("[SQL] Executing query: {}", query);
+    
+    // 基本的なクエリ検証：セミコロンで複数のステートメントに分割されている場合、
+    // 最初のステートメントのみを実行（セキュリティとエラー防止のため）
+    let query_parts: Vec<&str> = query.split(';').collect();
+    let query_to_execute = if query_parts.len() > 1 {
+        let first_stmt = query_parts[0].trim();
+        // 2番目以降のステートメントが空でない場合は警告
+        if query_parts.iter().skip(1).any(|s| !s.trim().is_empty()) {
+            eprintln!("[SQL WARN] Multiple statements detected. Only executing the first statement.");
+            eprintln!("[SQL WARN] Original query: {}", query);
+            eprintln!("[SQL WARN] Executing: {}", first_stmt);
+        }
+        first_stmt
+    } else {
+        query
+    };
+    
+    // SQLクエリの基本的な妥当性チェック（DuckDBに渡す前に検証）
+    if let Err(e) = validate_sql_query(query_to_execute) {
+        eprintln!("[SQL ERROR] Query validation failed: {}", e);
+        return Err(e);
+    }
 
     // クエリの種類を判定（SELECT系かそれ以外か）
     // コメント（-- や /* */）をスキップして最初のSQLキーワードを取得
-    let query_type = query
+    let query_type = query_to_execute
         .lines()
         .map(|line| line.trim())
         .filter(|line| !line.is_empty() && !line.starts_with("--"))
@@ -261,20 +343,32 @@ pub async fn execute_sql(
     {
         // SELECT系クエリの処理
         // LIST型カラムを自動変換するための前処理
-        let processed_query = preprocess_query_for_list_columns(&conn, query)?;
+        let processed_query = match preprocess_query_for_list_columns(&conn, query_to_execute) {
+            Ok(q) => q,
+            Err(e) => {
+                eprintln!("[SQL WARN] Failed to preprocess query: {}, using original query", e);
+                query_to_execute.to_string()
+            }
+        };
         
-        let mut stmt = conn.prepare(&processed_query).map_err(|e| {
-            eprintln!("[SQL ERROR] Failed to prepare: {}", e);
-            e.to_string()
-        })?;
+        let mut stmt = match conn.prepare(&processed_query) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("[SQL ERROR] Failed to prepare: {}", e);
+                return Err(format!("SQL構文エラー: {}", e));
+            }
+        };
 
         eprintln!("[SQL] Statement prepared successfully");
 
         // クエリを実行してRowsを取得
-        let mut rows = stmt.query([]).map_err(|e| {
-            eprintln!("[SQL ERROR] Failed to execute query: {}", e);
-            e.to_string()
-        })?;
+        let mut rows = match stmt.query([]) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("[SQL ERROR] Failed to execute query: {}", e);
+                return Err(format!("クエリ実行エラー: {}", e));
+            }
+        };
 
         eprintln!("[SQL] Query executed, collecting rows...");
 
@@ -284,10 +378,15 @@ pub async fn execute_sql(
         let mut column_count = 0;
 
         // 最初の行からカラム情報を取得
-        if let Some(first_row) = rows.next().map_err(|e| {
-            eprintln!("[SQL ERROR] Failed to fetch first row: {}", e);
-            e.to_string()
-        })? {
+        let first_row_result = match rows.next() {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("[SQL ERROR] Failed to fetch first row: {}", e);
+                return Err(format!("行データ取得エラー: {}", e));
+            }
+        };
+        
+        if let Some(first_row) = first_row_result {
             column_count = first_row.as_ref().column_count();
             eprintln!("[SQL] Column count: {}", column_count);
 
@@ -394,10 +493,19 @@ pub async fn execute_sql(
         }
 
         // 残りの行データを収集
-        while let Some(row) = rows.next().map_err(|e| {
-            eprintln!("[SQL ERROR] Failed to fetch row: {}", e);
-            e.to_string()
-        })? {
+        loop {
+            let row_result = match rows.next() {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("[SQL ERROR] Failed to fetch row: {}", e);
+                    return Err(format!("行データ取得エラー: {}", e));
+                }
+            };
+            
+            let row = match row_result {
+                Some(r) => r,
+                None => break,
+            };
             let mut row_values = Vec::new();
             for i in 0..column_count {
                 let value = match row.get_ref(i) {
@@ -504,10 +612,13 @@ pub async fn execute_sql(
         }
     } else {
         // INSERT/UPDATE/DELETE/CREATE/DROP等の処理
-        let affected = conn
-            .execute(query, &[] as &[&dyn duckdb::ToSql])
-            .db_context("execute query")
-            .map_err(|e| e.to_string())?;
+        let affected = match conn.execute(query_to_execute, &[] as &[&dyn duckdb::ToSql]) {
+            Ok(n) => n,
+            Err(e) => {
+                eprintln!("[SQL ERROR] Failed to execute: {}", e);
+                return Err(format!("SQL実行エラー: {}", e));
+            }
+        };
 
         let execution_time = start_time.elapsed().as_millis();
 

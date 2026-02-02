@@ -289,6 +289,10 @@ export interface StreamInfo {
   peak_viewers: number;
   avg_viewers: number;
   duration_minutes: number;
+  minutes_watched: number;
+  follower_gain: number;
+  total_chat_messages: number;
+  engagement_rate: number;
 }
 
 export interface TimelinePoint {

@@ -129,7 +129,7 @@ const ComparisonChart: React.FC<ComparisonChartProps> = ({ timelines, selectedSt
         </p>
         <div className="space-y-2 text-sm">
           {validPayload.map((entry: any, index: number) => (
-            <div key={index} className="flex items-center justify-between gap-4">
+            <div key={entry.dataKey || entry.name || `tooltip-${index}`} className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-2 flex-1 min-w-0">
                 <div
                   className="w-3 h-3 rounded-full flex-shrink-0"
@@ -241,7 +241,7 @@ const ComparisonChart: React.FC<ComparisonChartProps> = ({ timelines, selectedSt
             {/* イベントマーカー（垂直線） */}
             {events.map((event, index) => (
               <ReferenceLine
-                key={`event-${index}`}
+                key={`event-line-${event.timestamp}-${event.streamId}-${index}`}
                 x={event.timestampMs}
                 stroke={event.eventType === 'category' ? '#F59E0B' : '#3B82F6'}
                 strokeDasharray="5 5"
@@ -290,7 +290,7 @@ const ComparisonChart: React.FC<ComparisonChartProps> = ({ timelines, selectedSt
           <div className="space-y-3 max-h-80 overflow-y-auto">
             {events.map((event, index) => (
               <div
-                key={index}
+                key={`event-list-${event.timestamp}-${event.streamId}-${index}`}
                 className="flex items-start gap-3 p-3 border-l-4 rounded-r"
                 style={{
                   borderLeftColor: event.eventType === 'category' ? '#F59E0B' : '#3B82F6',

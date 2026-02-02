@@ -32,7 +32,7 @@ const EventMarkers: React.FC<EventMarkersProps> = ({
           <div className="space-y-3 max-h-60 overflow-y-auto">
             {categoryChanges.map((change, index) => (
               <div
-                key={index}
+                key={`category-${change.timestamp}-${index}`}
                 className="border-l-4 border-orange-500 pl-4 py-2"
               >
                 <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 mb-1">
@@ -66,7 +66,7 @@ const EventMarkers: React.FC<EventMarkersProps> = ({
           <div className="space-y-3 max-h-60 overflow-y-auto">
             {titleChanges.map((change, index) => (
               <div
-                key={index}
+                key={`title-${change.timestamp}-${index}`}
                 className="border-l-4 border-blue-500 pl-4 py-2"
               >
                 <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 mb-1">

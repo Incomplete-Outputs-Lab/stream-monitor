@@ -16,6 +16,10 @@ pub struct StreamInfo {
     pub peak_viewers: i32,
     pub avg_viewers: i32,
     pub duration_minutes: i32,
+    pub minutes_watched: i64,
+    pub follower_gain: i32,
+    pub total_chat_messages: i64,
+    pub engagement_rate: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,6 +102,44 @@ fn get_channel_streams_internal(
             LEFT JOIN stream_stats ss ON s.id = ss.stream_id
             WHERE s.channel_id = ?
             GROUP BY s.id, s.stream_id, s.channel_id, s.title, s.category, s.started_at, s.ended_at
+        ),
+        stats_with_next AS (
+            SELECT 
+                ss.stream_id,
+                ss.viewer_count,
+                ss.collected_at,
+                LEAD(ss.collected_at) OVER (PARTITION BY ss.stream_id ORDER BY ss.collected_at) as next_collected_at
+            FROM stream_stats ss
+            WHERE EXISTS (SELECT 1 FROM stream_metrics sm WHERE sm.id = ss.stream_id)
+        ),
+        mw_calc AS (
+            SELECT 
+                stream_id,
+                COALESCE(SUM(
+                    COALESCE(viewer_count, 0) * 
+                    EXTRACT(EPOCH FROM (next_collected_at - collected_at)) / 60
+                ), 0)::BIGINT as minutes_watched
+            FROM stats_with_next
+            WHERE next_collected_at IS NOT NULL
+            GROUP BY stream_id
+        ),
+        follower_calc AS (
+            SELECT 
+                ss.stream_id,
+                COALESCE(MAX(ss.follower_count) - MIN(ss.follower_count), 0) as follower_gain
+            FROM stream_stats ss
+            WHERE EXISTS (SELECT 1 FROM stream_metrics sm WHERE sm.id = ss.stream_id)
+              AND ss.follower_count IS NOT NULL
+            GROUP BY ss.stream_id
+        ),
+        chat_calc AS (
+            SELECT 
+                s.id,
+                COALESCE(COUNT(cm.id), 0)::BIGINT as total_chat_messages
+            FROM streams s
+            LEFT JOIN chat_messages cm ON s.id = cm.stream_id
+            WHERE s.channel_id = ?
+            GROUP BY s.id
         )
         SELECT 
             sm.id,
@@ -110,9 +152,20 @@ fn get_channel_streams_internal(
             CAST(sm.ended_at AS VARCHAR) as ended_at,
             sm.peak_viewers,
             sm.avg_viewers,
-            sm.duration_minutes
+            sm.duration_minutes,
+            COALESCE(mw.minutes_watched, 0) as minutes_watched,
+            COALESCE(fc.follower_gain, 0) as follower_gain,
+            COALESCE(cc.total_chat_messages, 0) as total_chat_messages,
+            CASE 
+                WHEN COALESCE(mw.minutes_watched, 0) > 0 
+                THEN (COALESCE(cc.total_chat_messages, 0)::DOUBLE / mw.minutes_watched::DOUBLE) * 1000.0
+                ELSE 0.0
+            END as engagement_rate
         FROM stream_metrics sm
         JOIN channels c ON sm.channel_id = c.id
+        LEFT JOIN mw_calc mw ON sm.id = mw.stream_id
+        LEFT JOIN follower_calc fc ON sm.id = fc.stream_id
+        LEFT JOIN chat_calc cc ON sm.id = cc.id
         ORDER BY sm.started_at DESC
         LIMIT {}
         OFFSET {}
@@ -123,7 +176,7 @@ fn get_channel_streams_internal(
     let mut stmt = conn.prepare(&query)?;
     let channel_id_str = channel_id.to_string();
 
-    let streams = stmt.query_map([&channel_id_str], |row| {
+    let streams = stmt.query_map([&channel_id_str, &channel_id_str], |row| {
         Ok(StreamInfo {
             id: row.get::<_, i64>(0)?,
             stream_id: row.get::<_, String>(1)?,
@@ -136,6 +189,10 @@ fn get_channel_streams_internal(
             peak_viewers: row.get::<_, i32>(8)?,
             avg_viewers: row.get::<_, i32>(9)?,
             duration_minutes: row.get::<_, i32>(10)?,
+            minutes_watched: row.get::<_, i64>(11)?,
+            follower_gain: row.get::<_, i32>(12)?,
+            total_chat_messages: row.get::<_, i64>(13)?,
+            engagement_rate: row.get::<_, f64>(14)?,
         })
     })?;
 
@@ -211,6 +268,44 @@ fn get_stream_info_by_id(
             LEFT JOIN stream_stats ss ON s.id = ss.stream_id
             WHERE s.id = ?
             GROUP BY s.id, s.stream_id, s.channel_id, s.title, s.category, s.started_at, s.ended_at
+        ),
+        stats_with_next AS (
+            SELECT 
+                ss.stream_id,
+                ss.viewer_count,
+                ss.collected_at,
+                LEAD(ss.collected_at) OVER (PARTITION BY ss.stream_id ORDER BY ss.collected_at) as next_collected_at
+            FROM stream_stats ss
+            WHERE ss.stream_id = ?
+        ),
+        mw_calc AS (
+            SELECT 
+                stream_id,
+                COALESCE(SUM(
+                    COALESCE(viewer_count, 0) * 
+                    EXTRACT(EPOCH FROM (next_collected_at - collected_at)) / 60
+                ), 0)::BIGINT as minutes_watched
+            FROM stats_with_next
+            WHERE next_collected_at IS NOT NULL
+            GROUP BY stream_id
+        ),
+        follower_calc AS (
+            SELECT 
+                ss.stream_id,
+                COALESCE(MAX(ss.follower_count) - MIN(ss.follower_count), 0) as follower_gain
+            FROM stream_stats ss
+            WHERE ss.stream_id = ?
+              AND ss.follower_count IS NOT NULL
+            GROUP BY ss.stream_id
+        ),
+        chat_calc AS (
+            SELECT 
+                s.id,
+                COALESCE(COUNT(cm.id), 0)::BIGINT as total_chat_messages
+            FROM streams s
+            LEFT JOIN chat_messages cm ON s.id = cm.stream_id
+            WHERE s.id = ?
+            GROUP BY s.id
         )
         SELECT 
             sm.id,
@@ -223,13 +318,24 @@ fn get_stream_info_by_id(
             CAST(sm.ended_at AS VARCHAR) as ended_at,
             sm.peak_viewers,
             sm.avg_viewers,
-            sm.duration_minutes
+            sm.duration_minutes,
+            COALESCE(mw.minutes_watched, 0) as minutes_watched,
+            COALESCE(fc.follower_gain, 0) as follower_gain,
+            COALESCE(cc.total_chat_messages, 0) as total_chat_messages,
+            CASE 
+                WHEN COALESCE(mw.minutes_watched, 0) > 0 
+                THEN (COALESCE(cc.total_chat_messages, 0)::DOUBLE / mw.minutes_watched::DOUBLE) * 1000.0
+                ELSE 0.0
+            END as engagement_rate
         FROM stream_metrics sm
         JOIN channels c ON sm.channel_id = c.id
+        LEFT JOIN mw_calc mw ON sm.id = mw.stream_id
+        LEFT JOIN follower_calc fc ON sm.id = fc.stream_id
+        LEFT JOIN chat_calc cc ON sm.id = cc.id
     "#;
 
     let stream_id_str = stream_id.to_string();
-    let result = conn.query_row(query, [&stream_id_str], |row| {
+    let result = conn.query_row(query, [&stream_id_str, &stream_id_str, &stream_id_str, &stream_id_str], |row| {
         Ok(StreamInfo {
             id: row.get::<_, i64>(0)?,
             stream_id: row.get::<_, String>(1)?,
@@ -242,6 +348,10 @@ fn get_stream_info_by_id(
             peak_viewers: row.get::<_, i32>(8)?,
             avg_viewers: row.get::<_, i32>(9)?,
             duration_minutes: row.get::<_, i32>(10)?,
+            minutes_watched: row.get::<_, i64>(11)?,
+            follower_gain: row.get::<_, i32>(12)?,
+            total_chat_messages: row.get::<_, i64>(13)?,
+            engagement_rate: row.get::<_, f64>(14)?,
         })
     })?;
 

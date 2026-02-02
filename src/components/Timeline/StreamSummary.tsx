@@ -51,21 +51,21 @@ const StreamSummary: React.FC<StreamSummaryProps> = ({ streamInfo }) => {
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
-          <p className="text-sm text-blue-600 dark:text-blue-400 mb-1">配信時間</p>
+          <p className="text-sm text-blue-600 dark:text-blue-400 mb-1">配信時間 (HB)</p>
           <p className="text-2xl font-bold text-blue-900 dark:text-blue-300">
             {formatDuration(streamInfo.duration_minutes)}
           </p>
         </div>
 
         <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4">
-          <p className="text-sm text-green-600 dark:text-green-400 mb-1">ピーク視聴者数</p>
+          <p className="text-sm text-green-600 dark:text-green-400 mb-1">Peak CCU</p>
           <p className="text-2xl font-bold text-green-900 dark:text-green-300">
             {streamInfo.peak_viewers.toLocaleString()}
           </p>
         </div>
 
         <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4">
-          <p className="text-sm text-purple-600 dark:text-purple-400 mb-1">平均視聴者数</p>
+          <p className="text-sm text-purple-600 dark:text-purple-400 mb-1">Avg CCU</p>
           <p className="text-2xl font-bold text-purple-900 dark:text-purple-300">
             {streamInfo.avg_viewers.toLocaleString()}
           </p>
@@ -77,6 +77,34 @@ const StreamSummary: React.FC<StreamSummaryProps> = ({ streamInfo }) => {
             {streamInfo.avg_viewers > 0 
               ? (streamInfo.peak_viewers / streamInfo.avg_viewers).toFixed(2) 
               : 'N/A'}
+          </p>
+        </div>
+
+        <div className="bg-cyan-50 dark:bg-cyan-900/20 rounded-lg p-4">
+          <p className="text-sm text-cyan-600 dark:text-cyan-400 mb-1">MW (総視聴時間)</p>
+          <p className="text-2xl font-bold text-cyan-900 dark:text-cyan-300">
+            {streamInfo.minutes_watched.toLocaleString()} 分
+          </p>
+        </div>
+
+        <div className="bg-pink-50 dark:bg-pink-900/20 rounded-lg p-4">
+          <p className="text-sm text-pink-600 dark:text-pink-400 mb-1">フォロワー増加数</p>
+          <p className="text-2xl font-bold text-pink-900 dark:text-pink-300">
+            +{streamInfo.follower_gain.toLocaleString()}
+          </p>
+        </div>
+
+        <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-4">
+          <p className="text-sm text-indigo-600 dark:text-indigo-400 mb-1">合計チャット数</p>
+          <p className="text-2xl font-bold text-indigo-900 dark:text-indigo-300">
+            {streamInfo.total_chat_messages.toLocaleString()}
+          </p>
+        </div>
+
+        <div className="bg-teal-50 dark:bg-teal-900/20 rounded-lg p-4">
+          <p className="text-sm text-teal-600 dark:text-teal-400 mb-1">エンゲージメント率</p>
+          <p className="text-2xl font-bold text-teal-900 dark:text-teal-300">
+            {streamInfo.engagement_rate.toFixed(2)}
           </p>
         </div>
       </div>

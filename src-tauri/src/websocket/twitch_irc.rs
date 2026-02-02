@@ -116,7 +116,8 @@ impl TwitchIrcManager {
                 }
 
                 // バッチフラッシュ（100件または5秒ごと）
-                if (batch.len() >= 100 || last_flush.elapsed().as_secs() >= 5) && !batch.is_empty() {
+                if (batch.len() >= 100 || last_flush.elapsed().as_secs() >= 5) && !batch.is_empty()
+                {
                     Self::flush_batch(&db_conn_clone, &mut batch, &logger_clone).await;
                     last_flush = std::time::Instant::now();
                 }

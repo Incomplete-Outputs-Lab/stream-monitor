@@ -181,26 +181,6 @@ pub struct SegmentAvgScore {
     pub user_count: i64,
 }
 
-/// Retention cohort result
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RetentionCohortResult {
-    pub cohorts: Vec<RetentionCohort>,
-    pub overall_retention: f64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RetentionCohort {
-    pub cohort_week: String,
-    pub cohort_size: i64,
-    pub week_0: f64,
-    pub week_1: f64,
-    pub week_2: f64,
-    pub week_3: f64,
-    pub week_4: f64,
-}
-
 // ============================================================================
 // Phase 4: Anomaly Detection
 // ============================================================================
@@ -565,10 +545,7 @@ pub fn get_emote_analysis(
 
         for emote in emotes {
             *emote_counts.entry(emote.clone()).or_insert(0) += 1;
-            emote_users
-                .entry(emote)
-                .or_default()
-                .push(user.clone());
+            emote_users.entry(emote).or_default().push(user.clone());
         }
     }
 

@@ -318,3 +318,35 @@ export interface StreamTimelineData {
   category_changes: CategoryChange[];
   title_changes: TitleChange[];
 }
+
+// ========== Timeline Comparison Types ==========
+
+// 比較用に正規化されたデータポイント
+export interface NormalizedTimelinePoint {
+  timestamp: string; // ISO8601形式の絶対時刻
+  timestampMs: number; // ミリ秒のUnix timestamp
+  viewer_count: number;
+  chat_rate_1min: number;
+  streamId: number; // どの配信のデータか識別
+  streamLabel: string; // 配信者名と配信タイトル
+}
+
+// 比較用イベントマーカー
+export interface ComparisonEvent {
+  timestamp: string; // ISO8601形式の絶対時刻
+  timestampMs: number; // ミリ秒のUnix timestamp
+  eventType: 'category' | 'title';
+  streamId: number;
+  streamLabel: string;
+  description: string;
+  color: string; // イベントマーカーの色
+}
+
+// 複数配信の選択状態
+export interface SelectedStream {
+  streamId: number;
+  channelName: string;
+  streamTitle: string;
+  startedAt: string;
+  color: string; // グラフ表示用の色
+}

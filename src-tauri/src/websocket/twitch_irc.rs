@@ -7,7 +7,6 @@ use tokio::task::JoinHandle;
 use tokio::time::Duration;
 use tungstenite::connect;
 use tungstenite::protocol::Message;
-use url::Url;
 
 /// Twitch IRC接続管理構造体
 #[allow(dead_code)]
@@ -38,13 +37,12 @@ impl TwitchIrcClient {
         self.shutdown_tx = Some(shutdown_tx);
 
         // Twitch IRCサーバーに接続
-        let url = Url::parse("wss://irc-ws.chat.twitch.tv:443")?;
-        let (mut socket, _response) = connect(url)?;
+        let (mut socket, _response) = connect("wss://irc-ws.chat.twitch.tv:443")?;
 
         // 認証
-        socket.send(Message::Text(format!("PASS oauth:{}", self.access_token)))?;
-        socket.send(Message::Text("NICK justinfan12345".to_string()))?;
-        socket.send(Message::Text(format!("JOIN #{}", self.channel_name)))?;
+        socket.send(Message::Text(format!("PASS oauth:{}", self.access_token).into()))?;
+        socket.send(Message::Text("NICK justinfan12345".into()))?;
+        socket.send(Message::Text(format!("JOIN #{}", self.channel_name).into()))?;
 
         println!("Connected to Twitch IRC for channel: {}", self.channel_name);
 
@@ -106,11 +104,11 @@ impl TwitchIrcClient {
 
                             // PINGに応答して接続を維持
                             if text.starts_with("PING") {
-                                let pong_response = "PONG :tmi.twitch.tv\r\n".to_string();
+                                let pong_response = "PONG :tmi.twitch.tv\r\n";
                                 let socket_clone = Arc::clone(&socket);
                                 match tokio::task::spawn_blocking(move || {
                                     let mut socket = socket_clone.blocking_lock();
-                                    socket.send(Message::Text(pong_response))
+                                    socket.send(Message::Text(pong_response.into()))
                                 }).await {
                                     Ok(Ok(_)) => {}
                                     Ok(Err(e)) => {

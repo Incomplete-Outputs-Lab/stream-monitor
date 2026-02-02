@@ -119,7 +119,8 @@ impl YouTubeLiveChatClient {
 
         Some(ChatMessage {
             id: None,
-            stream_id: self.stream_id,
+            channel_id: None, // YouTube の場合は channel_id を保存しない
+            stream_id: Some(self.stream_id),
             timestamp: timestamp.to_string(),
             platform: youtube::PLATFORM_NAME.to_string(),
             user_id,

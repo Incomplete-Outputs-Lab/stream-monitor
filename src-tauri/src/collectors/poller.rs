@@ -125,6 +125,28 @@ impl ChannelPoller {
         let twitch_collector_for_task = self.twitch_collector.clone();
 
         let task = tokio::spawn(async move {
+            // 手動登録チャンネルかつTwitchの場合、IRC接続を開始
+            if channel.platform == db_constants::PLATFORM_TWITCH 
+                && !channel.is_auto_discovered.unwrap_or(false) 
+            {
+                if let Some(ref twitch_collector) = &twitch_collector_for_task {
+                    if let Err(e) = twitch_collector
+                        .start_chat_collection(channel_id, &channel.channel_name)
+                        .await
+                    {
+                        eprintln!(
+                            "[ChannelPoller] Failed to start IRC for {}: {}",
+                            channel.channel_name, e
+                        );
+                    } else {
+                        println!(
+                            "[ChannelPoller] Started IRC for channel {} ({})",
+                            channel_id, channel.channel_name
+                        );
+                    }
+                }
+            }
+
             // Get logger from app_handle
             let logger = app_handle.state::<AppLogger>();
 
@@ -221,41 +243,55 @@ impl ChannelPoller {
                 // 代わりに、start_polling時に一度だけ取得する方式を採用する必要がある
 
                 // ポーリング実行
-                match collector.poll_channel(&updated_channel).await {
+                let poll_result = collector.poll_channel(&updated_channel).await
+                    .map_err(|e| e.to_string());
+                match poll_result {
                     Ok(Some(stream_data)) => {
                         // ストリーム情報をデータベースに保存
-                        if let Err(e) =
-                            Self::save_stream_data(&conn, &updated_channel, &stream_data)
-                        {
-                            logger.error(&format!(
-                                "Failed to save stream data for channel {}: {}",
-                                channel_id, e
-                            ));
-                            // Update status with error
-                            if let Ok(mut map) = status_map.write() {
-                                if let Some(status) = map.get_mut(&channel_id) {
-                                    status.last_error = Some(format!("Failed to save data: {}", e));
-                                    status.error_count += 1;
+                        let save_result = Self::save_stream_data(&conn, &updated_channel, &stream_data)
+                            .map_err(|e| e.to_string());
+                        match save_result {
+                            Ok(stream_db_id) => {
+                                // Update status with success
+                                let now = Local::now().to_rfc3339();
+                                if let Ok(mut map) = status_map.write() {
+                                    if let Some(status) = map.get_mut(&channel_id) {
+                                        status.last_success_at = Some(now);
+                                        status.last_error = None;
+                                    }
                                 }
-                            }
-                        } else {
-                            // Update status with success
-                            let now = Local::now().to_rfc3339();
-                            if let Ok(mut map) = status_map.write() {
-                                if let Some(status) = map.get_mut(&channel_id) {
-                                    status.last_success_at = Some(now);
-                                    status.last_error = None;
-                                }
-                            }
 
-                            // イベント発行: チャンネルがライブ中
-                            let event = ChannelStatsEvent {
-                                channel_id,
-                                is_live: true,
-                                viewer_count: stream_data.viewer_count,
-                                title: stream_data.title.clone(),
-                            };
-                            let _ = app_handle.emit("channel-stats-updated", event);
+                                // Twitch手動登録チャンネルの場合、IRC Managerにstream_idを通知
+                                if updated_channel.platform == db_constants::PLATFORM_TWITCH
+                                    && !updated_channel.is_auto_discovered.unwrap_or(false)
+                                {
+                                    if let Some(ref twitch_collector) = twitch_collector_for_task {
+                                        twitch_collector.update_stream_id(channel_id, Some(stream_db_id)).await;
+                                    }
+                                }
+
+                                // イベント発行: チャンネルがライブ中
+                                let event = ChannelStatsEvent {
+                                    channel_id,
+                                    is_live: true,
+                                    viewer_count: stream_data.viewer_count,
+                                    title: stream_data.title.clone(),
+                                };
+                                let _ = app_handle.emit("channel-stats-updated", event);
+                            }
+                            Err(e) => {
+                                logger.error(&format!(
+                                    "Failed to save stream data for channel {}: {}",
+                                    channel_id, e
+                                ));
+                                // Update status with error
+                                if let Ok(mut map) = status_map.write() {
+                                    if let Some(status) = map.get_mut(&channel_id) {
+                                        status.last_error = Some(format!("Failed to save data: {}", e));
+                                        status.error_count += 1;
+                                    }
+                                }
+                            }
                         }
                     }
                     Ok(None) => {
@@ -266,6 +302,15 @@ impl ChannelPoller {
                             if let Some(status) = map.get_mut(&channel_id) {
                                 status.last_success_at = Some(now);
                                 status.last_error = None;
+                            }
+                        }
+
+                        // Twitch手動登録チャンネルの場合、IRC Managerにオフライン通知
+                        if updated_channel.platform == db_constants::PLATFORM_TWITCH
+                            && !updated_channel.is_auto_discovered.unwrap_or(false)
+                        {
+                            if let Some(ref twitch_collector) = twitch_collector_for_task {
+                                twitch_collector.update_stream_id(channel_id, None).await;
                             }
                         }
 
@@ -322,11 +367,20 @@ impl ChannelPoller {
         Ok(())
     }
 
-    pub fn stop_polling(&mut self, channel_id: i64) {
+    pub async fn stop_polling(&mut self, channel_id: i64) {
         println!(
             "[ChannelPoller] Stopping polling for channel {}",
             channel_id
         );
+
+        // IRC接続を停止（Twitch手動登録チャンネルの場合）
+        if let Some(ref twitch_collector) = self.twitch_collector {
+            if let Err(e) = twitch_collector.stop_chat_collection(channel_id).await {
+                println!("[ChannelPoller] Failed to stop IRC for channel {}: {}", channel_id, e);
+            } else {
+                println!("[ChannelPoller] Stopped IRC for channel {}", channel_id);
+            }
+        }
 
         if let Some(task) = self.tasks.remove(&channel_id) {
             task.abort();
@@ -380,11 +434,12 @@ impl ChannelPoller {
     }
 
     /// ストリーム統計情報をデータベースに保存する
+    /// 戻り値: データベース上のstream_id
     fn save_stream_data(
         conn: &Connection,
         channel: &Channel,
         stream_data: &StreamData,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<i64, Box<dyn std::error::Error>> {
         let channel_id = channel.id.ok_or("Channel ID is required")?;
 
         // StreamDataから配信情報を含むStreamレコードを作成
@@ -426,7 +481,7 @@ impl ChannelPoller {
         // ストリーム統計を保存
         DatabaseWriter::insert_stream_stats(conn, &stats)?;
 
-        Ok(())
+        Ok(stream_db_id)
     }
 
     /// チャット収集を開始する（ストリーム開始時に呼び出し）

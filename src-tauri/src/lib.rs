@@ -43,6 +43,7 @@ use commands::{
         toggle_auto_discovery, DiscoveredStreamInfo,
     },
     export::{export_to_csv, export_to_delimited, preview_export_data},
+    irc::{get_irc_connection_status, reconnect_irc_channel},
     logs::get_logs,
     oauth::{poll_twitch_device_token, start_twitch_device_auth},
     sql::{
@@ -293,9 +294,26 @@ pub fn run() {
                         // Initialize Twitch collector if credentials are available
                         // Device Code Flow uses only client_id (no client_secret required)
                         if let Some(client_id) = &settings.twitch.client_id {
-                            let collector = Arc::new(TwitchCollector::new_with_app(client_id.clone(), None, app_handle_for_init.clone()));
-                            poller.register_twitch_collector(collector);
-                            logger_for_init.info("Twitch collector initialized successfully");
+                            // Twitch Collector 用の DB 接続を取得
+                            match db_manager.get_connection() {
+                                Ok(twitch_conn) => {
+                                    let db_conn = Arc::new(Mutex::new(twitch_conn));
+                                    let collector = Arc::new(TwitchCollector::new_with_app(
+                                        client_id.clone(),
+                                        None,
+                                        app_handle_for_init.clone(),
+                                        db_conn,
+                                        Arc::new(logger_for_init.clone()),
+                                    ));
+                                    // IRC DB ハンドラーを初期化
+                                    collector.initialize_irc().await;
+                                    poller.register_twitch_collector(collector);
+                                    logger_for_init.info("Twitch collector initialized successfully with IRC support");
+                                }
+                                Err(e) => {
+                                    logger_for_init.error(&format!("Failed to get database connection for Twitch collector: {}", e));
+                                }
+                            }
                         } else {
                             logger_for_init.info("Twitch credentials not configured, skipping collector initialization");
                         }
@@ -470,6 +488,9 @@ pub fn run() {
             get_chat_messages,
             get_chat_stats,
             get_chat_rate,
+            // IRC commands
+            get_irc_connection_status,
+            reconnect_irc_channel,
             // Config commands
             save_token,
             get_token,

@@ -102,13 +102,14 @@ impl DatabaseWriter {
         let result = (|| {
             // プリペアドステートメントを使用した効率的なバッチインサート
             let mut stmt = conn.prepare(
-                "INSERT INTO chat_messages (stream_id, timestamp, platform, user_id, user_name, message, message_type)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO chat_messages (channel_id, stream_id, timestamp, platform, user_id, user_name, message, message_type)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             )?;
 
             for message in messages {
                 stmt.execute([
-                    &message.stream_id.to_string(),
+                    &message.channel_id.map(|v| v.to_string()).unwrap_or_default(),
+                    &message.stream_id.map(|v| v.to_string()).unwrap_or_default(),
                     &message.timestamp,
                     &message.platform,
                     &message.user_id.as_deref().unwrap_or("").to_string(),

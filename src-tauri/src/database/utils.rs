@@ -95,13 +95,14 @@ where
 pub fn row_to_chat_message(row: &Row) -> DuckResult<ChatMessage> {
     Ok(ChatMessage {
         id: Some(row.get(0)?),
-        stream_id: row.get(1)?,
-        timestamp: row.get(2)?,
-        platform: row.get(3)?,
-        user_id: row.get::<_, Option<String>>(4)?,
-        user_name: row.get(5)?,
-        message: row.get(6)?,
-        message_type: row.get(7)?,
+        channel_id: row.get::<_, Option<i64>>(1)?,
+        stream_id: row.get::<_, Option<i64>>(2)?,
+        timestamp: row.get(3)?,
+        platform: row.get(4)?,
+        user_id: row.get::<_, Option<String>>(5)?,
+        user_name: row.get(6)?,
+        message: row.get(7)?,
+        message_type: row.get(8)?,
     })
 }
 

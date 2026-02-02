@@ -97,14 +97,14 @@ pub fn init_database(conn: &Connection) -> Result<(), duckdb::Error> {
         r#"
         CREATE TABLE IF NOT EXISTS chat_messages (
             id BIGINT PRIMARY KEY DEFAULT nextval('chat_messages_id_seq'),
-            stream_id BIGINT NOT NULL,
+            channel_id BIGINT,
+            stream_id BIGINT,
             timestamp TIMESTAMP NOT NULL,
             platform TEXT NOT NULL,
             user_id TEXT,
             user_name TEXT NOT NULL,
             message TEXT NOT NULL,
-            message_type TEXT DEFAULT 'normal',
-            FOREIGN KEY (stream_id) REFERENCES streams(id)
+            message_type TEXT DEFAULT 'normal'
         )
         "#,
         [],
@@ -177,6 +177,12 @@ pub fn init_database(conn: &Connection) -> Result<(), duckdb::Error> {
         [],
     )?;
     eprintln!("[Schema] Index 6 created");
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chat_messages_channel_id ON chat_messages(channel_id)",
+        [],
+    )?;
+    eprintln!("[Schema] Index 7 created");
 
     eprintln!("[Schema] All steps completed successfully");
     Ok(())
@@ -308,6 +314,96 @@ fn migrate_database_schema(conn: &Connection) -> Result<(), duckdb::Error> {
             "ALTER TABLE stream_stats ADD COLUMN follower_count INTEGER",
             [],
         )?;
+    }
+
+    // chat_messagesテーブルにchannel_idフィールドを追加
+    let mut chat_messages_has_channel_id = conn.prepare(
+        "SELECT COUNT(*) FROM pragma_table_info('chat_messages') WHERE name = 'channel_id'",
+    )?;
+    let chat_messages_has_channel_id_count: i64 =
+        chat_messages_has_channel_id.query_row([], |row| row.get(0))?;
+
+    if chat_messages_has_channel_id_count == 0 {
+        eprintln!("[Migration] Adding channel_id column to chat_messages table");
+        conn.execute("ALTER TABLE chat_messages ADD COLUMN channel_id BIGINT", [])?;
+        // インデックスを作成
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_chat_messages_channel_id ON chat_messages(channel_id)",
+            [],
+        )?;
+        eprintln!("[Migration] Created index on chat_messages.channel_id");
+    }
+
+    // chat_messagesテーブルのstream_idをNULL可能にする
+    // DuckDBはALTER COLUMNをサポートしていないため、テーブル構造を確認して再作成が必要か判断
+    let mut chat_messages_stream_id_notnull = conn.prepare(
+        "SELECT COUNT(*) FROM pragma_table_info('chat_messages') WHERE name = 'stream_id' AND \"notnull\" = 1",
+    )?;
+    let chat_messages_stream_id_notnull_count: i64 =
+        chat_messages_stream_id_notnull.query_row([], |row| row.get(0))?;
+
+    if chat_messages_stream_id_notnull_count > 0 {
+        eprintln!("[Migration] Migrating chat_messages table to make stream_id nullable");
+        
+        // 既存データがあるかチェック
+        let mut count_stmt = conn.prepare("SELECT COUNT(*) FROM chat_messages")?;
+        let existing_count: i64 = count_stmt.query_row([], |row| row.get(0))?;
+        
+        if existing_count > 0 {
+            eprintln!("[Migration] Found {} existing chat messages, migrating data...", existing_count);
+        }
+        
+        // 一時テーブルを作成（stream_idをNULL可能に）
+        conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS chat_messages_new (
+                id BIGINT PRIMARY KEY,
+                channel_id BIGINT,
+                stream_id BIGINT,
+                timestamp TIMESTAMP NOT NULL,
+                platform TEXT NOT NULL,
+                user_id TEXT,
+                user_name TEXT NOT NULL,
+                message TEXT NOT NULL,
+                message_type TEXT DEFAULT 'normal'
+            )
+            "#,
+            [],
+        )?;
+        
+        // 既存データをコピー
+        if existing_count > 0 {
+            conn.execute(
+                r#"
+                INSERT INTO chat_messages_new 
+                SELECT id, channel_id, stream_id, timestamp, platform, user_id, user_name, message, message_type 
+                FROM chat_messages
+                "#,
+                [],
+            )?;
+        }
+        
+        // 古いテーブルを削除
+        conn.execute("DROP TABLE chat_messages", [])?;
+        
+        // 新しいテーブルをリネーム
+        conn.execute("ALTER TABLE chat_messages_new RENAME TO chat_messages", [])?;
+        
+        // インデックスを再作成
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_chat_messages_stream_id ON chat_messages(stream_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_chat_messages_timestamp ON chat_messages(timestamp)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_chat_messages_channel_id ON chat_messages(channel_id)",
+            [],
+        )?;
+        
+        eprintln!("[Migration] chat_messages table migration completed");
     }
 
     Ok(())

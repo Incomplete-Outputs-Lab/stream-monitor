@@ -5,6 +5,7 @@ pub mod config;
 pub mod database;
 pub mod discovery;
 pub mod export;
+pub mod irc;
 pub mod logs;
 pub mod oauth;
 pub mod sql;

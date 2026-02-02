@@ -53,13 +53,13 @@ impl TwitchApiClient {
         self
     }
 
-    async fn get_access_token(&self) -> Result<AccessToken, Box<dyn std::error::Error>> {
+    pub async fn get_access_token(&self) -> Result<String, Box<dyn std::error::Error>> {
         // Keyringからトークンを取得を試みる（Device Code Flowで取得したユーザートークン）
         if let Some(ref handle) = self.app_handle {
             if let Ok(token_str) =
                 KeyringStore::get_token_with_app(handle, db_constants::PLATFORM_TWITCH)
             {
-                return Ok(AccessToken::from(token_str));
+                return Ok(token_str);
             }
         }
 
@@ -88,7 +88,7 @@ impl TwitchApiClient {
                 )?;
             }
 
-            return Ok(AccessToken::from(access_token_str));
+            return Ok(access_token_str);
         }
 
         // トークンが見つからず、Client Secretもない場合はエラー
@@ -123,7 +123,8 @@ impl TwitchApiClient {
             limiter.track_request();
         }
 
-        match TwitchApiUserToken::from_token(&*self.client, access_token).await {
+        let access_token_typed = AccessToken::from(access_token);
+        match TwitchApiUserToken::from_token(&*self.client, access_token_typed).await {
             Ok(token) => Ok(token),
             Err(e) => {
                 // トークン検証失敗 - リフレッシュを試行

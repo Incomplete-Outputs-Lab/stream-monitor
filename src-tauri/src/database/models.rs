@@ -80,7 +80,8 @@ pub struct ChannelStatsEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub id: Option<i64>,
-    pub stream_id: i64,
+    pub channel_id: Option<i64>,
+    pub stream_id: Option<i64>,
     pub timestamp: String,
     pub platform: String,
     pub user_id: Option<String>,

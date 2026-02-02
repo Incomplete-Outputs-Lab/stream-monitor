@@ -79,7 +79,7 @@ pub async fn remove_channel(
     // 削除前にポーリングを停止
     if let Some(poller) = app_handle.try_state::<Arc<Mutex<ChannelPoller>>>() {
         let mut poller = poller.lock().await;
-        poller.stop_polling(id);
+        poller.stop_polling(id).await;
     }
 
     let conn = db_manager
@@ -164,7 +164,7 @@ pub async fn update_channel(
                 }
             } else if !enabled && old_channel.enabled {
                 // 有効→無効になった場合、ポーリングを停止
-                poller.stop_polling(id);
+                poller.stop_polling(id).await;
             }
         }
     }
@@ -478,7 +478,7 @@ pub async fn toggle_channel(
             }
         } else {
             // 無効化された場合、ポーリングを停止
-            poller.stop_polling(id);
+            poller.stop_polling(id).await;
         }
     }
 

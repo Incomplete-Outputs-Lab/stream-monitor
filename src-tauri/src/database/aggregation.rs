@@ -29,6 +29,7 @@ pub struct DataAggregator;
 
 impl DataAggregator {
     /// ストリーム統計データを指定した間隔で集計
+    #[allow(dead_code)]
     pub fn aggregate_stream_stats(
         stats: &[StreamStats],
         interval_minutes: i32,
@@ -130,6 +131,7 @@ impl DataAggregator {
     }
 
     /// ストリーム統計のグループを集計
+    #[allow(dead_code)]
     fn aggregate_stream_stats_group(
         timestamp: &str,
         interval_minutes: i32,
@@ -204,16 +206,19 @@ impl DataAggregator {
     }
 
     /// 1分間隔の集計（便利関数）
+    #[allow(dead_code)]
     pub fn aggregate_to_1min(stats: &[StreamStats]) -> Vec<AggregatedStreamStats> {
         Self::aggregate_stream_stats(stats, 1)
     }
 
     /// 5分間隔の集計（便利関数）
+    #[allow(dead_code)]
     pub fn aggregate_to_5min(stats: &[StreamStats]) -> Vec<AggregatedStreamStats> {
         Self::aggregate_stream_stats(stats, 5)
     }
 
     /// 1時間間隔の集計（便利関数）
+    #[allow(dead_code)]
     pub fn aggregate_to_1hour(stats: &[StreamStats]) -> Vec<AggregatedStreamStats> {
         Self::aggregate_stream_stats(stats, 60)
     }

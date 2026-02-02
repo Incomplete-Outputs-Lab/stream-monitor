@@ -1,7 +1,4 @@
-use crate::database::{
-    models::StreamStats,
-    utils, DatabaseManager,
-};
+use crate::database::{models::StreamStats, utils, DatabaseManager};
 use crate::error::ResultExt;
 use duckdb::Connection;
 use serde::{Deserialize, Serialize};
@@ -13,7 +10,7 @@ pub struct ExportQuery {
     pub start_time: Option<String>,
     pub end_time: Option<String>,
     pub aggregation: Option<String>, // "raw", "1min", "5min", "1hour"
-    pub delimiter: Option<String>, // Custom delimiter (default: comma)
+    pub delimiter: Option<String>,   // Custom delimiter (default: comma)
 }
 
 #[tauri::command]
@@ -111,7 +108,11 @@ fn get_stream_stats_internal(
 /// Helper function to escape field values for delimited output
 fn escape_field(value: &str, delimiter: &str) -> String {
     // Check if field needs escaping (contains delimiter, quotes, or newlines)
-    if value.contains(delimiter) || value.contains('"') || value.contains('\n') || value.contains('\r') {
+    if value.contains(delimiter)
+        || value.contains('"')
+        || value.contains('\n')
+        || value.contains('\r')
+    {
         // Escape quotes by doubling them, then wrap in quotes
         format!("\"{}\"", value.replace('"', "\"\""))
     } else {
@@ -140,13 +141,13 @@ pub async fn export_to_delimited(
 
     // Determine delimiter (default to comma)
     let delimiter = query.delimiter.as_deref().unwrap_or(",");
-    
+
     // Build delimited file content
     let mut output = String::new();
-    
+
     // Add UTF-8 BOM if requested (helps Excel recognize UTF-8)
     if include_bom.unwrap_or(false) {
-        output.push_str("\u{FEFF}");
+        output.push('\u{FEFF}');
     }
 
     // Header row with full columns
@@ -187,9 +188,7 @@ pub async fn export_to_delimited(
 
     Ok(format!(
         "Exported {} records to {} (delimiter: {:?})",
-        stats_len,
-        file_path,
-        delimiter
+        stats_len, file_path, delimiter
     ))
 }
 
@@ -215,7 +214,7 @@ pub async fn preview_export_data(
 
     // Determine delimiter (default to comma)
     let delimiter = query.delimiter.as_deref().unwrap_or(",");
-    
+
     // Build preview content
     let mut output = String::new();
 

@@ -11,3 +11,4 @@ pub mod sql;
 pub mod stats;
 pub mod timeline;
 pub mod twitch;
+pub mod window;

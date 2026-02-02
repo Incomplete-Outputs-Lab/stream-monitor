@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { DatabaseErrorDialog } from "./DatabaseErrorDialog";
 import { DbInitStatus } from "../../types";
 
@@ -12,6 +13,19 @@ export function SplashScreen({ onComplete }: { onComplete: () => void }) {
   const [showErrorDialog, setShowErrorDialog] = useState(false);
 
   useEffect(() => {
+    // Reactがマウントされたらウィンドウを表示
+    const showWindow = async () => {
+      try {
+        const window = getCurrentWindow();
+        await window.show();
+        console.log("Window shown");
+      } catch (error) {
+        console.error("Failed to show window:", error);
+      }
+    };
+
+    showWindow();
+
     let progressInterval: number;
     let fadeTimeout: number;
     let statusCheckInterval: number;
@@ -32,8 +46,8 @@ export function SplashScreen({ onComplete }: { onComplete: () => void }) {
             setFadeOut(true);
             setTimeout(() => {
               onComplete();
-            }, 500);
-          }, 1000);
+            }, 300);
+          }, 300);
 
           // ステータスチェックを停止
           if (statusCheckInterval) {
@@ -61,8 +75,8 @@ export function SplashScreen({ onComplete }: { onComplete: () => void }) {
             setFadeOut(true);
             setTimeout(() => {
               onComplete();
-            }, 500);
-          }, 1000);
+            }, 300);
+          }, 300);
 
           // ステータスチェックを停止
           if (statusCheckInterval) {
@@ -94,14 +108,14 @@ export function SplashScreen({ onComplete }: { onComplete: () => void }) {
       }
     };
 
-    // プログレスバーのアニメーション
+    // プログレスバーのアニメーション（高速化）
     progressInterval = setInterval(() => {
       setProgress((prev) => {
         if (prev >= 90) { // DB初期化が終わるまで90%まで
           return 90;
         }
-        // 最初は速く、後半は遅く
-        const increment = prev < 50 ? 2 + Math.random() * 3 : 0.5 + Math.random() * 1;
+        // 高速化: 前半は8-12%、後半は3-6%ずつ増加
+        const increment = prev < 50 ? 8 + Math.random() * 4 : 3 + Math.random() * 3;
         return Math.min(prev + increment, 90);
       });
     }, 50);
@@ -113,7 +127,7 @@ export function SplashScreen({ onComplete }: { onComplete: () => void }) {
     });
 
     // 定期的にDB初期化状態を確認（フォールバック）
-    statusCheckInterval = setInterval(checkDbInitStatus, 1000); // 1秒ごとにチェック
+    statusCheckInterval = setInterval(checkDbInitStatus, 250); // 250msごとにチェック
 
     return () => {
       if (progressInterval) clearInterval(progressInterval);
@@ -125,7 +139,7 @@ export function SplashScreen({ onComplete }: { onComplete: () => void }) {
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex items-center justify-center transition-opacity duration-500 ${
+      className={`fixed inset-0 z-50 flex items-center justify-center transition-opacity duration-300 ${
         fadeOut ? "opacity-0" : "opacity-100"
       }`}
       style={{

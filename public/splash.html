@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream Monitor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .container {
+            text-align: center;
+            padding: 1.5rem;
+            max-width: 100%;
+        }
+
+        .logo-container {
+            position: relative;
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 1rem;
+        }
+
+        .ping {
+            position: absolute;
+            inset: 0;
+            width: 80px;
+            height: 80px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
+
+        @keyframes ping {
+            75%, 100% {
+                transform: scale(1.5);
+                opacity: 0;
+            }
+        }
+
+        .logo {
+            position: relative;
+            width: 80px;
+            height: 80px;
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.25);
+            animation: rotate 2s linear infinite;
+        }
+
+        @keyframes rotate {
+            0% {
+                transform: rotate(0deg);
+            }
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .logo svg {
+            width: 50px;
+            height: 50px;
+            color: #7c3aed;
+        }
+
+        .title {
+            font-size: 1.75rem;
+            font-weight: bold;
+            color: white;
+            margin-bottom: 0.25rem;
+            text-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            animation: fadeIn 0.6s ease-in;
+        }
+
+        .subtitle {
+            font-size: 0.75rem;
+            color: rgba(255, 255, 255, 0.85);
+            font-weight: 400;
+            margin-bottom: 1.5rem;
+            animation: fadeIn 0.6s ease-in 0.2s both;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(5px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .loading-status {
+            margin-bottom: 0.75rem;
+        }
+
+        .status-text {
+            font-size: 0.75rem;
+            color: rgba(255, 255, 255, 0.9);
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.6;
+            }
+        }
+
+        .progress-container {
+            width: 240px;
+            margin: 0 auto;
+        }
+
+        .progress-bar-bg {
+            height: 4px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 9999px;
+            overflow: hidden;
+            margin-bottom: 0.5rem;
+            position: relative;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, 
+                rgba(255,255,255,0.8) 0%, 
+                rgba(255,255,255,1) 50%, 
+                rgba(255,255,255,0.8) 100%);
+            border-radius: 9999px;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+            animation: progressFlow 1.5s ease-in-out infinite;
+            width: 100%;
+        }
+
+        @keyframes progressFlow {
+            0% {
+                transform: translateX(-100%);
+            }
+            100% {
+                transform: translateX(100%);
+            }
+        }
+
+        .loading-steps {
+            display: flex;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        .step {
+            width: 6px;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            animation: stepBlink 1.8s ease-in-out infinite;
+        }
+
+        .step:nth-child(1) {
+            animation-delay: 0s;
+        }
+
+        .step:nth-child(2) {
+            animation-delay: 0.3s;
+        }
+
+        .step:nth-child(3) {
+            animation-delay: 0.6s;
+        }
+
+        .step:nth-child(4) {
+            animation-delay: 0.9s;
+        }
+
+        .step:nth-child(5) {
+            animation-delay: 1.2s;
+        }
+
+        @keyframes stepBlink {
+            0%, 100% {
+                background: rgba(255, 255, 255, 0.3);
+                transform: scale(1);
+            }
+            50% {
+                background: rgba(255, 255, 255, 1);
+                transform: scale(1.3);
+            }
+        }
+
+        .spinner-container {
+            margin-top: 1rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .spinner-dot {
+            width: 5px;
+            height: 5px;
+            background: white;
+            border-radius: 50%;
+            animation: bounce 1.2s ease-in-out infinite;
+        }
+
+        .spinner-dot:nth-child(1) {
+            animation-delay: 0s;
+        }
+
+        .spinner-dot:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .spinner-dot:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes bounce {
+            0%, 80%, 100% {
+                transform: translateY(0);
+            }
+            40% {
+                transform: translateY(-8px);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo-container">
+            <div class="ping"></div>
+            <div class="logo">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                          d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                </svg>
+            </div>
+        </div>
+
+        <h1 class="title">Stream Monitor</h1>
+        <p class="subtitle">ストリーム統計収集ツール</p>
+
+        <div class="loading-status">
+            <p class="status-text" id="statusText">アプリケーションを起動中...</p>
+        </div>
+
+        <div class="progress-container">
+            <div class="progress-bar-bg">
+                <div class="progress-bar"></div>
+            </div>
+        </div>
+
+        <div class="loading-steps">
+            <div class="step"></div>
+            <div class="step"></div>
+            <div class="step"></div>
+            <div class="step"></div>
+            <div class="step"></div>
+        </div>
+
+        <div class="spinner-container">
+            <div class="spinner-dot"></div>
+            <div class="spinner-dot"></div>
+            <div class="spinner-dot"></div>
+        </div>
+    </div>
+
+    <script>
+        // ローディングテキストを動的に変更
+        const loadingTexts = [
+            'アプリケーションを起動中...',
+            'UIコンポーネントを読み込み中...',
+            'データベースを初期化中...',
+            '設定を読み込み中...',
+            'もうすぐ完了します...'
+        ];
+        let currentIndex = 0;
+        
+        setInterval(() => {
+            currentIndex = (currentIndex + 1) % loadingTexts.length;
+            document.getElementById('statusText').textContent = loadingTexts[currentIndex];
+        }, 800);
+    </script>
+</body>
+</html>

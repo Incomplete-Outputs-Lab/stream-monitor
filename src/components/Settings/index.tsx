@@ -304,6 +304,39 @@ export function Settings() {
             </div>
           </section>
         )}
+
+        {/* サポート */}
+        <section className="card p-4 space-y-3">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            開発を支援する
+          </h2>
+          
+          <div className="text-xs text-gray-600 dark:text-gray-400 space-y-2">
+            <p>
+              Stream Monitorは個人で開発・運営しているオープンソースプロジェクトです。
+            </p>
+            <p>
+              サポートいただいた資金は、サーバー維持費や新機能の開発に充てさせていただきます。
+            </p>
+          </div>
+          
+          <div className="pt-2">
+            <h3 className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
+              サポート方法
+            </h3>
+            <a
+              href="http://subs.twitch.tv/flowingspdg"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium transition-colors"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714Z"/>
+              </svg>
+              Twitchでサブスクライブ
+            </a>
+          </div>
+        </section>
       </div>
     </div>
   );

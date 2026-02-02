@@ -43,10 +43,6 @@ tungstenite = { version = "0.28", features = ["native-tls"] }
 thiserror = "2.0.18"
 tauri-plugin-dialog = "2"
 tauri-plugin-process = "2"
-# JSON export uses existing serde_json dependency
-# Workaround for upstream scrypt bug
-[profile.dev.package.scrypt]
-opt-level = 3
 
 # Test dependencies
 [dev-dependencies]

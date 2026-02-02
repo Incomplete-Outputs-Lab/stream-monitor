@@ -12,9 +12,22 @@
   "app": {
     "windows": [
       {
+        "label": "splash",
+        "url": "splash.html",
+        "width": 400,
+        "height": 300,
+        "decorations": false,
+        "transparent": false,
+        "center": true,
+        "resizable": false,
+        "visible": true
+      },
+      {
+        "label": "main",
         "title": "Stream Stats Collector",
         "width": 800,
-        "height": 600
+        "height": 600,
+        "visible": false
       }
     ],
     "security": {

@@ -42,6 +42,7 @@ hyper-util = { version = "0.1", features = ["client-legacy", "http1", "http2", "
 thiserror = "2.0.18"
 tauri-plugin-dialog = "2"
 tauri-plugin-process = "2"
+ctrlc = "3.4"
 
 # Test dependencies
 [dev-dependencies]

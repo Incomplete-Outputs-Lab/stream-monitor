@@ -218,7 +218,24 @@ pub fn run() {
             // DatabaseManagerを初期化して管理
             let db_manager = DatabaseManager::new(&app_handle)
                 .expect("Failed to create DatabaseManager");
-            app.manage(db_manager);
+            app.manage(db_manager.clone());
+
+            // Ctrl+C / SIGTERMシグナルハンドラを設定（ホットリロード対策）
+            let db_manager_for_signal = db_manager.clone();
+            let logger_for_signal = logger.clone();
+            std::thread::spawn(move || {
+                if let Err(e) = ctrlc::set_handler(move || {
+                    eprintln!("[Signal] Received termination signal, performing cleanup...");
+                    logger_for_signal.info("Received termination signal, performing cleanup...");
+                    if let Err(e) = db_manager_for_signal.shutdown() {
+                        eprintln!("[Signal] Cleanup failed: {}", e);
+                        logger_for_signal.error(&format!("Cleanup failed: {}", e));
+                    }
+                    std::process::exit(0);
+                }) {
+                    eprintln!("[Signal] Failed to set signal handler: {}", e);
+                }
+            });
 
             // Initialize ChannelPoller and manage it as app state (before spawning threads)
             let poller = ChannelPoller::new();
@@ -433,7 +450,12 @@ pub fn run() {
                             });
                         }
                         "quit" => {
-                            std::process::exit(0);
+                            // グレースフルシャットダウン
+                            if let Some(db_manager) = _app.try_state::<DatabaseManager>() {
+                                eprintln!("[App Exit] Performing graceful shutdown...");
+                                let _ = db_manager.shutdown();
+                            }
+                            _app.exit(0);
                         }
                         _ => {}
                     }

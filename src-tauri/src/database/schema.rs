@@ -509,9 +509,9 @@ fn migrate_database_schema(conn: &Connection) -> Result<(), duckdb::Error> {
 
             eprintln!("[Migration] badges column conversion completed");
         }
-        Some("TEXT[]") => {
-            // 既に TEXT[] 型の場合は何もしない
-            eprintln!("[Migration] badges column already TEXT[], skipping");
+        Some("TEXT[]") | Some("VARCHAR[]") => {
+            // 既に TEXT[] または VARCHAR[] 型の場合は何もしない（DuckDBでは同等）
+            eprintln!("[Migration] badges column already TEXT[]/VARCHAR[], skipping");
         }
         Some(other) => {
             eprintln!(

@@ -39,6 +39,29 @@ fn cleanup_stale_files(db_path: &Path) {
     }
 }
 
+/// WALファイルが破損している場合のリカバリ処理
+fn recover_from_corrupted_wal(db_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    use chrono::Local;
+
+    let wal_path = db_path.with_extension("wal");
+
+    if wal_path.exists() {
+        // WALファイルをバックアップとしてリネーム
+        let timestamp = Local::now().format("%Y%m%d_%H%M%S");
+        let backup_wal_path = db_path.with_extension(format!("wal.backup.{}", timestamp));
+
+        eprintln!(
+            "[DB Recovery] Moving corrupted WAL file to backup: {}",
+            backup_wal_path.display()
+        );
+
+        std::fs::rename(&wal_path, &backup_wal_path)?;
+        eprintln!("[DB Recovery] WAL file backed up successfully");
+    }
+
+    Ok(())
+}
+
 /// データベース接続を共有するための管理構造体
 #[derive(Clone)]
 pub struct DatabaseManager {
@@ -64,9 +87,31 @@ impl DatabaseManager {
 
         // 開発環境と本番環境で統一してファイルベースDBを使用
         eprintln!("Opening DuckDB at: {}", db_path.display());
-        let conn = Connection::open(&db_path)
-            .db_context("open database")
-            .map_err(|e| e.to_string())?;
+        let conn = match Connection::open(&db_path) {
+            Ok(conn) => conn,
+            Err(e) => {
+                let error_msg = format!("{:?}", e);
+
+                // WAL再生エラーの場合は自動リカバリを試みる
+                if error_msg.contains("WAL file") || error_msg.contains("replaying WAL") {
+                    eprintln!("[DB Recovery] WAL replay error detected, attempting recovery...");
+
+                    // 破損したWALファイルをバックアップ
+                    if let Err(recovery_err) = recover_from_corrupted_wal(&db_path) {
+                        eprintln!("[DB Recovery] Failed to backup WAL file: {}", recovery_err);
+                    }
+
+                    // WALファイル削除後、再度データベースを開く
+                    eprintln!("[DB Recovery] Retrying database open after WAL cleanup...");
+                    Connection::open(&db_path)
+                        .db_context("open database after WAL recovery")
+                        .map_err(|e| e.to_string())?
+                } else {
+                    // その他のエラーは通常通り返す
+                    return Err(format!("Database error: {}", error_msg).into());
+                }
+            }
+        };
 
         // DuckDBの設定
         conn.execute("PRAGMA memory_limit='1GB'", []).ok();

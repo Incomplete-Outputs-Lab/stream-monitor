@@ -113,6 +113,7 @@ impl DatabaseManager {
     }
 
     /// 定期的なチェックポイント（データ安全性向上）
+    #[allow(dead_code)]
     pub fn checkpoint(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let conn = self.get_connection()?;
         conn.execute("CHECKPOINT", [])?;

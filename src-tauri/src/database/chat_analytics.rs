@@ -286,18 +286,17 @@ pub fn get_user_segment_stats(
     start_time: Option<&str>,
     end_time: Option<&str>,
 ) -> Result<Vec<UserSegmentStats>, duckdb::Error> {
-    let mut sql = format!(
+    let mut sql = String::from(
         r#"
         WITH all_messages AS (
             SELECT 
                 cm.user_name,
-                {},
+                cm.badges,
                 COUNT(*) as message_count
             FROM chat_messages cm
             LEFT JOIN streams s ON cm.stream_id = s.id
             WHERE 1=1
         "#,
-        chat_query::badges_select("cm")
     );
 
     let mut params: Vec<String> = Vec::new();
@@ -332,10 +331,10 @@ pub fn get_user_segment_stats(
                 message_count,
                 CASE 
                     WHEN badges IS NULL THEN 'regular'
-                    WHEN badges LIKE '%broadcaster%' THEN 'broadcaster'
-                    WHEN badges LIKE '%moderator%' THEN 'moderator'
-                    WHEN badges LIKE '%vip%' THEN 'vip'
-                    WHEN badges LIKE '%subscriber%' THEN 'subscriber'
+                    WHEN list_contains(badges, 'broadcaster') THEN 'broadcaster'
+                    WHEN list_contains(badges, 'moderator') THEN 'moderator'
+                    WHEN list_contains(badges, 'vip') THEN 'vip'
+                    WHEN list_contains(badges, 'subscriber') THEN 'subscriber'
                     ELSE 'regular'
                 END as segment
             FROM all_messages

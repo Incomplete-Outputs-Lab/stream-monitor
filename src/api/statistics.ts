@@ -11,6 +11,13 @@ import type {
   TimePatternStats,
   ChatterBehaviorStats,
   ChatAnalyticsQuery,
+  WordFrequencyResult,
+  EmoteAnalysisResult,
+  MessageLengthStats,
+  CorrelationResult,
+  CategoryImpactResult,
+  ChatterScoreResult,
+  AnomalyResult,
 } from '../types';
 
 // ========== Broadcaster & Game Analytics ==========
@@ -144,5 +151,109 @@ export const getChatterBehaviorStats = async (
     channel_id: query.channelId,
     start_time: query.startTime,
     end_time: query.endTime,
+  });
+};
+
+// ========== Data Science Analytics ==========
+
+export const getWordFrequencyAnalysis = async (params: {
+  channelId?: number | null;
+  streamId?: number | null;
+  startTime?: string;
+  endTime?: string;
+  limit?: number;
+}): Promise<WordFrequencyResult> => {
+  return await invoke<WordFrequencyResult>('get_word_frequency_analysis', {
+    channel_id: params.channelId,
+    stream_id: params.streamId,
+    start_time: params.startTime,
+    end_time: params.endTime,
+    limit: params.limit,
+  });
+};
+
+export const getEmoteAnalysis = async (params: {
+  channelId?: number | null;
+  streamId?: number | null;
+  startTime?: string;
+  endTime?: string;
+}): Promise<EmoteAnalysisResult> => {
+  return await invoke<EmoteAnalysisResult>('get_emote_analysis', {
+    channel_id: params.channelId,
+    stream_id: params.streamId,
+    start_time: params.startTime,
+    end_time: params.endTime,
+  });
+};
+
+export const getMessageLengthStats = async (params: {
+  channelId?: number | null;
+  streamId?: number | null;
+  startTime?: string;
+  endTime?: string;
+}): Promise<MessageLengthStats> => {
+  return await invoke<MessageLengthStats>('get_message_length_stats', {
+    channel_id: params.channelId,
+    stream_id: params.streamId,
+    start_time: params.startTime,
+    end_time: params.endTime,
+  });
+};
+
+export const getViewerChatCorrelation = async (params: {
+  channelId?: number | null;
+  streamId?: number | null;
+  startTime?: string;
+  endTime?: string;
+}): Promise<CorrelationResult> => {
+  return await invoke<CorrelationResult>('get_viewer_chat_correlation', {
+    channel_id: params.channelId,
+    stream_id: params.streamId,
+    start_time: params.startTime,
+    end_time: params.endTime,
+  });
+};
+
+export const getCategoryChangeImpact = async (params: {
+  channelId?: number;
+  startTime?: string;
+  endTime?: string;
+}): Promise<CategoryImpactResult> => {
+  return await invoke<CategoryImpactResult>('get_category_change_impact', {
+    channel_id: params.channelId,
+    start_time: params.startTime,
+    end_time: params.endTime,
+  });
+};
+
+export const getChatterActivityScores = async (params: {
+  channelId?: number | null;
+  streamId?: number | null;
+  startTime?: string;
+  endTime?: string;
+  limit?: number;
+}): Promise<ChatterScoreResult> => {
+  return await invoke<ChatterScoreResult>('get_chatter_activity_scores', {
+    channel_id: params.channelId,
+    stream_id: params.streamId,
+    start_time: params.startTime,
+    end_time: params.endTime,
+    limit: params.limit,
+  });
+};
+
+export const detectAnomalies = async (params: {
+  channelId?: number | null;
+  streamId?: number | null;
+  startTime?: string;
+  endTime?: string;
+  zThreshold?: number;
+}): Promise<AnomalyResult> => {
+  return await invoke<AnomalyResult>('detect_anomalies', {
+    channel_id: params.channelId,
+    stream_id: params.streamId,
+    start_time: params.startTime,
+    end_time: params.endTime,
+    z_threshold: params.zThreshold,
   });
 };

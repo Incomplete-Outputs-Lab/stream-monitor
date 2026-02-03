@@ -1,9 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
-import type { WordFrequencyResult, EmoteAnalysisResult, MessageLengthStats } from '../../../types';
 import { BarChart } from '../../common/charts/BarChart';
 import { LineChart } from '../../common/charts/LineChart';
 import { LoadingSpinner } from '../../common/LoadingSpinner';
+import { getWordFrequencyAnalysis, getEmoteAnalysis, getMessageLengthStats } from '../../../api/statistics';
 
 interface WordAnalysisTabProps {
   channelId: number | null;
@@ -15,41 +14,35 @@ const WordAnalysisTab = ({ channelId, startTime, endTime }: WordAnalysisTabProps
   // Word Frequency Query
   const { data: wordData, isLoading: wordLoading } = useQuery({
     queryKey: ['wordFrequency', channelId, startTime, endTime],
-    queryFn: async () => {
-      return await invoke<WordFrequencyResult>('get_word_frequency_analysis', {
-        channelId,
-        streamId: null,
-        startTime,
-        endTime,
-        limit: 50,
-      });
-    },
+    queryFn: () => getWordFrequencyAnalysis({
+      channelId,
+      streamId: null,
+      startTime,
+      endTime,
+      limit: 50,
+    }),
   });
 
   // Emote Analysis Query
   const { data: emoteData, isLoading: emoteLoading } = useQuery({
     queryKey: ['emoteAnalysis', channelId, startTime, endTime],
-    queryFn: async () => {
-      return await invoke<EmoteAnalysisResult>('get_emote_analysis', {
-        channelId,
-        streamId: null,
-        startTime,
-        endTime,
-      });
-    },
+    queryFn: () => getEmoteAnalysis({
+      channelId,
+      streamId: null,
+      startTime,
+      endTime,
+    }),
   });
 
   // Message Length Stats Query
   const { data: lengthData, isLoading: lengthLoading } = useQuery({
     queryKey: ['messageLengthStats', channelId, startTime, endTime],
-    queryFn: async () => {
-      return await invoke<MessageLengthStats>('get_message_length_stats', {
-        channelId,
-        streamId: null,
-        startTime,
-        endTime,
-      });
-    },
+    queryFn: () => getMessageLengthStats({
+      channelId,
+      streamId: null,
+      startTime,
+      endTime,
+    }),
   });
 
   if (wordLoading || emoteLoading || lengthLoading) {

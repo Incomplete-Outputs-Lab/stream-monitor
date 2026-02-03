@@ -1,8 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
-import type { CategoryImpactResult } from '../../../types';
 import { BarChart } from '../../common/charts/BarChart';
 import { LoadingSpinner } from '../../common/LoadingSpinner';
+import { getCategoryChangeImpact } from '../../../api/statistics';
 
 interface CategoryImpactTabProps {
   channelId: number | null;
@@ -13,9 +12,9 @@ interface CategoryImpactTabProps {
 const CategoryImpactTab = ({ channelId, startTime, endTime }: CategoryImpactTabProps) => {
   const { data, isLoading } = useQuery({
     queryKey: ['categoryImpact', channelId, startTime, endTime],
-    queryFn: async () => {
+    queryFn: () => {
       if (!channelId) return null;
-      return await invoke<CategoryImpactResult>('get_category_change_impact', {
+      return getCategoryChangeImpact({
         channelId,
         startTime,
         endTime,

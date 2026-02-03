@@ -1,9 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
-import type { CorrelationResult } from '../../../types';
 import { BarChart } from '../../common/charts/BarChart';
 import { Scatter, ScatterChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ZAxis } from 'recharts';
 import { LoadingSpinner } from '../../common/LoadingSpinner';
+import { getViewerChatCorrelation } from '../../../api/statistics';
 
 interface CorrelationTabProps {
   channelId: number | null;
@@ -14,14 +13,12 @@ interface CorrelationTabProps {
 const CorrelationTab = ({ channelId, startTime, endTime }: CorrelationTabProps) => {
   const { data, isLoading } = useQuery({
     queryKey: ['viewerChatCorrelation', channelId, startTime, endTime],
-    queryFn: async () => {
-      return await invoke<CorrelationResult>('get_viewer_chat_correlation', {
-        channelId,
-        streamId: null,
-        startTime,
-        endTime,
-      });
-    },
+    queryFn: () => getViewerChatCorrelation({
+      channelId,
+      streamId: null,
+      startTime,
+      endTime,
+    }),
   });
 
   if (isLoading) {

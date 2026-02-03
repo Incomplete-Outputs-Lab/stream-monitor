@@ -1,8 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
-import type { ChatterScoreResult } from '../../../types';
 import { BarChart } from '../../common/charts/BarChart';
 import { LoadingSpinner } from '../../common/LoadingSpinner';
+import { getChatterActivityScores } from '../../../api/statistics';
 
 interface ChatterScoreTabProps {
   channelId: number | null;
@@ -13,15 +12,13 @@ interface ChatterScoreTabProps {
 const ChatterScoreTab = ({ channelId, startTime, endTime }: ChatterScoreTabProps) => {
   const { data, isLoading } = useQuery({
     queryKey: ['chatterActivityScores', channelId, startTime, endTime],
-    queryFn: async () => {
-      return await invoke<ChatterScoreResult>('get_chatter_activity_scores', {
-        channelId,
-        streamId: null,
-        startTime,
-        endTime,
-        limit: 50,
-      });
-    },
+    queryFn: () => getChatterActivityScores({
+      channelId,
+      streamId: null,
+      startTime,
+      endTime,
+      limit: 50,
+    }),
   });
 
   if (isLoading) {

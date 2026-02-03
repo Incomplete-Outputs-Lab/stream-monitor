@@ -1,8 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
-import type { AnomalyResult } from '../../../types';
 import { Scatter, ScatterChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine, Cell } from 'recharts';
 import { LoadingSpinner } from '../../common/LoadingSpinner';
+import { detectAnomalies } from '../../../api/statistics';
 
 interface AnomalyDetectionTabProps {
   channelId: number | null;
@@ -13,15 +12,13 @@ interface AnomalyDetectionTabProps {
 const AnomalyDetectionTab = ({ channelId, startTime, endTime }: AnomalyDetectionTabProps) => {
   const { data, isLoading } = useQuery({
     queryKey: ['anomalyDetection', channelId, startTime, endTime],
-    queryFn: async () => {
-      return await invoke<AnomalyResult>('detect_anomalies', {
-        channelId,
-        streamId: null,
-        startTime,
-        endTime,
-        zThreshold: 2.5,
-      });
-    },
+    queryFn: () => detectAnomalies({
+      channelId,
+      streamId: null,
+      startTime,
+      endTime,
+      zThreshold: 2.5,
+    }),
   });
 
   if (isLoading) {

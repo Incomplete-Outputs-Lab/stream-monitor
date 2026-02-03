@@ -152,12 +152,35 @@ src-tauri/src/         # バックエンド (Rust)
 2. `commands/mod.rs`で公開
 3. `lib.rs`の`tauri::generate_handler![]`に追加
 4. 状態は`tauri::State`で取得（`DatabaseManager`, `ChannelPoller`等）
+5. **重要**: 構造体を引数として受け取る場合：
+   - Rust側: `#[serde(rename_all = "camelCase")]`属性で命名規則を統一
+   - フロントエンド側: パラメータを構造体名でラップ（例: `{query: {...}}`）
 
 ### DBスキーマ変更
 1. `schema.rs`の`migrate_database_schema()`に追加
 2. `pragma_table_info()`で確認してから`ALTER TABLE`
 3. バックアップ推奨
 4. ⚠️ DuckDBはカラム削除等に制限あり
+
+### DuckDB特殊型の取扱い（重要）
+DuckDBの特殊型（`LIST`, `TIMESTAMP`等）をRustで扱う場合、SQLクエリ段階で型変換が必要：
+
+**問題**: `LIST`型や`TIMESTAMP`型を直接SELECTすると、Rustのduckdbクレートで型エラーが発生
+- `Invalid column type List`: 配列型を文字列として読み取れない
+- `Invalid column type Timestamp`: タイムスタンプ型を文字列として読み取れない
+
+**解決**: SQLクエリで`CAST`を使用して`VARCHAR`に変換
+```sql
+SELECT 
+    CAST(badges AS VARCHAR) as badges,
+    CAST(timestamp AS VARCHAR) as timestamp
+FROM chat_messages
+```
+
+**対象カラム**:
+- `chat_messages.badges`: `TEXT[]` → `VARCHAR`
+- `chat_messages.timestamp`: `TIMESTAMP` → `VARCHAR`
+- その他、LIST型やTIMESTAMP型のカラム全般
 
 ### UIコンポーネント追加
 - Tailwind CSS 4使用、`dark:`でダークモード対応
@@ -214,6 +237,9 @@ src-tauri/src/         # バックエンド (Rust)
 | メモリ使用量高 | チャットログ蓄積 | バッチインサート済み、アーカイブ未実装 |
 | Twitch認証失敗 | Client ID未設定/期限切れ | Device Code Flowで再認証 |
 | チャット未記録 | IRC未統合 | 現在はチャットレートのみ |
+| DuckDB型変換エラー | LIST/TIMESTAMP型を直接取得 | SQLで`CAST(column AS VARCHAR)` |
+| Tauriコマンド引数エラー | 構造体引数のラッピング不足 | フロントエンド: `{query: {...}}`でラップ |
+| serdeデシリアライズ失敗 | 命名規則の不一致(camelCase/snake_case) | `#[serde(rename_all = "camelCase")]`追加 |
 
 ## 実装状況
 

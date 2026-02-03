@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ChatMessagesQuery {
     pub stream_id: Option<i64>,
     pub channel_id: Option<i64>,
@@ -27,9 +28,11 @@ pub async fn get_chat_messages(
     let mut sql = String::from(
         r#"
         SELECT
-            cm.id, cm.stream_id, cm.timestamp, cm.platform,
+            cm.id, cm.channel_id, cm.stream_id, 
+            CAST(cm.timestamp AS VARCHAR) as timestamp, 
+            cm.platform,
             cm.user_id, cm.user_name, cm.message, cm.message_type,
-            cm.badges, cm.badge_info, cm.channel_id
+            CAST(cm.badges AS VARCHAR) as badges, cm.badge_info
         FROM chat_messages cm
         INNER JOIN streams s ON cm.stream_id = s.id
         WHERE 1=1

@@ -21,10 +21,12 @@ const ChatTimelinePanel: React.FC<ChatTimelinePanelProps> = ({
     queryKey: ['timelineChatMessages', streamId, channelId, currentPage],
     queryFn: async () => {
       const result = await invoke<ChatMessage[]>('get_chat_messages', {
-        streamId,
-        channelId,
-        limit: messagesPerPage,
-        offset: (currentPage - 1) * messagesPerPage,
+        query: {
+          streamId,
+          channelId,
+          limit: messagesPerPage,
+          offset: (currentPage - 1) * messagesPerPage,
+        }
       });
       return result;
     },

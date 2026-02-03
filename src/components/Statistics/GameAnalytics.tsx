@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { GameAnalytics as GameAnalyticsType } from '../../types';
 import { BarChart } from '../common/charts/BarChart';
 import { Tooltip } from '../common/Tooltip';
 import { useSortableData } from '../../hooks/useSortableData';
 import { SortableTableHeader } from '../common/SortableTableHeader';
+import { getGameAnalytics, listGameCategories } from '../../api/statistics';
 
 interface GameAnalyticsProps {
   startTime?: string;
@@ -23,25 +23,19 @@ export default function GameAnalytics({
   // カテゴリ一覧を取得
   const { data: categories } = useQuery({
     queryKey: ['game-categories', startTime, endTime],
-    queryFn: async () => {
-      const result = await invoke<string[]>('list_game_categories', {
-        startTime,
-        endTime,
-      });
-      return result;
-    },
+    queryFn: () => listGameCategories({
+      startTime,
+      endTime,
+    }),
   });
   // ゲーム分析データを取得
   const { data: analytics, isLoading, error } = useQuery({
     queryKey: ['game-analytics', selectedCategory, startTime, endTime],
-    queryFn: async () => {
-      const result = await invoke<GameAnalyticsType[]>('get_game_analytics', {
-        category: selectedCategory || undefined,
-        startTime,
-        endTime,
-      });
-      return result;
-    },
+    queryFn: () => getGameAnalytics({
+      category: selectedCategory || undefined,
+      startTime,
+      endTime,
+    }),
   });
 
   // ソート機能

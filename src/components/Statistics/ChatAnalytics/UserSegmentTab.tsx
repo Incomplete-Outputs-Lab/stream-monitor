@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
 import type { UserSegmentStats } from '../../../types';
 import { PieChart, BarChart } from '../../common/charts';
 import { LoadingSpinner } from '../../common/LoadingSpinner';
+import { getUserSegmentStats } from '../../../api/statistics';
 
 interface UserSegmentTabProps {
   channelId: number | null;
@@ -13,15 +13,11 @@ interface UserSegmentTabProps {
 const UserSegmentTab = ({ channelId, startTime, endTime }: UserSegmentTabProps) => {
   const { data: segmentData, isLoading } = useQuery({
     queryKey: ['userSegmentStats', channelId, startTime, endTime],
-    queryFn: async () => {
-      const result = await invoke<UserSegmentStats[]>('get_user_segment_stats', {
-        channelId,
-        streamId: null,
-        startTime,
-        endTime,
-      });
-      return result;
-    },
+    queryFn: () => getUserSegmentStats({
+      channelId: channelId ?? undefined,
+      startTime,
+      endTime,
+    }),
   });
 
   if (isLoading) {

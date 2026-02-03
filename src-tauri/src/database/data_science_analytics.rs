@@ -1,4 +1,7 @@
-use crate::database::{query_helpers::chat_query, utils};
+use crate::database::{
+    query_helpers::chat_query, repositories::ChatMessageRepository,
+    repositories::StreamStatsRepository, utils,
+};
 use duckdb::Connection;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { BroadcasterAnalytics as BroadcasterAnalyticsType, Channel } from '../../types';
 import { BarChart } from '../common/charts/BarChart';
 import { Tooltip } from '../common/Tooltip';
 import { useSortableData } from '../../hooks/useSortableData';
 import { SortableTableHeader } from '../common/SortableTableHeader';
+import { getBroadcasterAnalytics } from '../../api/statistics';
 
 interface BroadcasterAnalyticsProps {
   startTime?: string;
@@ -28,17 +28,11 @@ export default function BroadcasterAnalytics({
   });
   const { data: analytics, isLoading, error } = useQuery({
     queryKey: ['broadcaster-analytics', selectedChannelId, startTime, endTime],
-    queryFn: async () => {
-      const result = await invoke<BroadcasterAnalyticsType[]>(
-        'get_broadcaster_analytics',
-        {
-          channelId: selectedChannelId || undefined,
-          startTime,
-          endTime,
-        }
-      );
-      return result;
-    },
+    queryFn: () => getBroadcasterAnalytics({
+      channelId: selectedChannelId || undefined,
+      startTime,
+      endTime,
+    }),
   });
 
   // ソート機能

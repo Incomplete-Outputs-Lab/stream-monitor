@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
 import { GameAnalytics, DataAvailability } from '../../types';
 import { HorizontalBarChart, PieChart, BubbleChart } from '../common/charts';
 import { DataAvailabilityBanner } from './DataAvailabilityBanner';
+import { getGameAnalytics, getDataAvailability } from '../../api/statistics';
 
 interface TopGamesAnalyticsProps {
   startTime?: string;
@@ -18,22 +18,17 @@ export default function TopGamesAnalytics({
   // データ可用性情報を取得
   const { data: availability } = useQuery({
     queryKey: ['data-availability'],
-    queryFn: async () => {
-      return await invoke<DataAvailability>('get_data_availability');
-    },
+    queryFn: getDataAvailability,
   });
 
   // トップゲーム統計を取得（全ゲーム）
   const { data: gameAnalytics, isLoading, error } = useQuery({
     queryKey: ['top-games-analytics', startTime, endTime],
-    queryFn: async () => {
-      const result = await invoke<GameAnalytics[]>('get_game_analytics', {
-        category: undefined,
-        startTime,
-        endTime,
-      });
-      return result;
-    },
+    queryFn: () => getGameAnalytics({
+      category: undefined,
+      startTime,
+      endTime,
+    }),
   });
 
   if (isLoading) {

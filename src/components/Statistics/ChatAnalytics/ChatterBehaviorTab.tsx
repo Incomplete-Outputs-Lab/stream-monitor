@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
 import type { TopChatter, ChatterBehaviorStats } from '../../../types';
 import { BarChart } from '../../common/charts';
 import { LoadingSpinner } from '../../common/LoadingSpinner';
+import { getTopChatters, getChatterBehaviorStats } from '../../../api/statistics';
 
 interface ChatterBehaviorTabProps {
   channelId: number | null;
@@ -14,29 +14,22 @@ const ChatterBehaviorTab = ({ channelId, startTime, endTime }: ChatterBehaviorTa
   // Top Chatters
   const { data: topChatters, isLoading: chattersLoading } = useQuery({
     queryKey: ['topChatters', channelId, startTime, endTime],
-    queryFn: async () => {
-      const result = await invoke<TopChatter[]>('get_top_chatters', {
-        channelId,
-        streamId: null,
-        startTime,
-        endTime,
-        limit: 50,
-      });
-      return result;
-    },
+    queryFn: () => getTopChatters({
+      channelId: channelId ?? undefined,
+      startTime,
+      endTime,
+      limit: 50,
+    }),
   });
 
   // Behavior Stats
   const { data: behaviorStats, isLoading: behaviorLoading } = useQuery({
     queryKey: ['chatterBehaviorStats', channelId, startTime, endTime],
-    queryFn: async () => {
-      const result = await invoke<ChatterBehaviorStats>('get_chatter_behavior_stats', {
-        channelId,
-        startTime,
-        endTime,
-      });
-      return result;
-    },
+    queryFn: () => getChatterBehaviorStats({
+      channelId: channelId ?? undefined,
+      startTime,
+      endTime,
+    }),
   });
 
   if (chattersLoading || behaviorLoading) {

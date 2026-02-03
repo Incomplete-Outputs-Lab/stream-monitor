@@ -1,8 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
 import { BroadcasterAnalytics, DailyStats, GameAnalytics, DataAvailability } from '../../types';
 import { DualAxisChart, PieChart, BubbleChart } from '../common/charts';
 import { DataAvailabilityBanner } from './DataAvailabilityBanner';
+import { 
+  getBroadcasterAnalytics, 
+  getGameAnalytics, 
+  getChannelDailyStats, 
+  getDataAvailability 
+} from '../../api/statistics';
 
 interface ChannelDetailAnalyticsProps {
   channelId: number;
@@ -24,21 +29,17 @@ export default function ChannelDetailAnalytics({
   // データ可用性情報を取得
   const { data: availability } = useQuery({
     queryKey: ['data-availability'],
-    queryFn: async () => {
-      return await invoke<DataAvailability>('get_data_availability');
-    },
+    queryFn: getDataAvailability,
   });
 
   // 日次統計を取得
   const { data: dailyStats } = useQuery({
     queryKey: ['channel-daily-stats', channelId, startTime, endTime],
-    queryFn: async () => {
-      return await invoke<DailyStats[]>('get_channel_daily_stats', {
-        channelId,
-        startTime: startTime || '',
-        endTime: endTime || '',
-      });
-    },
+    queryFn: () => getChannelDailyStats({
+      channelId,
+      startTime: startTime || '',
+      endTime: endTime || '',
+    }),
     enabled: !!startTime && !!endTime,
   });
 
@@ -46,7 +47,7 @@ export default function ChannelDetailAnalytics({
   const { data: channelStats, isLoading, error } = useQuery({
     queryKey: ['channel-detail-analytics', channelId, startTime, endTime],
     queryFn: async () => {
-      const result = await invoke<BroadcasterAnalytics[]>('get_broadcaster_analytics', {
+      const result = await getBroadcasterAnalytics({
         channelId,
         startTime,
         endTime,
@@ -59,7 +60,7 @@ export default function ChannelDetailAnalytics({
   const { data: gameAnalytics } = useQuery({
     queryKey: ['channel-games-analytics', channelId, startTime, endTime],
     queryFn: async () => {
-      const result = await invoke<GameAnalytics[]>('get_game_analytics', {
+      const result = await getGameAnalytics({
         category: undefined,
         startTime,
         endTime,

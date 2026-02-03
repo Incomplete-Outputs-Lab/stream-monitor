@@ -1,4 +1,4 @@
-use crate::database::{query_helpers::chat_query, utils};
+use crate::database::{query_helpers::chat_query, repositories::ChatMessageRepository, utils};
 use duckdb::Connection;
 use serde::{Deserialize, Serialize};
 
@@ -69,6 +69,8 @@ pub struct ChatterBehaviorStats {
 }
 
 /// エンゲージメント統計を時系列で取得（5分間隔）
+/// 
+/// ChatMessageRepositoryとStreamStatsRepositoryを使用します。
 pub fn get_chat_engagement_timeline(
     conn: &Connection,
     channel_id: Option<i64>,
@@ -77,122 +79,72 @@ pub fn get_chat_engagement_timeline(
     end_time: Option<&str>,
     interval_minutes: i32,
 ) -> Result<Vec<ChatEngagementStats>, duckdb::Error> {
-    let mut sql = format!(
-        r#"
-        WITH time_buckets AS (
-            SELECT 
-                time_bucket(INTERVAL '{} minutes', cm.timestamp) as bucket,
-                COUNT(*) as chat_count,
-                COUNT(DISTINCT cm.user_name) as unique_chatters
-            FROM chat_messages cm
-            LEFT JOIN streams s ON cm.stream_id = s.id
-            WHERE 1=1
-        "#,
-        interval_minutes
-    );
+    use crate::database::repositories::StreamStatsRepository;
+    
+    // チャットバケットを取得
+    let chat_buckets = ChatMessageRepository::count_by_time_bucket(
+        conn,
+        interval_minutes,
+        channel_id,
+        stream_id,
+        start_time,
+        end_time,
+    )?;
 
-    let mut params: Vec<String> = Vec::new();
-
-    if let Some(ch_id) = channel_id {
-        sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
-        params.push(ch_id.to_string());
-        params.push(ch_id.to_string());
-    }
-
-    if let Some(st_id) = stream_id {
-        sql.push_str(" AND cm.stream_id = ?");
-        params.push(st_id.to_string());
-    }
-
-    if let Some(start) = start_time {
-        sql.push_str(" AND cm.timestamp >= ?");
-        params.push(start.to_string());
-    }
-
-    if let Some(end) = end_time {
-        sql.push_str(" AND cm.timestamp <= ?");
-        params.push(end.to_string());
-    }
-
-    sql.push_str(
-        r#"
-            GROUP BY bucket
-        ),
-        viewer_stats AS (
-            SELECT 
-                time_bucket(INTERVAL '5 minutes', ss.collected_at) as bucket,
-                AVG(ss.viewer_count) as avg_viewers
-            FROM stream_stats ss
-            WHERE ss.viewer_count IS NOT NULL
-        "#,
-    );
-
-    // viewer_params_offset is not used in this version
-
-    if let Some(ch_id) = channel_id {
-        // channel_idからchannel_nameを取得
-        let channel_name = conn
-            .query_row(
-                "SELECT channel_id FROM channels WHERE id = ?",
-                [ch_id.to_string()],
-                |row| row.get::<_, String>(0),
-            )
-            .ok();
-        if let Some(ch_name) = channel_name {
-            sql.push_str(" AND ss.channel_name = ?");
-            params.push(ch_name);
-        }
-    }
-
-    if let Some(st_id) = stream_id {
-        sql.push_str(" AND ss.stream_id = ?");
-        params.push(st_id.to_string());
-    }
-
-    if let Some(start) = start_time {
-        sql.push_str(" AND ss.collected_at >= ?");
-        params.push(start.to_string());
-    }
-
-    if let Some(end) = end_time {
-        sql.push_str(" AND ss.collected_at <= ?");
-        params.push(end.to_string());
-    }
-
-    sql.push_str(
-        r#"
-            GROUP BY bucket
+    // channel_idからchannel_nameを取得
+    let channel_name = if let Some(ch_id) = channel_id {
+        conn.query_row(
+            "SELECT channel_id FROM channels WHERE id = ?",
+            [ch_id.to_string()],
+            |row| row.get::<_, String>(0),
         )
-        SELECT 
-            tb.bucket::VARCHAR as timestamp,
-            tb.chat_count,
-            tb.unique_chatters,
-            COALESCE(vs.avg_viewers, 0)::INTEGER as viewer_count,
-            CASE 
-                WHEN vs.avg_viewers > 0 THEN (tb.chat_count::FLOAT / vs.avg_viewers) * 100.0
-                ELSE 0.0
-            END as engagement_rate
-        FROM time_buckets tb
-        LEFT JOIN viewer_stats vs ON tb.bucket = vs.bucket
-        ORDER BY tb.bucket
-        "#,
-    );
+        .ok()
+    } else {
+        None
+    };
 
-    let mut stmt = conn.prepare(&sql)?;
-    let results = utils::query_map_with_params(&mut stmt, &params, |row| {
-        Ok(ChatEngagementStats {
-            timestamp: row.get(0)?,
-            chat_count: row.get(1)?,
-            unique_chatters: row.get(2)?,
-            viewer_count: row.get(3)?,
-            engagement_rate: row.get(4)?,
+    // 視聴者統計を取得
+    let viewer_buckets = StreamStatsRepository::get_time_bucketed_viewers(
+        conn,
+        interval_minutes,
+        channel_name.as_deref(),
+        stream_id,
+        start_time,
+        end_time,
+    )?;
+
+    // バケット単位でマージ
+    let viewer_map: std::collections::HashMap<String, f64> = viewer_buckets
+        .into_iter()
+        .map(|v| (v.bucket, v.avg_viewers))
+        .collect();
+
+    let results = chat_buckets
+        .into_iter()
+        .map(|chat| {
+            let viewer_count = viewer_map.get(&chat.bucket).copied().unwrap_or(0.0) as i32;
+            let engagement_rate = if viewer_count > 0 {
+                (chat.chat_count as f64 / viewer_count as f64) * 100.0
+            } else {
+                0.0
+            };
+
+            ChatEngagementStats {
+                timestamp: chat.bucket,
+                chat_count: chat.chat_count,
+                unique_chatters: chat.unique_chatters,
+                viewer_count,
+                engagement_rate,
+            }
         })
-    })?;
+        .collect();
 
-    results.collect::<Result<Vec<_>, _>>()
+    Ok(results)
 }
 
 /// チャットスパイク（急増ポイント）を検出
+/// 
+/// ChatMessageRepositoryを使用してスパイクを検出します。
 pub fn detect_chat_spikes(
     conn: &Connection,
     channel_id: Option<i64>,
@@ -201,84 +153,45 @@ pub fn detect_chat_spikes(
     end_time: Option<&str>,
     min_spike_ratio: f64,
 ) -> Result<Vec<ChatSpike>, duckdb::Error> {
-    let mut sql = String::from(
-        r#"
-        WITH time_buckets AS (
-            SELECT 
-                time_bucket(INTERVAL '5 minutes', cm.timestamp) as bucket,
-                COUNT(*) as chat_count
-            FROM chat_messages cm
-            LEFT JOIN streams s ON cm.stream_id = s.id
-            WHERE 1=1
-        "#,
-    );
+    // 5分間隔でバケット取得
+    let buckets = ChatMessageRepository::count_by_time_bucket(
+        conn,
+        5,
+        channel_id,
+        stream_id,
+        start_time,
+        end_time,
+    )?;
 
-    let mut params: Vec<String> = Vec::new();
+    // 前のバケットとの比較でスパイクを検出
+    let mut spikes = Vec::new();
+    let mut prev_count = 0i64;
 
-    if let Some(ch_id) = channel_id {
-        sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
-        params.push(ch_id.to_string());
-        params.push(ch_id.to_string());
+    for bucket in buckets {
+        if prev_count > 0 {
+            let spike_ratio = bucket.chat_count as f64 / prev_count as f64;
+            if spike_ratio >= min_spike_ratio {
+                spikes.push(ChatSpike {
+                    timestamp: bucket.bucket.clone(),
+                    chat_count: bucket.chat_count,
+                    spike_ratio,
+                    prev_count,
+                });
+            }
+        }
+        prev_count = bucket.chat_count;
     }
 
-    if let Some(st_id) = stream_id {
-        sql.push_str(" AND cm.stream_id = ?");
-        params.push(st_id.to_string());
-    }
+    // spike_ratio降順でソート、上位20件
+    spikes.sort_by(|a, b| b.spike_ratio.partial_cmp(&a.spike_ratio).unwrap());
+    spikes.truncate(20);
 
-    if let Some(start) = start_time {
-        sql.push_str(" AND cm.timestamp >= ?");
-        params.push(start.to_string());
-    }
-
-    if let Some(end) = end_time {
-        sql.push_str(" AND cm.timestamp <= ?");
-        params.push(end.to_string());
-    }
-
-    sql.push_str(
-        r#"
-            GROUP BY bucket
-        ),
-        with_lag AS (
-            SELECT 
-                bucket,
-                chat_count,
-                LAG(chat_count, 1, 0) OVER (ORDER BY bucket) as prev_count
-            FROM time_buckets
-        )
-        SELECT 
-            bucket::VARCHAR as timestamp,
-            chat_count,
-            CASE 
-                WHEN prev_count > 0 THEN (chat_count::FLOAT / prev_count::FLOAT)
-                ELSE 0.0
-            END as spike_ratio,
-            prev_count
-        FROM with_lag
-        WHERE prev_count > 0 
-            AND chat_count::FLOAT / prev_count::FLOAT >= ?
-        ORDER BY spike_ratio DESC
-        LIMIT 20
-        "#,
-    );
-
-    params.push(min_spike_ratio.to_string());
-
-    let mut stmt = conn.prepare(&sql)?;
-    let results = utils::query_map_with_params(&mut stmt, &params, |row| {
-        Ok(ChatSpike {
-            timestamp: row.get(0)?,
-            chat_count: row.get(1)?,
-            spike_ratio: row.get(2)?,
-            prev_count: row.get(3)?,
-        })
-    })?;
-
-    results.collect::<Result<Vec<_>, _>>()
+    Ok(spikes)
 }
 
 /// ユーザーセグメント別統計を取得
+/// 
+/// ChatMessageRepositoryを使用して、badges直接SELECT問題を回避します。
 pub fn get_user_segment_stats(
     conn: &Connection,
     channel_id: Option<i64>,
@@ -286,99 +199,49 @@ pub fn get_user_segment_stats(
     start_time: Option<&str>,
     end_time: Option<&str>,
 ) -> Result<Vec<UserSegmentStats>, duckdb::Error> {
-    let mut sql = String::from(
-        r#"
-        WITH all_messages AS (
-            SELECT 
-                cm.user_name,
-                cm.badges,
-                COUNT(*) as message_count
-            FROM chat_messages cm
-            LEFT JOIN streams s ON cm.stream_id = s.id
-            WHERE 1=1
-        "#,
-    );
+    // ChatMessageRepositoryを使用して安全にセグメント別統計を取得
+    let segment_stats = ChatMessageRepository::count_by_user_segment(
+        conn,
+        channel_id,
+        stream_id,
+        start_time,
+        end_time,
+    )?;
 
-    let mut params: Vec<String> = Vec::new();
-
-    if let Some(ch_id) = channel_id {
-        sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
-        params.push(ch_id.to_string());
-        params.push(ch_id.to_string());
-    }
-
-    if let Some(st_id) = stream_id {
-        sql.push_str(" AND cm.stream_id = ?");
-        params.push(st_id.to_string());
-    }
-
-    if let Some(start) = start_time {
-        sql.push_str(" AND cm.timestamp >= ?");
-        params.push(start.to_string());
-    }
-
-    if let Some(end) = end_time {
-        sql.push_str(" AND cm.timestamp <= ?");
-        params.push(end.to_string());
-    }
-
-    sql.push_str(
-        r#"
-            GROUP BY cm.user_name, cm.badges
-        ),
-        classified_messages AS (
-            SELECT 
-                message_count,
-                CASE 
-                    WHEN badges IS NULL THEN 'regular'
-                    WHEN list_contains(badges, 'broadcaster') THEN 'broadcaster'
-                    WHEN list_contains(badges, 'moderator') THEN 'moderator'
-                    WHEN list_contains(badges, 'vip') THEN 'vip'
-                    WHEN list_contains(badges, 'subscriber') THEN 'subscriber'
-                    ELSE 'regular'
-                END as segment
-            FROM all_messages
-        ),
-        segment_stats AS (
-            SELECT 
-                segment,
-                SUM(message_count) as total_messages,
-                COUNT(*) as user_count
-            FROM classified_messages
-            GROUP BY segment
-        ),
-        total_stats AS (
-            SELECT 
-                SUM(message_count) as grand_total
-            FROM classified_messages
-        )
-        SELECT 
-            ss.segment,
-            ss.total_messages,
-            ss.user_count,
-            ss.total_messages::FLOAT / ss.user_count::FLOAT as avg_messages_per_user,
-            (ss.total_messages::FLOAT / ts.grand_total::FLOAT) * 100.0 as percentage
-        FROM segment_stats ss
-        CROSS JOIN total_stats ts
-        ORDER BY ss.total_messages DESC
-        "#,
-    );
-
-    let mut stmt = conn.prepare(&sql)?;
-    let results = utils::query_map_with_params(&mut stmt, &params, |row| {
-        Ok(UserSegmentStats {
-            segment: row.get(0)?,
-            message_count: row.get(1)?,
-            user_count: row.get(2)?,
-            avg_messages_per_user: row.get(3)?,
-            percentage: row.get(4)?,
+    // パーセンテージと平均メッセージ数を計算
+    let total_messages: i64 = segment_stats.iter().map(|s| s.message_count).sum();
+    
+    let results: Vec<UserSegmentStats> = segment_stats
+        .into_iter()
+        .map(|s| {
+            let avg_messages_per_user = if s.user_count > 0 {
+                s.message_count as f64 / s.user_count as f64
+            } else {
+                0.0
+            };
+            
+            let percentage = if total_messages > 0 {
+                (s.message_count as f64 / total_messages as f64) * 100.0
+            } else {
+                0.0
+            };
+            
+            UserSegmentStats {
+                segment: s.segment,
+                message_count: s.message_count,
+                user_count: s.user_count,
+                avg_messages_per_user,
+                percentage,
+            }
         })
-    })?;
+        .collect();
 
-    results.collect::<Result<Vec<_>, _>>()
+    Ok(results)
 }
 
 /// 上位チャッターを取得
+/// 
+/// ChatMessageRepositoryを使用して上位チャッターを取得します。
 pub fn get_top_chatters(
     conn: &Connection,
     channel_id: Option<i64>,
@@ -387,119 +250,31 @@ pub fn get_top_chatters(
     end_time: Option<&str>,
     limit: i32,
 ) -> Result<Vec<TopChatter>, duckdb::Error> {
-    // N+1クエリを避けるため、バッジ取得をメインクエリに統合
-    let mut sql = format!(
-        r#"
-        WITH user_badges AS (
-            SELECT 
-                user_name,
-                {},
-                ROW_NUMBER() OVER (PARTITION BY user_name ORDER BY timestamp DESC) as rn
-            FROM chat_messages
-            WHERE badges IS NOT NULL
-        "#,
-        chat_query::badges_select("chat_messages")
-    );
+    let chatters = ChatMessageRepository::get_top_chatters(
+        conn,
+        channel_id,
+        stream_id,
+        start_time,
+        end_time,
+        limit,
+    )?;
 
-    let mut params: Vec<String> = Vec::new();
-
-    // CTEにも同じフィルタを適用
-    let mut cte_filters = Vec::new();
-
-    if let Some(ch_id) = channel_id {
-        cte_filters.push(" AND channel_id = ?");
-        params.push(ch_id.to_string());
-    }
-
-    if let Some(st_id) = stream_id {
-        cte_filters.push(" AND stream_id = ?");
-        params.push(st_id.to_string());
-    }
-
-    if let Some(start) = start_time {
-        cte_filters.push(" AND timestamp >= ?");
-        params.push(start.to_string());
-    }
-
-    if let Some(end) = end_time {
-        cte_filters.push(" AND timestamp <= ?");
-        params.push(end.to_string());
-    }
-
-    sql.push_str(&cte_filters.join(""));
-    sql.push_str(
-        r#"
-        )
-        SELECT 
-            cm.user_name,
-            COUNT(*) as message_count,
-            MIN(cm.timestamp)::VARCHAR as first_seen,
-            MAX(cm.timestamp)::VARCHAR as last_seen,
-            COUNT(DISTINCT cm.stream_id) as stream_count,
-            ub.badges
-        FROM chat_messages cm
-        LEFT JOIN streams s ON cm.stream_id = s.id
-        LEFT JOIN user_badges ub ON cm.user_name = ub.user_name AND ub.rn = 1
-        WHERE 1=1
-        "#,
-    );
-
-    // メインクエリのWHERE句（CTEとは別にパラメータを追加）
-    if let Some(ch_id) = channel_id {
-        sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
-        params.push(ch_id.to_string());
-        params.push(ch_id.to_string());
-    }
-
-    if let Some(st_id) = stream_id {
-        sql.push_str(" AND cm.stream_id = ?");
-        params.push(st_id.to_string());
-    }
-
-    if let Some(start) = start_time {
-        sql.push_str(" AND cm.timestamp >= ?");
-        params.push(start.to_string());
-    }
-
-    if let Some(end) = end_time {
-        sql.push_str(" AND cm.timestamp <= ?");
-        params.push(end.to_string());
-    }
-
-    sql.push_str(
-        r#"
-        GROUP BY cm.user_name, ub.badges
-        ORDER BY message_count DESC
-        LIMIT ?
-        "#,
-    );
-    params.push(limit.to_string());
-
-    let mut stmt = conn.prepare(&sql)?;
-    let results: Vec<TopChatter> = utils::query_map_with_params(&mut stmt, &params, |row| {
-        let badges_str: Option<String> = row.get(5).ok();
-        let badges = if let Some(b) = badges_str {
-            // DuckDBのARRAY型をパース
-            crate::database::utils::parse_badges(&b).unwrap_or_default()
-        } else {
-            Vec::new()
-        };
-
-        Ok(TopChatter {
-            user_name: row.get(0)?,
-            message_count: row.get(1)?,
-            badges,
-            first_seen: row.get(2)?,
-            last_seen: row.get(3)?,
-            stream_count: row.get(4)?,
+    // ChatterWithBadgesからTopChatterに変換
+    let results = chatters
+        .into_iter()
+        .map(|c| TopChatter {
+            user_name: c.user_name,
+            message_count: c.message_count,
+            badges: c.badges,
+            first_seen: c.first_seen,
+            last_seen: c.last_seen,
+            stream_count: c.stream_count,
         })
-    })?
-    .collect::<Result<Vec<_>, _>>()?;
+        .collect();
 
     Ok(results)
 }
 
-/// 時間パターン統計を取得（時間帯別）
 pub fn get_time_pattern_stats(
     conn: &Connection,
     channel_id: Option<i64>,
@@ -507,278 +282,48 @@ pub fn get_time_pattern_stats(
     end_time: Option<&str>,
     group_by_day: bool,
 ) -> Result<Vec<TimePatternStats>, duckdb::Error> {
-    let mut sql = String::from(
-        r#"
-        WITH hourly_messages AS (
-            SELECT 
-                EXTRACT(HOUR FROM cm.timestamp) as hour,
-        "#,
-    );
+    let results = ChatMessageRepository::get_time_pattern_stats(
+        conn,
+        channel_id,
+        start_time,
+        end_time,
+        group_by_day,
+    )?;
 
-    if group_by_day {
-        sql.push_str("EXTRACT(DOW FROM cm.timestamp) as day_of_week,");
-    }
-
-    sql.push_str(
-        r#"
-                time_bucket(INTERVAL '1 hour', cm.timestamp) as bucket,
-                COUNT(*) as message_count,
-                cm.stream_id
-            FROM chat_messages cm
-            LEFT JOIN streams s ON cm.stream_id = s.id
-            WHERE 1=1
-        "#,
-    );
-
-    let mut params: Vec<String> = Vec::new();
-
-    if let Some(ch_id) = channel_id {
-        sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
-        params.push(ch_id.to_string());
-        params.push(ch_id.to_string());
-    }
-
-    if let Some(start) = start_time {
-        sql.push_str(" AND cm.timestamp >= ?");
-        params.push(start.to_string());
-    }
-
-    if let Some(end) = end_time {
-        sql.push_str(" AND cm.timestamp <= ?");
-        params.push(end.to_string());
-    }
-
-    sql.push_str("GROUP BY hour");
-    if group_by_day {
-        sql.push_str(", day_of_week");
-    }
-    sql.push_str(", bucket, cm.stream_id");
-
-    sql.push_str(
-        r#"
-        ),
-        viewer_stats AS (
-            SELECT 
-                time_bucket(INTERVAL '1 hour', ss.collected_at) as bucket,
-                AVG(ss.viewer_count) as avg_viewers
-            FROM stream_stats ss
-            WHERE ss.viewer_count IS NOT NULL
-        "#,
-    );
-
-    if let Some(ch_id) = channel_id {
-        let channel_name = conn
-            .query_row(
-                "SELECT channel_id FROM channels WHERE id = ?",
-                [ch_id.to_string()],
-                |row| row.get::<_, String>(0),
-            )
-            .ok();
-        if let Some(ch_name) = channel_name {
-            sql.push_str(" AND ss.channel_name = ?");
-            params.push(ch_name);
-        }
-    }
-
-    if let Some(start) = start_time {
-        sql.push_str(" AND ss.collected_at >= ?");
-        params.push(start.to_string());
-    }
-
-    if let Some(end) = end_time {
-        sql.push_str(" AND ss.collected_at <= ?");
-        params.push(end.to_string());
-    }
-
-    sql.push_str("GROUP BY bucket");
-    sql.push_str(
-        r#"
-        ),
-        combined AS (
-            SELECT 
-                hm.hour,
-        "#,
-    );
-
-    if group_by_day {
-        sql.push_str("hm.day_of_week,");
-    }
-
-    sql.push_str(
-        r#"
-                hm.message_count,
-                COALESCE(vs.avg_viewers, 1) as avg_viewers
-            FROM hourly_messages hm
-            LEFT JOIN viewer_stats vs ON hm.bucket = vs.bucket
-        )
-        SELECT 
-            hour,
-        "#,
-    );
-
-    if group_by_day {
-        sql.push_str("day_of_week,");
-    }
-
-    sql.push_str(
-        r#"
-            AVG(message_count) as avg_chat_rate,
-            AVG(message_count / avg_viewers) * 100.0 as avg_engagement,
-            SUM(message_count) as total_messages
-        FROM combined
-        GROUP BY hour
-        "#,
-    );
-
-    if group_by_day {
-        sql.push_str(", day_of_week ORDER BY day_of_week, hour");
-    } else {
-        sql.push_str("ORDER BY hour");
-    }
-
-    let mut stmt = conn.prepare(&sql)?;
-    let results = utils::query_map_with_params(&mut stmt, &params, |row| {
-        let hour: i32 = row.get(0)?;
-        let mut col_idx = 1;
-
-        let day_of_week = if group_by_day {
-            let dow: i32 = row.get(col_idx)?;
-            col_idx += 1;
-            Some(dow)
-        } else {
-            None
-        };
-
-        Ok(TimePatternStats {
-            hour,
-            day_of_week,
-            avg_chat_rate: row.get(col_idx)?,
-            avg_engagement: row.get(col_idx + 1)?,
-            total_messages: row.get(col_idx + 2)?,
+    Ok(results
+        .into_iter()
+        .map(|(hour, day_of_week, avg_chat_rate, avg_engagement, total_messages)| {
+            TimePatternStats {
+                hour,
+                day_of_week,
+                avg_chat_rate,
+                avg_engagement,
+                total_messages,
+            }
         })
-    })?;
-
-    results.collect::<Result<Vec<_>, _>>()
+        .collect())
 }
 
-/// チャッター行動統計を取得（リピーター率など）
 pub fn get_chatter_behavior_stats(
     conn: &Connection,
     channel_id: Option<i64>,
     start_time: Option<&str>,
     end_time: Option<&str>,
 ) -> Result<ChatterBehaviorStats, duckdb::Error> {
-    let mut sql = String::from(
-        r#"
-        WITH chatter_streams AS (
-            SELECT 
-                cm.user_name,
-                COUNT(DISTINCT cm.stream_id) as stream_count,
-                COUNT(*) as message_count
-            FROM chat_messages cm
-            LEFT JOIN streams s ON cm.stream_id = s.id
-            WHERE cm.stream_id IS NOT NULL
-        "#,
-    );
+    let (total_unique, repeater, new_chatter, avg_participation) =
+        ChatMessageRepository::get_chatter_behavior_stats(conn, channel_id, start_time, end_time)?;
 
-    let mut params: Vec<String> = Vec::new();
+    let repeater_percentage = if total_unique > 0 {
+        (repeater as f64 / total_unique as f64) * 100.0
+    } else {
+        0.0
+    };
 
-    if let Some(ch_id) = channel_id {
-        sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
-        params.push(ch_id.to_string());
-        params.push(ch_id.to_string());
-    }
-
-    if let Some(start) = start_time {
-        sql.push_str(" AND cm.timestamp >= ?");
-        params.push(start.to_string());
-    }
-
-    if let Some(end) = end_time {
-        sql.push_str(" AND cm.timestamp <= ?");
-        params.push(end.to_string());
-    }
-
-    sql.push_str(
-        r#"
-            GROUP BY cm.user_name
-        ),
-        stream_viewers AS (
-            SELECT 
-                ss.stream_id,
-                MAX(ss.viewer_count) as peak_ccu
-            FROM stream_stats ss
-            WHERE ss.viewer_count IS NOT NULL
-        "#,
-    );
-
-    if let Some(ch_id) = channel_id {
-        let channel_name = conn
-            .query_row(
-                "SELECT channel_id FROM channels WHERE id = ?",
-                [ch_id.to_string()],
-                |row| row.get::<_, String>(0),
-            )
-            .ok();
-        if let Some(ch_name) = channel_name {
-            sql.push_str(" AND ss.channel_name = ?");
-            params.push(ch_name);
-        }
-    }
-
-    if let Some(start) = start_time {
-        sql.push_str(" AND ss.collected_at >= ?");
-        params.push(start.to_string());
-    }
-
-    if let Some(end) = end_time {
-        sql.push_str(" AND ss.collected_at <= ?");
-        params.push(end.to_string());
-    }
-
-    sql.push_str(
-        r#"
-            GROUP BY ss.stream_id
-        )
-        SELECT 
-            COUNT(DISTINCT cs.user_name) as total_unique_chatters,
-            SUM(CASE WHEN cs.stream_count > 1 THEN 1 ELSE 0 END) as repeater_count,
-            SUM(CASE WHEN cs.stream_count = 1 THEN 1 ELSE 0 END) as new_chatter_count,
-            AVG(CASE WHEN sv.peak_ccu > 0 THEN cs.message_count::FLOAT / sv.peak_ccu::FLOAT ELSE 0 END) * 100.0 as avg_participation_rate
-        FROM chatter_streams cs
-        CROSS JOIN (SELECT AVG(peak_ccu) as peak_ccu FROM stream_viewers) sv
-        "#,
-    );
-
-    let mut stmt = conn.prepare(&sql)?;
-    let mut rows = utils::query_map_with_params(&mut stmt, &params, |row| {
-        let total_unique: i64 = row.get(0)?;
-        let repeater: i64 = row.get(1)?;
-        let new_chatter: i64 = row.get(2)?;
-        let avg_participation: f64 = row.get(3)?;
-
-        let repeater_percentage = if total_unique > 0 {
-            (repeater as f64 / total_unique as f64) * 100.0
-        } else {
-            0.0
-        };
-
-        Ok(ChatterBehaviorStats {
-            total_unique_chatters: total_unique,
-            repeater_count: repeater,
-            new_chatter_count: new_chatter,
-            repeater_percentage,
-            avg_participation_rate: avg_participation,
-        })
-    })?;
-
-    rows.next().unwrap_or_else(|| {
-        Ok(ChatterBehaviorStats {
-            total_unique_chatters: 0,
-            repeater_count: 0,
-            new_chatter_count: 0,
-            repeater_percentage: 0.0,
-            avg_participation_rate: 0.0,
-        })
+    Ok(ChatterBehaviorStats {
+        total_unique_chatters: total_unique,
+        repeater_count: repeater,
+        new_chatter_count: new_chatter,
+        repeater_percentage,
+        avg_participation_rate: avg_participation,
     })
 }

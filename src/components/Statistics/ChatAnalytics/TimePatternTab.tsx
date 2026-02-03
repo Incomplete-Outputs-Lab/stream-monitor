@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
 import type { TimePatternStats } from '../../../types';
 import { BarChart } from '../../common/charts';
 import { LoadingSpinner } from '../../common/LoadingSpinner';
+import { getTimePatternStats } from '../../../api/statistics';
 
 interface TimePatternTabProps {
   channelId: number | null;
@@ -16,15 +16,12 @@ const TimePatternTab = ({ channelId, startTime, endTime }: TimePatternTabProps) 
 
   const { data: patternData, isLoading } = useQuery({
     queryKey: ['timePatternStats', channelId, startTime, endTime, groupByDay],
-    queryFn: async () => {
-      const result = await invoke<TimePatternStats[]>('get_time_pattern_stats', {
-        channelId,
-        startTime,
-        endTime,
-        groupByDay,
-      });
-      return result;
-    },
+    queryFn: () => getTimePatternStats({
+      channelId: channelId ?? undefined,
+      startTime,
+      endTime,
+      groupByDay,
+    }),
   });
 
   if (isLoading) {

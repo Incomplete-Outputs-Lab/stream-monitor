@@ -1,4 +1,7 @@
-use crate::database::utils;
+use crate::database::{
+    repositories::{AggregationRepository, StreamStatsRepository},
+    utils,
+};
 use duckdb::Connection;
 use serde::{Deserialize, Serialize};
 
@@ -56,7 +59,20 @@ pub struct DailyStats {
 }
 
 /// 配信者別統計を取得
+/// 
+/// AggregationRepositoryを使用して統計を計算します。
 pub fn get_broadcaster_analytics(
+    conn: &Connection,
+    channel_id: Option<i64>,
+    start_time: Option<&str>,
+    end_time: Option<&str>,
+) -> Result<Vec<BroadcasterAnalytics>, duckdb::Error> {
+    AggregationRepository::calculate_broadcaster_analytics(conn, channel_id, start_time, end_time)
+}
+
+/// 配信者別統計を取得（旧実装 - 使用しない）
+#[allow(dead_code)]
+fn get_broadcaster_analytics_old(
     conn: &Connection,
     channel_id: Option<i64>,
     start_time: Option<&str>,
@@ -297,7 +313,20 @@ pub fn get_broadcaster_analytics(
 }
 
 /// ゲームタイトル別統計を取得
+/// 
+/// AggregationRepositoryを使用して統計を計算します。
 pub fn get_game_analytics(
+    conn: &Connection,
+    category: Option<&str>,
+    start_time: Option<&str>,
+    end_time: Option<&str>,
+) -> Result<Vec<GameAnalytics>, duckdb::Error> {
+    AggregationRepository::calculate_game_analytics(conn, category, start_time, end_time)
+}
+
+/// ゲームタイトル別統計を取得（旧実装 - 使用しない）
+#[allow(dead_code)]
+fn get_game_analytics_old(
     conn: &Connection,
     category: Option<&str>,
     start_time: Option<&str>,
@@ -425,7 +454,19 @@ pub fn get_game_analytics(
 }
 
 /// カテゴリ一覧を取得（MinutesWatched降順）
+/// 
+/// AggregationRepositoryを使用してカテゴリを取得します。
 pub fn list_categories(
+    conn: &Connection,
+    start_time: Option<&str>,
+    end_time: Option<&str>,
+) -> Result<Vec<String>, duckdb::Error> {
+    AggregationRepository::list_categories(conn, start_time, end_time)
+}
+
+/// カテゴリ一覧を取得（旧実装 - 使用しない）
+#[allow(dead_code)]
+fn list_categories_old(
     conn: &Connection,
     start_time: Option<&str>,
     end_time: Option<&str>,
@@ -482,40 +523,11 @@ pub fn list_categories(
 }
 
 /// データ可用性情報を取得
+/// 
+/// StreamStatsRepositoryを使用してデータ可用性を取得します。
 pub fn get_data_availability(conn: &Connection) -> Result<DataAvailability, duckdb::Error> {
-    // パフォーマンス最適化: 別々のクエリに分割してインデックスを使用
-
-    // MIN(collected_at) - インデックスを使用
-    let first_record: String = conn
-        .query_row(
-            "SELECT MIN(collected_at)::VARCHAR FROM stream_stats WHERE collected_at IS NOT NULL",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or_else(|_| String::new());
-
-    // MAX(collected_at) - インデックスを使用
-    let last_record: String = conn
-        .query_row(
-            "SELECT MAX(collected_at)::VARCHAR FROM stream_stats WHERE collected_at IS NOT NULL",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or_else(|_| String::new());
-
-    // COUNT DISTINCT DATE - 集計が必要
-    let total_days_with_data: i64 = conn
-        .query_row(
-            "SELECT COUNT(DISTINCT DATE(collected_at)) FROM stream_stats WHERE collected_at IS NOT NULL",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(0);
-
-    // COUNT(*) - 全件カウント（これは避けられない）
-    let total_records: i64 = conn
-        .query_row("SELECT COUNT(*) FROM stream_stats", [], |row| row.get(0))
-        .unwrap_or(0);
+    let (first_record, last_record, total_days_with_data, total_records) =
+        StreamStatsRepository::get_data_availability(conn)?;
 
     Ok(DataAvailability {
         first_record,
@@ -526,7 +538,20 @@ pub fn get_data_availability(conn: &Connection) -> Result<DataAvailability, duck
 }
 
 /// ゲーム別日次統計を取得
+/// 
+/// StreamStatsRepositoryを使用して日次統計を取得します。
 pub fn get_game_daily_stats(
+    conn: &Connection,
+    category: &str,
+    start_time: &str,
+    end_time: &str,
+) -> Result<Vec<DailyStats>, duckdb::Error> {
+    StreamStatsRepository::get_game_daily_stats(conn, category, start_time, end_time)
+}
+
+/// ゲーム別日次統計を取得（旧実装 - 使用しない）
+#[allow(dead_code)]
+fn get_game_daily_stats_old(
     conn: &Connection,
     category: &str,
     start_time: &str,
@@ -601,7 +626,20 @@ pub fn get_game_daily_stats(
 }
 
 /// チャンネル別日次統計を取得
+/// 
+/// StreamStatsRepositoryを使用して日次統計を取得します。
 pub fn get_channel_daily_stats(
+    conn: &Connection,
+    channel_id: i64,
+    start_time: &str,
+    end_time: &str,
+) -> Result<Vec<DailyStats>, duckdb::Error> {
+    StreamStatsRepository::get_channel_daily_stats(conn, channel_id, start_time, end_time)
+}
+
+/// チャンネル別日次統計を取得（旧実装 - 使用しない）
+#[allow(dead_code)]
+fn get_channel_daily_stats_old(
     conn: &Connection,
     channel_id: i64,
     start_time: &str,

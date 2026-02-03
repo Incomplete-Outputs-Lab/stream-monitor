@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
 import type { ChatEngagementStats, ChatSpike } from '../../../types';
 import { LineChart } from '../../common/charts';
 import { LoadingSpinner } from '../../common/LoadingSpinner';
+import { getChatEngagementTimeline, detectChatSpikes } from '../../../api/statistics';
 
 interface EngagementTabProps {
   channelId: number | null;
@@ -14,31 +14,23 @@ const EngagementTab = ({ channelId, startTime, endTime }: EngagementTabProps) =>
   // エンゲージメントタイムライン取得
   const { data: timelineData, isLoading: timelineLoading } = useQuery({
     queryKey: ['chatEngagementTimeline', channelId, startTime, endTime],
-    queryFn: async () => {
-      const result = await invoke<ChatEngagementStats[]>('get_chat_engagement_timeline', {
-        channelId,
-        streamId: null,
-        startTime,
-        endTime,
-        intervalMinutes: 5,
-      });
-      return result;
-    },
+    queryFn: () => getChatEngagementTimeline({
+      channelId: channelId ?? undefined,
+      startTime,
+      endTime,
+      intervalMinutes: 5,
+    }),
   });
 
   // チャットスパイク検出
   const { data: spikesData, isLoading: spikesLoading } = useQuery({
     queryKey: ['chatSpikes', channelId, startTime, endTime],
-    queryFn: async () => {
-      const result = await invoke<ChatSpike[]>('detect_chat_spikes', {
-        channelId,
-        streamId: null,
-        startTime,
-        endTime,
-        minSpikeRatio: 2.0,
-      });
-      return result;
-    },
+    queryFn: () => detectChatSpikes({
+      channelId: channelId ?? undefined,
+      startTime,
+      endTime,
+      minSpikeRatio: 2.0,
+    }),
   });
 
   if (timelineLoading) {

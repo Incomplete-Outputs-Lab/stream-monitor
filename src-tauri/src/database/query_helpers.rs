@@ -54,6 +54,63 @@ pub mod chat_query {
     }
 }
 
+/// stream_stats テーブル用のクエリヘルパー
+/// 
+/// DuckDBのTIMESTAMP型を安全に扱うためのSQLフラグメントを生成します。
+pub mod stream_stats_query {
+    /// collected_atカラムのSELECT句（常にVARCHARにキャスト）
+    /// 
+    /// # Examples
+    /// ```
+    /// let sql = format!("SELECT {}", stream_stats_query::collected_at_select("ss"));
+    /// // 生成されるSQL: "SELECT CAST(ss.collected_at AS VARCHAR) as collected_at"
+    /// ```
+    pub fn collected_at_select(table_alias: &str) -> String {
+        format!("CAST({}.collected_at AS VARCHAR) as collected_at", table_alias)
+    }
+    
+    /// インターバル計算のSQLフラグメント（LEAD関数使用）
+    /// 
+    /// 次のレコードとの時間差を分単位で計算します。
+    /// 
+    /// # Arguments
+    /// * `table_alias` - テーブルエイリアス（例: "ss"）
+    /// * `partition_by` - PARTITION BY句の内容（例: "stream_id"）
+    /// 
+    /// # Examples
+    /// ```
+    /// let sql = format!("SELECT {}", 
+    ///     stream_stats_query::interval_calculation("ss", "ss.stream_id"));
+    /// ```
+    pub fn interval_calculation(table_alias: &str, partition_by: &str) -> String {
+        format!(
+            "EXTRACT(EPOCH FROM (\
+                LEAD({}.collected_at) OVER (PARTITION BY {} ORDER BY {}.collected_at) \
+                - {}.collected_at\
+            )) / 60.0 AS interval_minutes",
+            table_alias, partition_by, table_alias, table_alias
+        )
+    }
+    
+    /// 標準的なインターバル計算（stream_idでパーティション、NULL時の代替パーティション付き）
+    /// 
+    /// stream_idがNULLの場合、channel_name + dateでパーティション分割します。
+    pub fn interval_with_fallback(table_alias: &str) -> String {
+        format!(
+            "EXTRACT(EPOCH FROM (\
+                LEAD({}.collected_at) OVER (\
+                    PARTITION BY COALESCE(\
+                        CAST({}.stream_id AS VARCHAR), \
+                        {}.channel_name || '_' || CAST(DATE({}.collected_at) AS VARCHAR)\
+                    ) \
+                    ORDER BY {}.collected_at\
+                ) - {}.collected_at\
+            )) / 60.0 AS interval_minutes",
+            table_alias, table_alias, table_alias, table_alias, table_alias, table_alias
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -76,5 +133,19 @@ mod tests {
         assert!(sql.contains("cm.id"));
         assert!(sql.contains("CAST(cm.badges AS VARCHAR) as badges"));
         assert!(sql.contains("CAST(cm.timestamp AS VARCHAR) as timestamp"));
+    }
+    
+    #[test]
+    fn test_collected_at_select() {
+        let sql = stream_stats_query::collected_at_select("ss");
+        assert_eq!(sql, "CAST(ss.collected_at AS VARCHAR) as collected_at");
+    }
+    
+    #[test]
+    fn test_interval_calculation() {
+        let sql = stream_stats_query::interval_calculation("ss", "ss.stream_id");
+        assert!(sql.contains("LEAD(ss.collected_at)"));
+        assert!(sql.contains("PARTITION BY ss.stream_id"));
+        assert!(sql.contains("interval_minutes"));
     }
 }

@@ -1,8 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
 import { DailyStats, BroadcasterAnalytics, DataAvailability } from '../../types';
 import { DualAxisChart, PieChart, BubbleChart } from '../common/charts';
 import { DataAvailabilityBanner } from './DataAvailabilityBanner';
+import { 
+  getBroadcasterAnalytics, 
+  getGameDailyStats, 
+  getDataAvailability 
+} from '../../api/statistics';
 
 interface GameDetailAnalyticsProps {
   category: string;
@@ -22,21 +26,17 @@ export default function GameDetailAnalytics({
   // データ可用性情報を取得
   const { data: availability } = useQuery({
     queryKey: ['data-availability'],
-    queryFn: async () => {
-      return await invoke<DataAvailability>('get_data_availability');
-    },
+    queryFn: getDataAvailability,
   });
 
   // 日次統計を取得
   const { data: dailyStats } = useQuery({
     queryKey: ['game-daily-stats', category, startTime, endTime],
-    queryFn: async () => {
-      return await invoke<DailyStats[]>('get_game_daily_stats', {
-        category,
-        startTime: startTime || '',
-        endTime: endTime || '',
-      });
-    },
+    queryFn: () => getGameDailyStats({
+      category,
+      startTime: startTime || '',
+      endTime: endTime || '',
+    }),
     enabled: !!startTime && !!endTime,
   });
 
@@ -45,7 +45,7 @@ export default function GameDetailAnalytics({
     queryKey: ['game-channel-analytics', category, startTime, endTime],
     queryFn: async () => {
       // カテゴリでフィルタした配信者統計を取得
-      const result = await invoke<BroadcasterAnalytics[]>('get_broadcaster_analytics', {
+      const result = await getBroadcasterAnalytics({
         channelId: undefined,
         startTime,
         endTime,

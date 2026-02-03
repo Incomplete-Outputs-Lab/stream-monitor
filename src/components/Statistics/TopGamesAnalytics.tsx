@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query';
-import { GameAnalytics, DataAvailability } from '../../types';
 import { HorizontalBarChart, PieChart, BubbleChart } from '../common/charts';
 import { DataAvailabilityBanner } from './DataAvailabilityBanner';
 import { getGameAnalytics, getDataAvailability } from '../../api/statistics';

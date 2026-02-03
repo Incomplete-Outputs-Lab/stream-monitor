@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query';
-import { BroadcasterAnalytics, DataAvailability } from '../../types';
 import { HorizontalBarChart } from '../common/charts';
 import { DataAvailabilityBanner } from './DataAvailabilityBanner';
 import { getBroadcasterAnalytics, getDataAvailability } from '../../api/statistics';

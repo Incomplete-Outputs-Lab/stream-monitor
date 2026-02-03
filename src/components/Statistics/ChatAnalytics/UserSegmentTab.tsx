@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query';
-import type { UserSegmentStats } from '../../../types';
 import { PieChart, BarChart } from '../../common/charts';
 import { LoadingSpinner } from '../../common/LoadingSpinner';
 import { getUserSegmentStats } from '../../../api/statistics';

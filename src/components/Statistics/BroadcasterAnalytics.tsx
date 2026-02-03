@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { BroadcasterAnalytics as BroadcasterAnalyticsType, Channel } from '../../types';
 import { BarChart } from '../common/charts/BarChart';
 import { Tooltip } from '../common/Tooltip';
 import { useSortableData } from '../../hooks/useSortableData';
 import { SortableTableHeader } from '../common/SortableTableHeader';
 import { getBroadcasterAnalytics } from '../../api/statistics';
+import { useChannelStore } from '../../stores/channelStore';
 
 interface BroadcasterAnalyticsProps {
   startTime?: string;
@@ -18,14 +18,12 @@ export default function BroadcasterAnalytics({
   endTime,
 }: BroadcasterAnalyticsProps) {
   const [selectedChannelId, setSelectedChannelId] = useState<number | null>(null);
+  const { channels, fetchChannels } = useChannelStore();
 
   // チャンネル一覧取得
-  const { data: channels } = useQuery({
-    queryKey: ["channels"],
-    queryFn: async () => {
-      return await invoke<Channel[]>("list_channels");
-    },
-  });
+  useEffect(() => {
+    fetchChannels();
+  }, [fetchChannels]);
   const { data: analytics, isLoading, error } = useQuery({
     queryKey: ['broadcaster-analytics', selectedChannelId, startTime, endTime],
     queryFn: () => getBroadcasterAnalytics({

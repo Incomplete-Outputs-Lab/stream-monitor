@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { TimePatternStats } from '../../../types';
 import { BarChart } from '../../common/charts';
 import { LoadingSpinner } from '../../common/LoadingSpinner';
 import { getTimePatternStats } from '../../../api/statistics';

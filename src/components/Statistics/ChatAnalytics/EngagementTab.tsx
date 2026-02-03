@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query';
-import type { ChatEngagementStats, ChatSpike } from '../../../types';
 import { LineChart } from '../../common/charts';
 import { LoadingSpinner } from '../../common/LoadingSpinner';
 import { getChatEngagementTimeline, detectChatSpikes } from '../../../api/statistics';

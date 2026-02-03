@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query';
-import type { TopChatter, ChatterBehaviorStats } from '../../../types';
 import { BarChart } from '../../common/charts';
 import { LoadingSpinner } from '../../common/LoadingSpinner';
 import { getTopChatters, getChatterBehaviorStats } from '../../../api/statistics';

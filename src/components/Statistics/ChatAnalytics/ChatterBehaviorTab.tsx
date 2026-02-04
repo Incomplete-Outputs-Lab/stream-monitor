@@ -42,6 +42,7 @@ const ChatterBehaviorTab = ({ channelId, startTime, endTime }: ChatterBehaviorTa
       endTime,
       limit: 50,
     }),
+    enabled: !!channelId,
   });
 
   // Behavior Stats
@@ -52,6 +53,7 @@ const ChatterBehaviorTab = ({ channelId, startTime, endTime }: ChatterBehaviorTa
       startTime,
       endTime,
     }),
+    enabled: !!channelId,
   });
 
   if (chattersLoading || behaviorLoading) {

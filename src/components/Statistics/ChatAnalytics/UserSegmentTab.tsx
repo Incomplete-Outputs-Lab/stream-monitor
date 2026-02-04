@@ -40,6 +40,7 @@ const UserSegmentTab = ({ channelId, startTime, endTime }: UserSegmentTabProps) 
       startTime,
       endTime,
     }),
+    enabled: !!channelId,
   });
 
   if (isLoading) {

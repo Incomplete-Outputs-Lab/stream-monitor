@@ -42,6 +42,7 @@ const CorrelationTab = ({ channelId, startTime, endTime }: CorrelationTabProps) 
       startTime,
       endTime,
     }),
+    enabled: !!channelId,
   });
 
   if (isLoading) {

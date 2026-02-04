@@ -44,6 +44,7 @@ const WordAnalysisTab = ({ channelId, startTime, endTime }: WordAnalysisTabProps
       endTime,
       limit: 50,
     }),
+    enabled: !!channelId,
   });
 
   // Emote Analysis Query
@@ -55,6 +56,7 @@ const WordAnalysisTab = ({ channelId, startTime, endTime }: WordAnalysisTabProps
       startTime,
       endTime,
     }),
+    enabled: !!channelId,
   });
 
   // Message Length Stats Query
@@ -66,6 +68,7 @@ const WordAnalysisTab = ({ channelId, startTime, endTime }: WordAnalysisTabProps
       startTime,
       endTime,
     }),
+    enabled: !!channelId,
   });
 
   if (wordLoading || emoteLoading || lengthLoading) {

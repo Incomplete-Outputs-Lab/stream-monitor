@@ -42,6 +42,7 @@ const AnomalyDetectionTab = ({ channelId, startTime, endTime }: AnomalyDetection
       endTime,
       zThreshold: 2.5,
     }),
+    enabled: !!channelId,
   });
 
   if (isLoading) {

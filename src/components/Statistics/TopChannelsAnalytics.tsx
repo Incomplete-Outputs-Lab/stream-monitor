@@ -32,6 +32,12 @@ export default function TopChannelsAnalytics({
     }),
   });
 
+  // ソート機能を追加（hooksは常に同じ順序で呼ぶ必要がある）
+  const { sortedItems, sortConfig, requestSort } = useSortableData(channelAnalytics || [], {
+    key: 'minutes_watched',
+    direction: 'desc',
+  });
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center p-8">
@@ -67,12 +73,6 @@ export default function TopChannelsAnalytics({
   const formatDecimal = (num: number): string => {
     return num.toFixed(2);
   };
-
-  // ソート機能を追加
-  const { sortedItems, sortConfig, requestSort } = useSortableData(channelAnalytics, {
-    key: 'minutes_watched',
-    direction: 'desc',
-  });
 
   // Top 30 for ranking
   const top30Channels = sortedItems.slice(0, 30);

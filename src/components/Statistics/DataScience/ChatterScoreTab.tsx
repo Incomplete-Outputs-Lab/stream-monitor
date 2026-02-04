@@ -42,6 +42,7 @@ const ChatterScoreTab = ({ channelId, startTime, endTime }: ChatterScoreTabProps
       endTime,
       limit: 50,
     }),
+    enabled: !!channelId,
   });
 
   if (isLoading) {

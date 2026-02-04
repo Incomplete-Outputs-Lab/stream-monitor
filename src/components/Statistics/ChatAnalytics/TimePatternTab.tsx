@@ -44,6 +44,7 @@ const TimePatternTab = ({ channelId, startTime, endTime }: TimePatternTabProps) 
       endTime,
       groupByDay,
     }),
+    enabled: !!channelId,
   });
 
   if (isLoading) {

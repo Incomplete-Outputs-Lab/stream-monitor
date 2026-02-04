@@ -7,6 +7,7 @@ import type { Channel, ExportQuery } from '../../types';
 
 export function Export() {
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [isLoadingChannels, setIsLoadingChannels] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [previewData, setPreviewData] = useState<string>('');
@@ -25,11 +26,14 @@ export function Export() {
   useEffect(() => {
     const fetchChannels = async () => {
       try {
+        setIsLoadingChannels(true);
         const result = await invoke<Channel[]>('list_channels');
         setChannels(result);
       } catch (error) {
         console.error('Failed to fetch channels:', error);
         setMessage({ type: 'error', text: 'チャンネルの取得に失敗しました' });
+      } finally {
+        setIsLoadingChannels(false);
       }
     };
 
@@ -223,6 +227,7 @@ export function Export() {
           config={config}
           onConfigChange={setConfig}
           channels={channels}
+          isLoadingChannels={isLoadingChannels}
         />
 
         {/* Preview Section */}

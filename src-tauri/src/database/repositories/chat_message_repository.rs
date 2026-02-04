@@ -73,14 +73,11 @@ impl ChatMessageRepository {
         let mut params: Vec<String> = Vec::new();
 
         if let Some(ch_id) = channel_id {
-            sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
-            params.push(ch_id.to_string());
-            params.push(ch_id.to_string());
+            sql.push_str(&format!(" AND (cm.channel_id = {} OR s.channel_id = {})", ch_id, ch_id));
         }
 
         if let Some(st_id) = stream_id {
-            sql.push_str(" AND cm.stream_id = ?");
-            params.push(st_id.to_string());
+            sql.push_str(&format!(" AND cm.stream_id = {}", st_id));
         }
 
         if let Some(start) = start_time {
@@ -134,14 +131,11 @@ impl ChatMessageRepository {
         let mut params: Vec<String> = Vec::new();
 
         if let Some(ch_id) = channel_id {
-            sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
-            params.push(ch_id.to_string());
-            params.push(ch_id.to_string());
+            sql.push_str(&format!(" AND (cm.channel_id = {} OR s.channel_id = {})", ch_id, ch_id));
         }
 
         if let Some(st_id) = stream_id {
-            sql.push_str(" AND cm.stream_id = ?");
-            params.push(st_id.to_string());
+            sql.push_str(&format!(" AND cm.stream_id = {}", st_id));
         }
 
         if let Some(start) = start_time {
@@ -221,29 +215,23 @@ impl ChatMessageRepository {
         let mut params: Vec<String> = Vec::new();
 
         // CTEにも同じフィルタを適用
-        let mut cte_filters = Vec::new();
-
         if let Some(ch_id) = channel_id {
-            cte_filters.push(" AND channel_id = ?");
-            params.push(ch_id.to_string());
+            sql.push_str(&format!(" AND channel_id = {}", ch_id));
         }
 
         if let Some(st_id) = stream_id {
-            cte_filters.push(" AND stream_id = ?");
-            params.push(st_id.to_string());
+            sql.push_str(&format!(" AND stream_id = {}", st_id));
         }
 
         if let Some(start) = start_time {
-            cte_filters.push(" AND timestamp >= ?");
+            sql.push_str(" AND timestamp >= ?");
             params.push(start.to_string());
         }
 
         if let Some(end) = end_time {
-            cte_filters.push(" AND timestamp <= ?");
+            sql.push_str(" AND timestamp <= ?");
             params.push(end.to_string());
         }
-
-        sql.push_str(&cte_filters.join(""));
         sql.push_str(
             r#"
             )
@@ -263,14 +251,11 @@ impl ChatMessageRepository {
 
         // メインクエリのWHERE句
         if let Some(ch_id) = channel_id {
-            sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
-            params.push(ch_id.to_string());
-            params.push(ch_id.to_string());
+            sql.push_str(&format!(" AND (cm.channel_id = {} OR s.channel_id = {})", ch_id, ch_id));
         }
 
         if let Some(st_id) = stream_id {
-            sql.push_str(" AND cm.stream_id = ?");
-            params.push(st_id.to_string());
+            sql.push_str(&format!(" AND cm.stream_id = {}", st_id));
         }
 
         if let Some(start) = start_time {
@@ -335,8 +320,7 @@ impl ChatMessageRepository {
         let mut params = vec![user_name.to_string()];
 
         if let Some(ch_id) = channel_id {
-            sql.push_str(" AND cm.channel_id = ?");
-            params.push(ch_id.to_string());
+            sql.push_str(&format!(" AND cm.channel_id = {}", ch_id));
         }
 
         sql.push_str(" ORDER BY cm.timestamp DESC LIMIT 1");
@@ -375,14 +359,11 @@ impl ChatMessageRepository {
         let mut params: Vec<String> = Vec::new();
 
         if let Some(ch_id) = channel_id {
-            sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
-            params.push(ch_id.to_string());
-            params.push(ch_id.to_string());
+            sql.push_str(&format!(" AND (cm.channel_id = {} OR s.channel_id = {})", ch_id, ch_id));
         }
 
         if let Some(st_id) = stream_id {
-            sql.push_str(" AND cm.stream_id = ?");
-            params.push(st_id.to_string());
+            sql.push_str(&format!(" AND cm.stream_id = {}", st_id));
         }
 
         if let Some(start) = start_time {
@@ -434,9 +415,7 @@ impl ChatMessageRepository {
         let mut params: Vec<String> = Vec::new();
 
         if let Some(ch_id) = channel_id {
-            sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
-            params.push(ch_id.to_string());
-            params.push(ch_id.to_string());
+            sql.push_str(&format!(" AND (cm.channel_id = {} OR s.channel_id = {})", ch_id, ch_id));
         }
 
         if let Some(start) = start_time {
@@ -584,9 +563,7 @@ impl ChatMessageRepository {
         let mut params: Vec<String> = Vec::new();
 
         if let Some(ch_id) = channel_id {
-            sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
-            params.push(ch_id.to_string());
-            params.push(ch_id.to_string());
+            sql.push_str(&format!(" AND (cm.channel_id = {} OR s.channel_id = {})", ch_id, ch_id));
         }
 
         if let Some(start) = start_time {

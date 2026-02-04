@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import type { Channel } from '../../../types';
-import { DateRangePicker } from '../DateRangePicker';
 import WordAnalysisTab from './WordAnalysisTab';
 import CorrelationTab from './CorrelationTab';
 import CategoryImpactTab from './CategoryImpactTab';
@@ -9,24 +8,16 @@ import AnomalyDetectionTab from './AnomalyDetectionTab';
 
 interface DataScienceProps {
   channels: Channel[];
+  parentChannelId: number | null;
+  parentDateRange: { start: string; end: string };
 }
 
-const DataScience = ({ channels }: DataScienceProps) => {
+const DataScience = ({ channels, parentChannelId, parentDateRange }: DataScienceProps) => {
   const [selectedTab, setSelectedTab] = useState<'word' | 'correlation' | 'category' | 'score' | 'anomaly'>('word');
-  const [selectedChannelId, setSelectedChannelId] = useState<number | null>(null);
-  const [dateRange, setDateRange] = useState<{ start: string; end: string }>(() => {
-    const end = new Date();
-    const start = new Date();
-    start.setDate(start.getDate() - 7);
-    return {
-      start: start.toISOString().split('T')[0],
-      end: end.toISOString().split('T')[0],
-    };
-  });
 
-  const handleDateRangeChange = (start: string, end: string) => {
-    setDateRange({ start, end });
-  };
+  // 親コンポーネントのフィルタを使用
+  const selectedChannelId = parentChannelId;
+  const dateRange = parentDateRange;
 
   const tabs = [
     { id: 'word' as const, label: 'ワード分析' },
@@ -44,40 +35,6 @@ const DataScience = ({ channels }: DataScienceProps) => {
         <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
           高度な統計分析と機械学習的アプローチでデータから洞察を得ます
         </p>
-      </div>
-
-      {/* Filters */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow space-y-4">
-        {/* Channel Filter */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            チャンネル
-          </label>
-          <select
-            value={selectedChannelId || ''}
-            onChange={(e) => setSelectedChannelId(e.target.value ? Number(e.target.value) : null)}
-            className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white"
-          >
-            <option value="">全てのチャンネル</option>
-            {channels.map((ch) => (
-              <option key={ch.id} value={ch.id}>
-                {ch.channel_name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Date Range */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            期間
-          </label>
-          <DateRangePicker
-            startDate={dateRange.start}
-            endDate={dateRange.end}
-            onChange={handleDateRangeChange}
-          />
-        </div>
       </div>
 
       {/* Tabs */}

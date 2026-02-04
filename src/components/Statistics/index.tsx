@@ -91,15 +91,35 @@ export function Statistics() {
       </div>
 
       {/* フィルタエリア */}
-      <div className="card p-4">
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          期間
-        </label>
-        <DateRangePicker
-          startDate={dateRange.start}
-          endDate={dateRange.end}
-          onChange={handleDateRangeChange}
-        />
+      <div className="card p-4 space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            チャンネル
+          </label>
+          <select
+            value={selectedChannelId || ''}
+            onChange={(e) => setSelectedChannelId(e.target.value ? Number(e.target.value) : null)}
+            className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white"
+          >
+            <option value="">全てのチャンネル</option>
+            {channels?.map((ch) => (
+              <option key={ch.id} value={ch.id}>
+                {ch.display_name || ch.channel_name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            期間
+          </label>
+          <DateRangePicker
+            startDate={dateRange.start}
+            endDate={dateRange.end}
+            onChange={handleDateRangeChange}
+          />
+        </div>
       </div>
 
       {/* タブナビゲーション */}
@@ -257,11 +277,19 @@ export function Statistics() {
           )}
 
           {activeTab === "chatAnalytics" && (
-            <ChatAnalytics channels={channels || []} />
+            <ChatAnalytics
+              channels={channels || []}
+              parentChannelId={selectedChannelId}
+              parentDateRange={dateRange}
+            />
           )}
 
           {activeTab === "dataScience" && (
-            <DataScience channels={channels || []} />
+            <DataScience
+              channels={channels || []}
+              parentChannelId={selectedChannelId}
+              parentDateRange={dateRange}
+            />
           )}
         </div>
       </div>

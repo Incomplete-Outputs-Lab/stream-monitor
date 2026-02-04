@@ -52,16 +52,14 @@ impl QueryFilter for TimeRangeFilter {
 impl QueryFilter for ChannelFilter {
     fn to_where_clause(&self, table_alias: &str) -> (String, Vec<String>) {
         let mut clauses = Vec::new();
-        let mut params = Vec::new();
+        let params = Vec::new();
 
         if let Some(ch_id) = self.channel_id {
-            clauses.push(format!("{}.channel_id = ?", table_alias));
-            params.push(ch_id.to_string());
+            clauses.push(format!("{}.channel_id = {}", table_alias, ch_id));
         }
 
         if let Some(st_id) = self.stream_id {
-            clauses.push(format!("{}.stream_id = ?", table_alias));
-            params.push(st_id.to_string());
+            clauses.push(format!("{}.stream_id = {}", table_alias, st_id));
         }
 
         if clauses.is_empty() {

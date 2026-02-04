@@ -375,14 +375,11 @@ pub fn get_word_frequency_analysis(
     let mut params: Vec<String> = Vec::new();
 
     if let Some(ch_id) = channel_id {
-        sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
-        params.push(ch_id.to_string());
-        params.push(ch_id.to_string());
+        sql.push_str(&format!(" AND (cm.channel_id = {} OR s.channel_id = {})", ch_id, ch_id));
     }
 
     if let Some(st_id) = stream_id {
-        sql.push_str(" AND cm.stream_id = ?");
-        params.push(st_id.to_string());
+        sql.push_str(&format!(" AND cm.stream_id = {}", st_id));
     }
 
     if let Some(start) = start_time {
@@ -487,14 +484,11 @@ pub fn get_emote_analysis(
     let mut params: Vec<String> = Vec::new();
 
     if let Some(ch_id) = channel_id {
-        sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
-        params.push(ch_id.to_string());
-        params.push(ch_id.to_string());
+        sql.push_str(&format!(" AND (cm.channel_id = {} OR s.channel_id = {})", ch_id, ch_id));
     }
 
     if let Some(st_id) = stream_id {
-        sql.push_str(" AND cm.stream_id = ?");
-        params.push(st_id.to_string());
+        sql.push_str(&format!(" AND cm.stream_id = {}", st_id));
     }
 
     if let Some(start) = start_time {
@@ -627,14 +621,11 @@ pub fn get_message_length_stats(
     let mut params: Vec<String> = Vec::new();
 
     if let Some(ch_id) = channel_id {
-        sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
-        params.push(ch_id.to_string());
-        params.push(ch_id.to_string());
+        sql.push_str(&format!(" AND (cm.channel_id = {} OR s.channel_id = {})", ch_id, ch_id));
     }
 
     if let Some(st_id) = stream_id {
-        sql.push_str(" AND cm.stream_id = ?");
-        params.push(st_id.to_string());
+        sql.push_str(&format!(" AND cm.stream_id = {}", st_id));
     }
 
     if let Some(start) = start_time {
@@ -836,14 +827,11 @@ pub fn get_viewer_chat_correlation(
     );
 
     if let Some(ch_id) = channel_id {
-        sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
-        params.push(ch_id.to_string());
-        params.push(ch_id.to_string());
+        sql.push_str(&format!(" AND (cm.channel_id = {} OR s.channel_id = {})", ch_id, ch_id));
     }
 
     if let Some(st_id) = stream_id {
-        sql.push_str(" AND cm.stream_id = ?");
-        params.push(st_id.to_string());
+        sql.push_str(&format!(" AND cm.stream_id = {}", st_id));
     }
 
     if let Some(start) = start_time {
@@ -1023,14 +1011,11 @@ fn calculate_hourly_correlation(
     );
 
     if let Some(ch_id) = channel_id {
-        sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
-        params.push(ch_id.to_string());
-        params.push(ch_id.to_string());
+        sql.push_str(&format!(" AND (cm.channel_id = {} OR s.channel_id = {})", ch_id, ch_id));
     }
 
     if let Some(st_id) = stream_id {
-        sql.push_str(" AND cm.stream_id = ?");
-        params.push(st_id.to_string());
+        sql.push_str(&format!(" AND cm.stream_id = {}", st_id));
     }
 
     if let Some(start) = start_time {
@@ -1287,14 +1272,11 @@ pub fn get_chatter_activity_scores(
     let mut params: Vec<String> = Vec::new();
 
     if let Some(ch_id) = channel_id {
-        sql.push_str(" AND (cm.channel_id = ? OR s.channel_id = ?)");
-        params.push(ch_id.to_string());
-        params.push(ch_id.to_string());
+        sql.push_str(&format!(" AND (cm.channel_id = {} OR s.channel_id = {})", ch_id, ch_id));
     }
 
     if let Some(st_id) = stream_id {
-        sql.push_str(" AND cm.stream_id = ?");
-        params.push(st_id.to_string());
+        sql.push_str(&format!(" AND cm.stream_id = {}", st_id));
     }
 
     if let Some(start) = start_time {

@@ -231,8 +231,7 @@ fn get_broadcaster_analytics_old(
     let mut chatters_params: Vec<String> = Vec::new();
 
     if let Some(ch_id) = channel_id {
-        chatters_sql.push_str(" AND c.id = ?");
-        chatters_params.push(ch_id.to_string());
+        chatters_sql.push_str(&format!(" AND c.id = {}", ch_id));
     }
 
     if let Some(start) = start_time {

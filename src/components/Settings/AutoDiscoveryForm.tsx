@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import type { AutoDiscoverySettings, TwitchGame, SelectedGame } from '../../types';
+import * as discoveryApi from '../../api/discovery';
 
 export function AutoDiscoveryForm() {
   const [settings, setSettings] = useState<AutoDiscoverySettings>({
@@ -32,18 +32,14 @@ export function AutoDiscoveryForm() {
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const result = await invoke<AutoDiscoverySettings | null>(
-          'get_auto_discovery_settings'
-        );
+        const result = await discoveryApi.getAutoDiscoverySettings();
         if (result) {
           setSettings(result);
-          
+
           // 既存のgame_idsからゲーム名を取得
           if (result.filters.game_ids.length > 0) {
             try {
-              const games = await invoke<TwitchGame[]>('get_games_by_ids', {
-                gameIds: result.filters.game_ids,
-              });
+              const games = await discoveryApi.getGamesByIds(result.filters.game_ids);
               setSelectedGames(games.map(g => ({ id: g.id, name: g.name })));
             } catch (err) {
               console.error('Failed to load game names:', err);
@@ -87,9 +83,7 @@ export function AutoDiscoveryForm() {
     setIsSearching(true);
     searchTimeoutRef.current = window.setTimeout(async () => {
       try {
-        const results = await invoke<TwitchGame[]>('search_twitch_games', {
-          query: gameSearchQuery,
-        });
+        const results = await discoveryApi.searchTwitchGames(gameSearchQuery);
         setGameSearchResults(results);
         setShowDropdown(results.length > 0);
       } catch (err) {
@@ -114,7 +108,7 @@ export function AutoDiscoveryForm() {
     setSuccess(null);
 
     try {
-      await invoke('save_auto_discovery_settings', { settings });
+      await discoveryApi.saveAutoDiscoverySettings(settings);
       setSuccess('保存しました');
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
@@ -130,7 +124,7 @@ export function AutoDiscoveryForm() {
     setSuccess(null);
 
     try {
-      const newEnabled = await invoke<boolean>('toggle_auto_discovery');
+      const newEnabled = await discoveryApi.toggleAutoDiscovery();
       setSettings((prev) => ({ ...prev, enabled: newEnabled }));
       setSuccess(newEnabled ? '有効化しました' : '無効化しました');
       setTimeout(() => setSuccess(null), 3000);

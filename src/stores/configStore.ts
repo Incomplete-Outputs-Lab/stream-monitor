@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import { invoke } from '@tauri-apps/api/core';
 import { hasToken } from '../utils/keyring';
+import * as configApi from '../api/config';
 
 interface OAuthConfig {
   client_id: string | null;
@@ -44,8 +44,8 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
       ]);
       
       const [hasTwitchOAuth, hasYouTubeOAuth] = await Promise.all([
-        invoke<boolean>('has_oauth_config', { platform: 'twitch' }),
-        invoke<boolean>('has_oauth_config', { platform: 'youtube' }),
+        configApi.hasOAuthConfig('twitch'),
+        configApi.hasOAuthConfig('youtube'),
       ]);
       
       console.log('[ConfigStore] Token status updated:', {
@@ -69,8 +69,8 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
 
   saveToken: async (platform, token) => {
     try {
-      await invoke('save_token', { platform, token });
-      
+      await configApi.saveToken(platform, token);
+
       // After saving, check token status from Keyring
       const tokenExists = await hasToken(platform);
       if (platform === 'twitch') {
@@ -86,8 +86,8 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
 
   deleteToken: async (platform) => {
     try {
-      await invoke('delete_token', { platform });
-      
+      await configApi.deleteToken(platform);
+
       // After deleting, check token status from Keyring
       const tokenExists = await hasToken(platform);
       if (platform === 'twitch') {
@@ -103,7 +103,7 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
 
   verifyToken: async (platform) => {
     try {
-      return await invoke<boolean>('verify_token', { platform });
+      return await configApi.verifyToken(platform);
     } catch (error) {
       set({ error: String(error) });
       return false;
@@ -112,7 +112,7 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
 
   getOAuthConfig: async (platform) => {
     try {
-      return await invoke<OAuthConfig>('get_oauth_config', { platform });
+      return await configApi.getOAuthConfig(platform);
     } catch (error) {
       set({ error: String(error) });
       throw error;
@@ -121,11 +121,7 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
 
   saveOAuthConfig: async (platform, clientId, clientSecret) => {
     try {
-      await invoke('save_oauth_config', {
-        platform,
-        clientId,
-        clientSecret: clientSecret || null,
-      });
+      await configApi.saveOAuthConfig(platform, clientId, clientSecret);
       // OAuth設定が存在することを反映
       if (platform === 'twitch') {
         set({ hasTwitchOAuth: true });
@@ -140,7 +136,7 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
 
   deleteOAuthConfig: async (platform) => {
     try {
-      await invoke('delete_oauth_config', { platform });
+      await configApi.deleteOAuthConfig(platform);
       // OAuth設定が削除されたことを反映
       if (platform === 'twitch') {
         set({ hasTwitchOAuth: false });
@@ -155,7 +151,7 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
 
   hasOAuthConfig: async (platform) => {
     try {
-      return await invoke<boolean>('has_oauth_config', { platform });
+      return await configApi.hasOAuthConfig(platform);
     } catch (error) {
       set({ error: String(error) });
       return false;

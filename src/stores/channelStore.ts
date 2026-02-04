@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { Channel } from '../types';
-import { invoke } from '@tauri-apps/api/core';
+import * as channelsApi from '../api/channels';
 
 interface ChannelStore {
   channels: Channel[];
@@ -21,7 +21,7 @@ export const useChannelStore = create<ChannelStore>((set) => ({
   fetchChannels: async () => {
     set({ loading: true, error: null });
     try {
-      const channels = await invoke<Channel[]>('list_channels');
+      const channels = await channelsApi.listChannels();
       set({ channels, loading: false });
     } catch (error) {
       set({ error: String(error), loading: false });
@@ -30,13 +30,11 @@ export const useChannelStore = create<ChannelStore>((set) => ({
 
   addChannel: async (channel) => {
     try {
-      const newChannel = await invoke<Channel>('add_channel', {
-        request: {
-          platform: channel.platform,
-          channel_id: channel.channel_id,
-          channel_name: channel.channel_name,
-          poll_interval: channel.poll_interval,
-        },
+      const newChannel = await channelsApi.addChannel({
+        platform: channel.platform,
+        channel_id: channel.channel_id,
+        channel_name: channel.channel_name,
+        poll_interval: channel.poll_interval,
       });
       set((state) => ({
         channels: [...state.channels, newChannel],
@@ -49,7 +47,7 @@ export const useChannelStore = create<ChannelStore>((set) => ({
 
   removeChannel: async (id) => {
     try {
-      await invoke('remove_channel', { id });
+      await channelsApi.removeChannel(id);
       set((state) => ({
         channels: state.channels.filter((ch) => ch.id !== id),
       }));
@@ -61,7 +59,7 @@ export const useChannelStore = create<ChannelStore>((set) => ({
 
   updateChannel: async (id, updates) => {
     try {
-      const updated = await invoke<Channel>('update_channel', {
+      const updated = await channelsApi.updateChannel({
         id,
         channel_name: updates.channel_name,
         poll_interval: updates.poll_interval,
@@ -78,7 +76,7 @@ export const useChannelStore = create<ChannelStore>((set) => ({
 
   toggleChannel: async (id) => {
     try {
-      const updated = await invoke<Channel>('toggle_channel', { id });
+      const updated = await channelsApi.toggleChannel(id);
       set((state) => ({
         channels: state.channels.map((ch) => (ch.id === id ? updated : ch)),
       }));

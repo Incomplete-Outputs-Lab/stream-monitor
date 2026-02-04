@@ -7,6 +7,7 @@ import { ChannelWithStats, TwitchRateLimitStatus, DiscoveredStreamInfo } from ".
 import { Tooltip as CustomTooltip } from "../common/Tooltip";
 import { toast } from "../../utils/toast";
 import { confirm } from "../../utils/confirm";
+import * as discoveryApi from "../../api/discovery";
 
 interface StreamStats {
   id?: number;
@@ -79,9 +80,9 @@ function LiveChannelCard({ channel }: LiveChannelCardProps) {
                     toast.error('このチャンネルにはTwitch User IDが設定されていません。');
                     return;
                   }
-                  await invoke('promote_discovered_channel', { 
-                    channelId: channel.twitch_user_id.toString()
-                  });
+                  await discoveryApi.promoteDiscoveredChannel(
+                    channel.twitch_user_id.toString()
+                  );
                   window.location.reload();
                 } catch (err) {
                   toast.error(`エラー: ${err}`);
@@ -248,7 +249,7 @@ export function Dashboard() {
   // 自動発見された配信を取得
   const { data: discoveredStreams } = useQuery({
     queryKey: ["discovered-streams"],
-    queryFn: () => invoke<DiscoveredStreamInfo[]>("get_discovered_streams"),
+    queryFn: () => discoveryApi.getDiscoveredStreams(),
     refetchInterval: 30000, // 30秒ごとに更新
   });
 
@@ -265,7 +266,7 @@ export function Dashboard() {
   // 楽観的更新を使用したチャンネル昇格mutation
   const promoteMutation = useMutation({
     mutationFn: async (channelId: string) => {
-      await invoke('promote_discovered_channel', { channelId });
+      await discoveryApi.promoteDiscoveredChannel(channelId);
     },
     onMutate: async (channelId: string) => {
       // 既存のクエリをキャンセル

@@ -473,6 +473,7 @@ impl ChannelPoller {
             collected_at: Local::now().to_rfc3339(),
             viewer_count: stream_data.viewer_count,
             category: stream_data.category.clone(),
+            game_id: stream_data.game_id.clone(),
             title: stream_data.title.clone(),
             follower_count: stream_data.follower_count,
             twitch_user_id,

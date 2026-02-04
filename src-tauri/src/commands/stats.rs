@@ -75,6 +75,7 @@ pub async fn get_stream_stats(
                 viewer_count: row.get(3)?,
                 // chat_rate_1min (index 4) is skipped - it's calculated dynamically in the query
                 category: row.get(5)?,
+                game_id: None,
                 title: row.get(6)?,
                 follower_count: row.get(7)?,
                 twitch_user_id: row.get(8)?,

@@ -12,7 +12,10 @@
       "Bash(npm run check:*)",
       "Bash(npm run:*)",
       "Bash(npx tsc:*)",
-      "Bash(cargo tree:*)"
+      "Bash(cargo tree:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: Phase3 Task#11&12 実装完了\n\nTask #12: チャンネル選択制限\n- DataScienceタブ全てにチャンネル未選択時の警告表示追加\n- ChatAnalyticsタブ（エンゲージメント除く）に警告表示追加\n- ユーザーフレンドリーな黄色い警告バナーで誘導\n\nTask #11: カテゴリID管理\n- game_categoriesテーブル追加（game_id, game_name, box_art_url）\n- stream_stats.game_idカラム追加\n- StreamData/StreamStatsモデルにgame_idフィールド追加\n- TwitchCollectorでgame_id取得・保存\n- YouTubeCollectorでcategory_idをgame_idとして保存\n- DBマイグレーション実装\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit:*)"
     ]
   }
 }

@@ -793,25 +793,10 @@ pub fn get_viewer_chat_correlation(
             Err(_) => {
                 // Channel not found, return empty result
                 return Ok(CorrelationResult {
-                    correlation: ViewerChatCorrelation {
-                        correlation: 0.0,
-                        data_points: vec![],
-                        viewer_stats: CorrelationStats {
-                            mean: 0.0,
-                            std_dev: 0.0,
-                            min: 0.0,
-                            max: 0.0,
-                        },
-                        chat_stats: CorrelationStats {
-                            mean: 0.0,
-                            std_dev: 0.0,
-                            min: 0.0,
-                            max: 0.0,
-                        },
-                    },
-                    hourly_correlation: HourlyCorrelation {
-                        correlations: vec![],
-                    },
+                    pearson_coefficient: 0.0,
+                    interpretation: "No data available".to_string(),
+                    scatter_data: vec![],
+                    hourly_correlation: vec![],
                 });
             }
         }
@@ -1478,17 +1463,15 @@ pub fn detect_anomalies(
             Err(_) => {
                 // Channel not found, return empty result
                 return Ok(AnomalyResult {
-                    anomalies: vec![],
-                    total_points: 0,
-                    anomaly_count: 0,
-                    threshold_used: z_threshold,
-                    statistics: AnomalyStatistics {
-                        mean: 0.0,
-                        std_dev: 0.0,
-                        min: 0.0,
-                        max: 0.0,
-                        percentile_25: 0.0,
-                        percentile_75: 0.0,
+                    viewer_anomalies: vec![],
+                    chat_anomalies: vec![],
+                    trend_stats: TrendStats {
+                        viewer_trend: "stable".to_string(),
+                        chat_trend: "stable".to_string(),
+                        viewer_avg: 0.0,
+                        viewer_std_dev: 0.0,
+                        chat_avg: 0.0,
+                        chat_std_dev: 0.0,
                     },
                 });
             }

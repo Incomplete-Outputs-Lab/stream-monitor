@@ -68,12 +68,16 @@ const AnomalyDetectionTab = ({ channelId, startTime, endTime }: AnomalyDetection
   // フィルター: 1971年以前の不正なタイムスタンプを除外
   const validViewerAnomalies = data.viewerAnomalies.filter(a => {
     const date = new Date(a.timestamp);
-    return date.getTime() > new Date('1971-01-01').getTime();
+    const time = date.getTime();
+    // NaN、Invalid Date、または1971年以前を除外
+    return !isNaN(time) && time > new Date('1971-01-01').getTime();
   });
 
   const validChatAnomalies = data.chatAnomalies.filter(a => {
     const date = new Date(a.timestamp);
-    return date.getTime() > new Date('1971-01-01').getTime();
+    const time = date.getTime();
+    // NaN、Invalid Date、または1971年以前を除外
+    return !isNaN(time) && time > new Date('1971-01-01').getTime();
   });
 
   const getTrendIcon = (trend: string) => {
@@ -184,6 +188,7 @@ const AnomalyDetectionTab = ({ channelId, startTime, endTime }: AnomalyDetection
                   type="number"
                   dataKey="timestampMs"
                   name="時刻"
+                  domain={['dataMin', 'dataMax']}
                   stroke="#9ca3af"
                   tickFormatter={(ts) => new Date(ts).toLocaleDateString('ja-JP')}
                   label={{ value: '日時', position: 'insideBottom', offset: -10, fill: '#9ca3af' }}

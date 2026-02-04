@@ -1111,7 +1111,7 @@ pub fn get_category_change_impact(
         r#"
         )
         SELECT
-            strftime(collected_at, '%Y-%m-%dT%H:%M:%S.000Z') as timestamp,
+            strftime(collected_at::TIMESTAMP, '%Y-%m-%dT%H:%M:%S.000Z') as timestamp,
             prev_category,
             category,
             prev_viewers,
@@ -1427,12 +1427,12 @@ pub fn detect_anomalies(
     let mut viewer_sql = String::from(
         r#"
         SELECT
-            strftime(collected_at, '%Y-%m-%dT%H:%M:%S.000Z') as timestamp,
+            strftime(collected_at::TIMESTAMP, '%Y-%m-%dT%H:%M:%S.000Z') as timestamp,
             viewer_count
         FROM stream_stats ss
         WHERE viewer_count IS NOT NULL
           AND collected_at IS NOT NULL
-          AND collected_at > '1971-01-01'
+          AND collected_at > TIMESTAMP '1971-01-01'
         "#,
     );
 

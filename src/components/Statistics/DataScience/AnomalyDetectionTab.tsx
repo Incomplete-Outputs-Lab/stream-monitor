@@ -9,6 +9,53 @@ interface AnomalyDetectionTabProps {
   endTime: string;
 }
 
+// Custom Tooltip Component
+const CustomTooltip = ({ active, payload }: any) => {
+  if (!active || !payload || !payload.length) return null;
+
+  const data = payload[0].payload;
+  const date = new Date(data.timestampMs);
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const hours = date.getHours();
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  const formattedDate = `${year}/${month}/${day} ${hours}:${minutes}:${seconds}`;
+
+  return (
+    <div style={{
+      backgroundColor: 'rgba(31, 41, 55, 0.95)',
+      border: '1px solid #4b5563',
+      borderRadius: '0.375rem',
+      padding: '12px',
+      color: '#f3f4f6',
+      fontSize: '14px'
+    }}>
+      <p style={{ marginBottom: '8px', fontWeight: 600, borderBottom: '1px solid #4b5563', paddingBottom: '6px' }}>
+        {formattedDate}
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <p>視聴者数: <span style={{ fontWeight: 600 }}>{Math.round(data.value).toLocaleString()}</span></p>
+        {data.previousValue !== undefined && (
+          <p>直前: <span style={{ fontWeight: 600 }}>{Math.round(data.previousValue).toLocaleString()}</span></p>
+        )}
+        {data.changeAmount !== undefined && (
+          <p style={{ color: data.changeAmount > 0 ? '#10b981' : '#ef4444' }}>
+            変化: <span style={{ fontWeight: 600 }}>
+              {data.changeAmount > 0 ? '+' : ''}{Math.round(data.changeAmount).toLocaleString()}
+            </span>
+            {' '}({data.changeRate > 0 ? '+' : ''}{data.changeRate.toFixed(1)}%)
+          </p>
+        )}
+        {data.modifiedZScore !== undefined && (
+          <p>M-Z Score: <span style={{ fontWeight: 600 }}>{data.modifiedZScore.toFixed(2)}</span></p>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const AnomalyDetectionTab = ({ channelId, startTime, endTime }: AnomalyDetectionTabProps) => {
   // チャンネル選択チェック
   if (channelId === null) {
@@ -211,34 +258,7 @@ const AnomalyDetectionTab = ({ channelId, startTime, endTime }: AnomalyDetection
                   stroke="#9ca3af"
                   label={{ value: '視聴者数', angle: -90, position: 'insideLeft', fill: '#9ca3af' }}
                 />
-                <Tooltip
-                  cursor={{ strokeDasharray: '3 3' }}
-                  contentStyle={{
-                    backgroundColor: 'rgba(31, 41, 55, 0.9)',
-                    border: '1px solid #4b5563',
-                    borderRadius: '0.375rem',
-                  }}
-                  labelStyle={{ color: '#f3f4f6' }}
-                  itemStyle={{ color: '#f3f4f6' }}
-                  formatter={(value: any, name?: string) => {
-                    if (name === 'value') return [Math.round(value).toLocaleString(), '現在の視聴者数'];
-                    if (name === 'previousValue') return [Math.round(value).toLocaleString(), '直前の視聴者数'];
-                    if (name === 'changeAmount') return [
-                      `${value > 0 ? '+' : ''}${Math.round(value).toLocaleString()}`,
-                      '変化量'
-                    ];
-                    if (name === 'changeRate') return [
-                      `${value > 0 ? '+' : ''}${value.toFixed(1)}%`,
-                      '変化率'
-                    ];
-                    if (name === 'modifiedZScore') return [value.toFixed(2), 'Modified Z-Score'];
-                    return [value, name || ''];
-                  }}
-                  labelFormatter={(label: any) => {
-                    const date = new Date(label);
-                    return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`;
-                  }}
-                />
+                <Tooltip content={<CustomTooltip />} />
                 <Legend />
                 <ReferenceLine y={data.trendStats.viewerAvg} stroke="#3b82f6" strokeDasharray="3 3" />
                 <Scatter

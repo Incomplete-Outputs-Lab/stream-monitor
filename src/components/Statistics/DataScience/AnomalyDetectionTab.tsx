@@ -1,7 +1,10 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Scatter, ScatterChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine, Cell } from 'recharts';
+import { MessageSquare } from 'lucide-react';
 import { StatCardSkeleton, ChartSkeleton } from '../../common/Skeleton';
 import { detectAnomalies } from '../../../api/statistics';
+import AnomalyChatModal from './AnomalyChatModal';
 
 interface AnomalyDetectionTabProps {
   channelId: number | null;
@@ -57,6 +60,27 @@ const CustomTooltip = ({ active, payload }: any) => {
 };
 
 const AnomalyDetectionTab = ({ channelId, startTime, endTime }: AnomalyDetectionTabProps) => {
+  const [chatModalOpen, setChatModalOpen] = useState(false);
+  const [selectedAnomaly, setSelectedAnomaly] = useState<{
+    streamId: number;
+    timestamp: string;
+    type: 'viewer' | 'chat';
+  } | null>(null);
+
+  const handleViewChat = (streamId: number | undefined, timestamp: string, type: 'viewer' | 'chat') => {
+    if (!streamId) {
+      alert('Stream IDが見つかりません');
+      return;
+    }
+    setSelectedAnomaly({ streamId, timestamp, type });
+    setChatModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setChatModalOpen(false);
+    setSelectedAnomaly(null);
+  };
+
   // チャンネル選択チェック
   if (channelId === null) {
     return (
@@ -203,21 +227,27 @@ const AnomalyDetectionTab = ({ channelId, startTime, endTime }: AnomalyDetection
           </div>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
+              <span className="text-gray-600 dark:text-gray-400">中央値:</span>
+              <span className="font-medium text-gray-900 dark:text-gray-100">
+                {Math.round(data.trendStats.chatMedian).toLocaleString()}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600 dark:text-gray-400">MAD:</span>
+              <span className="font-medium text-gray-900 dark:text-gray-100">
+                {Math.round(data.trendStats.chatMad).toLocaleString()}
+              </span>
+            </div>
+            <div className="flex justify-between">
               <span className="text-gray-600 dark:text-gray-400">平均値:</span>
               <span className="font-medium text-gray-900 dark:text-gray-100">
                 {Math.round(data.trendStats.chatAvg).toLocaleString()}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-600 dark:text-gray-400">標準偏差:</span>
-              <span className="font-medium text-gray-900 dark:text-gray-100">
-                {Math.round(data.trendStats.chatStdDev).toLocaleString()}
-              </span>
-            </div>
-            <div className="flex justify-between">
               <span className="text-gray-600 dark:text-gray-400">検出異常数:</span>
               <span className="font-medium text-gray-900 dark:text-gray-100">
-                {data.chatAnomalies.length}
+                {validChatAnomalies.length}
               </span>
             </div>
           </div>
@@ -307,6 +337,9 @@ const AnomalyDetectionTab = ({ channelId, startTime, endTime }: AnomalyDetection
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
                     タイプ
                   </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                    アクション
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
@@ -385,6 +418,16 @@ const AnomalyDetectionTab = ({ channelId, startTime, endTime }: AnomalyDetection
                           {anomaly.isPositive ? '🚀 スパイク' : '📉 ドロップ'}
                         </span>
                       </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-sm">
+                        <button
+                          onClick={() => handleViewChat(anomaly.streamId, anomaly.timestamp, 'viewer')}
+                          className="inline-flex items-center gap-1 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs transition-colors"
+                          disabled={!anomaly.streamId}
+                        >
+                          <MessageSquare className="w-3 h-3" />
+                          チャットを見る
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -394,11 +437,202 @@ const AnomalyDetectionTab = ({ channelId, startTime, endTime }: AnomalyDetection
         </div>
       )}
 
-      {/* No Anomalies Message */}
+      {/* No Viewer Anomalies Message */}
       {validViewerAnomalies.length === 0 && (
         <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
           <p className="text-green-800 dark:text-green-200">
-            ✅ 選択した期間に大きな異常値は検出されませんでした。データは安定しています。
+            ✅ 選択した期間に視聴者数の大きな異常値は検出されませんでした。
+          </p>
+        </div>
+      )}
+
+      {/* Chat Anomalies */}
+      {validChatAnomalies.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">チャット量の異常値</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            チャット量（1分あたりのメッセージ数）の統計的に有意な異常を検出します。
+            視聴者数と同じModified Z-Score（MADベース）アルゴリズムを使用しています。
+          </p>
+
+          {/* Chat Anomalies Scatter Plot */}
+          <div className="mb-6">
+            <ResponsiveContainer width="100%" height={350}>
+              <ScatterChart margin={{ top: 20, right: 20, bottom: 60, left: 60 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                <XAxis
+                  type="number"
+                  dataKey="timestampMs"
+                  name="時刻"
+                  domain={['dataMin', 'dataMax']}
+                  stroke="#9ca3af"
+                  tickFormatter={(ts) => {
+                    const date = new Date(ts);
+                    return `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+                  }}
+                  label={{ value: '日時', position: 'insideBottom', offset: -10, fill: '#9ca3af' }}
+                />
+                <YAxis
+                  type="number"
+                  dataKey="value"
+                  name="チャット数/分"
+                  stroke="#9ca3af"
+                  label={{ value: 'チャット数/分', angle: -90, position: 'insideLeft', fill: '#9ca3af' }}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend />
+                <ReferenceLine y={data.trendStats.chatAvg} stroke="#3b82f6" strokeDasharray="3 3" />
+                <Scatter
+                  name="異常値"
+                  data={validChatAnomalies.map((a) => ({
+                    timestampMs: new Date(a.timestamp).getTime(),
+                    value: a.value,
+                    previousValue: a.previousValue,
+                    changeAmount: a.changeAmount,
+                    changeRate: a.changeRate,
+                    modifiedZScore: a.modifiedZScore,
+                  }))}
+                  fill="#ef4444"
+                >
+                  {validChatAnomalies.map((a, index) => (
+                    <Cell key={index} fill={a.isPositive ? '#10b981' : '#ef4444'} />
+                  ))}
+                </Scatter>
+              </ScatterChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Chat Anomalies Table */}
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+              <thead className="bg-gray-50 dark:bg-gray-900">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                    日時
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                    配信経過
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                    直前 → 現在
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                    変化量
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                    変化率
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                    M-Z Score
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                    タイプ
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                    アクション
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                {validChatAnomalies.map((anomaly, idx) => {
+                  const getStreamPhaseLabel = (phase: string) => {
+                    switch (phase) {
+                      case 'early': return '序盤';
+                      case 'mid': return '中盤';
+                      case 'late': return '終盤';
+                      default: return '不明';
+                    }
+                  };
+
+                  const getStreamPhaseColor = (phase: string) => {
+                    switch (phase) {
+                      case 'early': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300';
+                      case 'mid': return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300';
+                      case 'late': return 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300';
+                      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300';
+                    }
+                  };
+
+                  const formatStreamTime = (minutes?: number) => {
+                    if (minutes === undefined) return '不明';
+                    const hours = Math.floor(minutes / 60);
+                    const mins = minutes % 60;
+                    if (hours > 0) {
+                      return `+${hours}時間${mins}分`;
+                    }
+                    return `+${mins}分`;
+                  };
+
+                  return (
+                    <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                        {new Date(anomaly.timestamp).toLocaleString('ja-JP')}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-sm">
+                        <div className="flex flex-col gap-1">
+                          <span className="font-medium text-gray-900 dark:text-gray-100">
+                            {formatStreamTime(anomaly.minutesFromStreamStart)}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded text-xs inline-block w-fit ${getStreamPhaseColor(anomaly.streamPhase)}`}>
+                            {getStreamPhaseLabel(anomaly.streamPhase)}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
+                        <span className="text-gray-500">{Math.round(anomaly.previousValue).toLocaleString()}</span>
+                        {' → '}
+                        <span className={anomaly.isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                          {Math.round(anomaly.value).toLocaleString()}
+                        </span>
+                      </td>
+                      <td className={`px-4 py-3 whitespace-nowrap text-sm font-bold ${
+                        anomaly.isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                      }`}>
+                        {anomaly.changeAmount > 0 ? '+' : ''}{Math.round(anomaly.changeAmount).toLocaleString()}
+                      </td>
+                      <td className={`px-4 py-3 whitespace-nowrap text-sm font-bold ${
+                        anomaly.isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                      }`}>
+                        {anomaly.changeRate > 0 ? '+' : ''}{anomaly.changeRate.toFixed(1)}%
+                      </td>
+                      <td className={`px-4 py-3 whitespace-nowrap text-sm font-bold ${
+                        anomaly.isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                      }`}>
+                        {anomaly.modifiedZScore.toFixed(2)}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-sm">
+                        <span className={`px-2 py-1 rounded text-xs ${
+                          anomaly.isPositive
+                            ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                            : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
+                        }`}>
+                          {anomaly.isPositive ? '🚀 スパイク' : '📉 ドロップ'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-sm">
+                        <button
+                          onClick={() => handleViewChat(anomaly.streamId, anomaly.timestamp, 'chat')}
+                          className="inline-flex items-center gap-1 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs transition-colors"
+                          disabled={!anomaly.streamId}
+                        >
+                          <MessageSquare className="w-3 h-3" />
+                          チャットを見る
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* No Chat Anomalies Message */}
+      {validChatAnomalies.length === 0 && validViewerAnomalies.length > 0 && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+          <p className="text-blue-800 dark:text-blue-200">
+            チャット量の異常は検出されませんでした。
           </p>
         </div>
       )}
@@ -489,6 +723,17 @@ const AnomalyDetectionTab = ({ channelId, startTime, endTime }: AnomalyDetection
           </div>
         </div>
       </div>
+
+      {/* Chat Modal */}
+      {selectedAnomaly && (
+        <AnomalyChatModal
+          isOpen={chatModalOpen}
+          onClose={handleCloseModal}
+          streamId={selectedAnomaly.streamId}
+          timestamp={selectedAnomaly.timestamp}
+          anomalyType={selectedAnomaly.type}
+        />
+      )}
     </div>
   );
 };

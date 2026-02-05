@@ -29,7 +29,7 @@ use commands::{
         get_user_segment_stats, list_game_categories,
     },
     channels::{add_channel, list_channels, remove_channel, toggle_channel, update_channel},
-    chat::get_chat_messages,
+    chat::{get_chat_messages, get_chat_messages_around_timestamp},
     config::{
         delete_oauth_config, delete_token, get_build_info, get_database_init_status,
         get_oauth_config, has_oauth_config, recreate_database, save_oauth_config, save_token,
@@ -519,6 +519,7 @@ pub fn run() {
             toggle_channel,
             // Chat commands
             get_chat_messages,
+            get_chat_messages_around_timestamp,
             // Config commands
             save_token,
             delete_token,

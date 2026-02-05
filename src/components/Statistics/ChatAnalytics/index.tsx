@@ -11,7 +11,7 @@ interface ChatAnalyticsProps {
   parentDateRange: { start: string; end: string };
 }
 
-const ChatAnalytics = ({ channels, parentChannelId, parentDateRange }: ChatAnalyticsProps) => {
+const ChatAnalytics = ({ channels: _channels, parentChannelId, parentDateRange }: ChatAnalyticsProps) => {
   const [selectedTab, setSelectedTab] = useState<'engagement' | 'segment' | 'behavior' | 'time'>('engagement');
 
   // 親コンポーネントのフィルタを使用

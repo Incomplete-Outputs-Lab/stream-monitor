@@ -1,5 +1,6 @@
 use crate::database::{models::ChatMessage, utils, DatabaseManager};
 use crate::error::ResultExt;
+use chrono::{DateTime, Duration};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
@@ -12,6 +13,14 @@ pub struct ChatMessagesQuery {
     pub end_time: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnomalyChatQuery {
+    pub stream_id: i64,
+    pub timestamp: String,
+    pub window_minutes: Option<i32>,
 }
 
 #[tauri::command]
@@ -76,4 +85,65 @@ pub async fn get_chat_messages(
     utils::query_chat_messages(&conn, &sql, &params)
         .db_context("query chat messages")
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_chat_messages_around_timestamp(
+    _app_handle: AppHandle,
+    db_manager: State<'_, DatabaseManager>,
+    query: AnomalyChatQuery,
+) -> Result<Vec<ChatMessage>, String> {
+    let conn = db_manager
+        .get_connection()
+        .db_context("get database connection")
+        .map_err(|e| e.to_string())?;
+
+    // Parse the timestamp and calculate the time window
+    let anomaly_time = DateTime::parse_from_rfc3339(&query.timestamp)
+        .map_err(|e| format!("Invalid timestamp format: {}", e))?;
+
+    let window_minutes = query.window_minutes.unwrap_or(2);
+    let window_duration = Duration::minutes(window_minutes as i64);
+
+    let start_time = (anomaly_time - window_duration).to_rfc3339();
+    let end_time = (anomaly_time + window_duration).to_rfc3339();
+
+    eprintln!(
+        "[Chat Anomaly] Fetching messages for stream {} around {} (±{}min)",
+        query.stream_id, query.timestamp, window_minutes
+    );
+    eprintln!("[Chat Anomaly] Time window: {} to {}", start_time, end_time);
+
+    let sql = String::from(
+        r#"
+        SELECT
+            cm.id, cm.channel_id, cm.stream_id,
+            CAST(cm.timestamp AS VARCHAR) as timestamp,
+            cm.platform,
+            cm.user_id, cm.user_name, cm.message, cm.message_type,
+            CAST(cm.badges AS VARCHAR) as badges, cm.badge_info
+        FROM chat_messages cm
+        WHERE cm.stream_id = ?
+          AND cm.timestamp >= ?
+          AND cm.timestamp <= ?
+        ORDER BY cm.timestamp ASC
+        "#,
+    );
+
+    let params = vec![
+        query.stream_id.to_string(),
+        start_time,
+        end_time,
+    ];
+
+    let messages = utils::query_chat_messages(&conn, &sql, &params)
+        .db_context("query chat messages around timestamp")
+        .map_err(|e| e.to_string())?;
+
+    eprintln!(
+        "[Chat Anomaly] Found {} messages in time window",
+        messages.len()
+    );
+
+    Ok(messages)
 }

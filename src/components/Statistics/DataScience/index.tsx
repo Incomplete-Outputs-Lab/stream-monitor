@@ -12,7 +12,7 @@ interface DataScienceProps {
   parentDateRange: { start: string; end: string };
 }
 
-const DataScience = ({ channels, parentChannelId, parentDateRange }: DataScienceProps) => {
+const DataScience = ({ channels: _channels, parentChannelId, parentDateRange }: DataScienceProps) => {
   const [selectedTab, setSelectedTab] = useState<'word' | 'correlation' | 'category' | 'score' | 'anomaly'>('word');
 
   // 親コンポーネントのフィルタを使用

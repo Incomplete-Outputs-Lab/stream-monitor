@@ -80,9 +80,6 @@ export default function TopChannelsAnalytics({
     return num.toFixed(2);
   };
 
-  // Top 30 for ranking
-  const top30Channels = sortedItems.slice(0, 30);
-
   // ランキングチャート用データ (元のソート順を使用)
   const rankingData = channelAnalytics.slice(0, 30).map(channel => ({
     name: channel.channel_name,

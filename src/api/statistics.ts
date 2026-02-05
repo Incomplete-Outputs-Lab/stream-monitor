@@ -18,6 +18,7 @@ import type {
   CategoryImpactResult,
   ChatterScoreResult,
   AnomalyResult,
+  ChatMessage,
 } from '../types';
 
 // ========== Broadcaster & Game Analytics ==========
@@ -255,6 +256,22 @@ export const detectAnomalies = async (params: {
     startTime: params.startTime,
     endTime: params.endTime,
     zThreshold:params.zThreshold,
+  });
+};
+
+// ========== Anomaly Chat Messages ==========
+
+export const getChatMessagesAroundTimestamp = async (params: {
+  streamId: number;
+  timestamp: string;
+  windowMinutes?: number;
+}): Promise<ChatMessage[]> => {
+  return await invoke<ChatMessage[]>('get_chat_messages_around_timestamp', {
+    query: {
+      streamId: params.streamId,
+      timestamp: params.timestamp,
+      windowMinutes: params.windowMinutes ?? 2,
+    }
   });
 };
 

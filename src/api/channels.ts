@@ -40,7 +40,7 @@ export const removeChannel = async (id: number): Promise<void> => {
  * チャンネル情報を更新
  */
 export const updateChannel = async (request: UpdateChannelRequest): Promise<Channel> => {
-  return await invoke<Channel>('update_channel', request);
+  return await invoke<Channel>('update_channel', { request });
 };
 
 /**

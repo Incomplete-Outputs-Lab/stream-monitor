@@ -536,6 +536,7 @@ export interface Anomaly {
   isPositive: boolean;
   minutesFromStreamStart?: number;
   streamPhase: string;
+  streamId?: number;
 }
 
 export interface TrendStats {

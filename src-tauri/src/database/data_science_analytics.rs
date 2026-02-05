@@ -206,6 +206,7 @@ pub struct Anomaly {
     pub is_positive: bool,                      // true = spike, false = drop
     pub minutes_from_stream_start: Option<i64>, // Minutes since stream started
     pub stream_phase: String,                   // "early", "mid", "late", "unknown"
+    pub stream_id: Option<i64>,                 // Stream ID for chat lookup
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1676,6 +1677,7 @@ pub fn detect_anomalies(
                 is_positive: current > previous, // Spike if current > previous, drop otherwise
                 minutes_from_stream_start: minutes_from_start,
                 stream_phase,
+                stream_id: viewer_data[i].2,
             });
         }
     }
@@ -1691,8 +1693,239 @@ pub fn detect_anomalies(
     // Limit to top 50 most significant anomalies
     viewer_anomalies.truncate(50);
 
-    // Chat anomalies (not implemented)
-    let chat_anomalies = vec![];
+    // ========================================================================
+    // Chat anomaly detection
+    // ========================================================================
+
+    // Get chat rate data with stream information (using same pattern as viewer data)
+    let mut chat_sql = String::from(
+        r#"
+        SELECT
+            strftime(ss.collected_at::TIMESTAMP, '%Y-%m-%dT%H:%M:%S.000Z') as timestamp,
+            COALESCE((
+                SELECT COUNT(*)
+                FROM chat_messages cm
+                WHERE cm.stream_id = ss.stream_id
+                  AND cm.timestamp >= ss.collected_at - INTERVAL '1 minute'
+                  AND cm.timestamp < ss.collected_at
+            ), 0) AS chat_rate_1min,
+            ss.stream_id,
+            strftime(s.started_at::TIMESTAMP, '%Y-%m-%dT%H:%M:%S.000Z') as stream_started_at
+        FROM stream_stats ss
+        LEFT JOIN streams s ON ss.stream_id = s.id
+        WHERE ss.collected_at IS NOT NULL
+          AND ss.collected_at > TIMESTAMP '1971-01-01'
+        "#,
+    );
+
+    let mut chat_params: Vec<String> = Vec::new();
+
+    if let Some(ch_id) = channel_id {
+        match conn.query_row(
+            "SELECT channel_name FROM channels WHERE id = ?",
+            [ch_id.to_string()],
+            |row| row.get::<_, String>(0),
+        ) {
+            Ok(ch_name) => {
+                chat_sql.push_str(" AND ss.channel_name = ?");
+                chat_params.push(ch_name);
+            }
+            Err(_) => {
+                // Channel not found, skip chat anomaly detection
+                let chat_anomalies = vec![];
+                let viewer_trend = calculate_trend(&viewer_values, viewer_median, viewer_mad);
+
+                return Ok(AnomalyResult {
+                    viewer_anomalies,
+                    chat_anomalies,
+                    trend_stats: TrendStats {
+                        viewer_trend,
+                        viewer_median,
+                        viewer_mad,
+                        viewer_avg,
+                        viewer_std_dev,
+                        chat_trend: "N/A".to_string(),
+                        chat_median: 0.0,
+                        chat_mad: 0.0,
+                        chat_avg: 0.0,
+                        chat_std_dev: 0.0,
+                    },
+                });
+            }
+        }
+    }
+
+    if let Some(st_id) = stream_id {
+        chat_sql.push_str(" AND ss.stream_id = ?");
+        chat_params.push(st_id.to_string());
+    }
+
+    if let Some(start) = start_time {
+        chat_sql.push_str(" AND ss.collected_at >= ?");
+        chat_params.push(start.to_string());
+    }
+
+    if let Some(end) = end_time {
+        chat_sql.push_str(" AND ss.collected_at <= ?");
+        chat_params.push(end.to_string());
+    }
+
+    chat_sql.push_str(" ORDER BY ss.collected_at");
+
+    let mut chat_stmt = conn.prepare(&chat_sql)?;
+    let chat_data_raw: Vec<(String, i64, Option<i64>, Option<String>)> =
+        utils::query_map_with_params(&mut chat_stmt, &chat_params, |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2).ok(), row.get(3).ok()))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut chat_anomalies = vec![];
+    let mut chat_trend = "N/A".to_string();
+    let mut chat_median = 0.0;
+    let mut chat_mad = 0.0;
+    let mut chat_avg = 0.0;
+    let mut chat_std_dev = 0.0;
+
+    // Only process chat anomalies if we have enough data
+    if chat_data_raw.len() >= 10 {
+        // Convert i64 to i32 for compatibility with deduplicate function
+        let chat_data_i32: Vec<(String, i32, Option<i64>, Option<String>)> = chat_data_raw
+            .iter()
+            .map(|(ts, val, sid, sa)| (ts.clone(), *val as i32, *sid, sa.clone()))
+            .collect();
+
+        // Remove consecutive duplicates
+        let chat_data = deduplicate_consecutive_values_with_metadata(&chat_data_i32);
+
+        if chat_data.len() >= 5 {
+            let chat_n = chat_data.len();
+            let chat_values: Vec<f64> = chat_data.iter().map(|(_, v, _, _)| *v as f64).collect();
+
+            // Calculate robust statistics for chat
+            let (chat_median_calc, chat_mad_calc) = calculate_median_and_mad(&chat_values);
+            chat_median = chat_median_calc;
+            chat_mad = chat_mad_calc;
+
+            // Calculate mean and std dev for chat
+            chat_avg = chat_values.iter().sum::<f64>() / chat_n as f64;
+            let chat_variance = chat_values
+                .iter()
+                .map(|v| (v - chat_avg).powi(2))
+                .sum::<f64>()
+                / chat_n as f64;
+            chat_std_dev = chat_variance.sqrt();
+
+            // Reuse stream position calculations from viewer data
+            // (stream_info HashMap is already calculated above)
+
+            // Calculate position in stream for each chat data point
+            let chat_stream_positions: Vec<Option<(i64, f64)>> = chat_data
+                .iter()
+                .map(|(ts, _, stream_id_opt, started_at_opt)| {
+                    if let (Some(stream_id), Some(started_at)) = (stream_id_opt, started_at_opt) {
+                        let current_ts = parse_timestamp(ts);
+                        let start_ts = parse_timestamp(started_at);
+
+                        if current_ts > 0 && start_ts > 0 {
+                            if let Some((stream_start, stream_end)) = stream_info.get(stream_id) {
+                                let minutes_from_start = (current_ts - start_ts) / 60;
+                                let total_duration = (stream_end - stream_start) / 60;
+
+                                if total_duration > 0 {
+                                    let position_ratio = (current_ts - stream_start) as f64
+                                        / (stream_end - stream_start) as f64;
+                                    return Some((minutes_from_start, position_ratio));
+                                }
+                            }
+                        }
+                    }
+                    None
+                })
+                .collect();
+
+            // Detect chat anomalies using same algorithm
+            for i in 1..(chat_n - 1) {
+                let current = chat_values[i];
+                let previous = chat_values[i - 1];
+
+                // Skip stream start period
+                if let Some((minutes_from_start, position_ratio)) = chat_stream_positions[i] {
+                    let is_early = minutes_from_start < 10 || position_ratio < 0.10;
+
+                    if is_early {
+                        continue;
+                    }
+                } else {
+                    continue;
+                }
+
+                // Calculate time interval
+                let current_ts = parse_timestamp(&chat_data[i].0);
+                let previous_ts = parse_timestamp(&chat_data[i - 1].0);
+                let time_interval_minutes = ((current_ts - previous_ts) as f64 / 60.0).max(1.0);
+
+                // Calculate Modified Z-Score
+                let modified_z = calculate_modified_z_score(current, chat_median, chat_mad);
+
+                // Apply threshold with time interval consideration
+                let effective_threshold = if time_interval_minutes < 5.0 {
+                    z_threshold * 1.5
+                } else {
+                    z_threshold
+                };
+
+                if modified_z.abs() >= effective_threshold {
+                    let change_amount = current - previous;
+                    let change_rate = if previous > 0.0 {
+                        (change_amount / previous) * 100.0
+                    } else {
+                        0.0
+                    };
+
+                    let (stream_phase, minutes_from_start) =
+                        if let Some((mins, ratio)) = chat_stream_positions[i] {
+                            let phase = if ratio < 0.33 {
+                                "early"
+                            } else if ratio < 0.67 {
+                                "mid"
+                            } else {
+                                "late"
+                            };
+                            (phase.to_string(), Some(mins))
+                        } else {
+                            ("unknown".to_string(), None)
+                        };
+
+                    chat_anomalies.push(Anomaly {
+                        timestamp: chat_data[i].0.clone(),
+                        value: current,
+                        previous_value: previous,
+                        change_amount,
+                        change_rate,
+                        modified_z_score: modified_z,
+                        is_positive: current > previous,
+                        minutes_from_stream_start: minutes_from_start,
+                        stream_phase,
+                        stream_id: chat_data[i].2,
+                    });
+                }
+            }
+
+            // Sort by absolute Modified Z-Score
+            chat_anomalies.sort_by(|a, b| {
+                b.modified_z_score
+                    .abs()
+                    .partial_cmp(&a.modified_z_score.abs())
+                    .unwrap()
+            });
+
+            // Limit to top 50
+            chat_anomalies.truncate(50);
+
+            // Calculate chat trend
+            chat_trend = calculate_trend(&chat_values, chat_median, chat_mad);
+        }
+    }
 
     // Determine trend using MAD-based approach
     let viewer_trend = calculate_trend(&viewer_values, viewer_median, viewer_mad);
@@ -1706,11 +1939,11 @@ pub fn detect_anomalies(
             viewer_mad,
             viewer_avg,
             viewer_std_dev,
-            chat_trend: "N/A".to_string(),
-            chat_median: 0.0,
-            chat_mad: 0.0,
-            chat_avg: 0.0,
-            chat_std_dev: 0.0,
+            chat_trend,
+            chat_median,
+            chat_mad,
+            chat_avg,
+            chat_std_dev,
         },
     })
 }

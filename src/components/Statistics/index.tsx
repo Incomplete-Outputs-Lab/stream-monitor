@@ -10,6 +10,7 @@ import ChannelDetailAnalytics from "./ChannelDetailAnalytics";
 import ChatAnalytics from "./ChatAnalytics";
 import DataScience from "./DataScience";
 import { DateRangePicker } from "./DateRangePicker";
+import { Skeleton } from "../common/Skeleton";
 import { Channel } from "../../types";
 
 type TabType = "overview" | "broadcaster" | "game" | "topGames" | "gameDetail" | "topChannels" | "channelDetail" | "chatAnalytics" | "dataScience";
@@ -36,7 +37,7 @@ export function Statistics() {
   const [selectedChannelName, setSelectedChannelName] = useState<string>("");
 
   // チャンネル一覧取得（ドリルダウンナビゲーション用）
-  const { data: channels } = useQuery({
+  const { data: channels, isLoading: isLoadingChannels } = useQuery({
     queryKey: ["channels"],
     queryFn: async () => {
       return await invoke<Channel[]>("list_channels");
@@ -96,18 +97,22 @@ export function Statistics() {
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             チャンネル
           </label>
-          <select
-            value={selectedChannelId || ''}
-            onChange={(e) => setSelectedChannelId(e.target.value ? Number(e.target.value) : null)}
-            className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white"
-          >
-            <option value="">全てのチャンネル</option>
-            {channels?.map((ch) => (
-              <option key={ch.id} value={ch.id}>
-                {ch.display_name || ch.channel_name}
-              </option>
-            ))}
-          </select>
+          {isLoadingChannels ? (
+            <Skeleton variant="rectangular" height={42} className="w-full" />
+          ) : (
+            <select
+              value={selectedChannelId || ''}
+              onChange={(e) => setSelectedChannelId(e.target.value ? Number(e.target.value) : null)}
+              className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white"
+            >
+              <option value="">全てのチャンネル</option>
+              {channels?.map((ch) => (
+                <option key={ch.id} value={ch.id}>
+                  {ch.display_name || ch.channel_name}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         <div>

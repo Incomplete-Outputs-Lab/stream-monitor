@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { AutoDiscoverySettings, TwitchGame, SelectedGame } from '../../types';
 import * as discoveryApi from '../../api/discovery';
+import * as configApi from '../../api/config';
 
 export function AutoDiscoveryForm() {
   const [settings, setSettings] = useState<AutoDiscoverySettings>({
@@ -18,6 +19,7 @@ export function AutoDiscoveryForm() {
   const [success, setSuccess] = useState<string | null>(null);
   const [languageInput, setLanguageInput] = useState('');
   const [showDetails, setShowDetails] = useState(false);
+  const [hasClientId, setHasClientId] = useState(false);
 
   // ゲーム検索UI用のstate
   const [gameSearchQuery, setGameSearchQuery] = useState('');
@@ -32,6 +34,10 @@ export function AutoDiscoveryForm() {
   useEffect(() => {
     const loadSettings = async () => {
       try {
+        // Client IDが設定されているかチェック
+        const twitchOAuth = await configApi.getOAuthConfig('twitch');
+        setHasClientId(!!twitchOAuth.client_id);
+
         const result = await discoveryApi.getAutoDiscoverySettings();
         if (result) {
           setSettings(result);
@@ -207,6 +213,19 @@ export function AutoDiscoveryForm() {
         </span>
       </div>
 
+      {/* Client ID未設定の警告 */}
+      {!hasClientId && (
+        <div className="p-3 bg-amber-100 dark:bg-amber-900/30 border border-amber-400 dark:border-amber-700 text-amber-800 dark:text-amber-300 rounded text-xs flex items-start gap-2">
+          <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-1.964-1.333-2.732 0L3.732 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <div>
+            <p className="font-semibold mb-1">Twitch Client IDが未設定です</p>
+            <p>自動発見機能を使用するには、まず「Twitch API」セクションで「OAuth設定」からClient IDを設定してください。</p>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="p-2 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-700 text-red-800 dark:text-red-300 rounded text-xs">
           {error}
@@ -222,12 +241,13 @@ export function AutoDiscoveryForm() {
       <div className="flex flex-wrap gap-2">
         <button
           onClick={handleToggle}
-          disabled={loading}
+          disabled={loading || !hasClientId}
           className={`px-3 py-1.5 rounded text-xs font-medium transition-all duration-200 ${
             settings.enabled
               ? 'bg-green-600 text-white shadow-sm'
               : 'bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 border border-gray-200 dark:border-slate-600'
-          } disabled:opacity-50`}
+          } disabled:opacity-50 disabled:cursor-not-allowed`}
+          title={!hasClientId ? 'Client IDを設定してください' : ''}
         >
           {settings.enabled ? 'ON' : 'OFF'}
         </button>

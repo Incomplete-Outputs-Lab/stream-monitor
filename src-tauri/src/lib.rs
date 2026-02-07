@@ -16,6 +16,7 @@ use tauri::{
     Emitter, Manager, WindowEvent,
 };
 use tokio::sync::Mutex;
+use std::sync::atomic::AtomicBool;
 
 use collectors::{
     auto_discovery::AutoDiscoveryPoller, poller::ChannelPoller, twitch::TwitchCollector,
@@ -70,6 +71,7 @@ use std::sync::Arc;
 /// メモリキャッシュ: 自動発見された配信の最新結果
 pub struct DiscoveredStreamsCache {
     pub streams: Mutex<Vec<DiscoveredStreamInfo>>,
+    pub initialized: AtomicBool,
 }
 
 /// アップデート確認関数
@@ -127,15 +129,13 @@ async fn check_for_updates(app: tauri::AppHandle) {
 }
 
 /// Helper function to start polling for existing enabled channels
-fn start_existing_channels_polling(
+async fn start_existing_channels_polling(
     db_manager: &tauri::State<'_, DatabaseManager>,
     poller: &mut ChannelPoller,
     app_handle: &tauri::AppHandle,
 ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
-    // get_connection is now async, so we need to block_on it
-    let conn = tokio::runtime::Handle::current().block_on(async {
-        db_manager.get_connection().await
-    })?;
+    // get_connection is now async
+    let conn = db_manager.get_connection().await?;
 
     // Get all enabled channels
     let mut stmt = conn.prepare(
@@ -234,7 +234,7 @@ pub fn run() {
                 if let Err(e) = ctrlc::set_handler(move || {
                     eprintln!("[Signal] Received termination signal, performing cleanup...");
                     logger_for_signal.info("Received termination signal, performing cleanup...");
-                    if let Err(e) = tokio::runtime::Handle::current().block_on(async {
+                    if let Err(e) = tauri::async_runtime::block_on(async {
                         db_manager_for_signal.shutdown().await
                     }) {
                         eprintln!("[Signal] Cleanup failed: {}", e);
@@ -259,6 +259,7 @@ pub fn run() {
             // Initialize DiscoveredStreamsCache
             let discovered_streams_cache = Arc::new(DiscoveredStreamsCache {
                 streams: Mutex::new(Vec::new()),
+                initialized: AtomicBool::new(false),
             });
             app.manage(discovered_streams_cache);
 
@@ -274,8 +275,8 @@ pub fn run() {
                     let db_manager: tauri::State<'_, DatabaseManager> = app_handle_for_init.state();
 
                     // まずデータベース接続を取得
-                    // get_connection is now async, so we need to block_on it
-                    let conn = match tokio::runtime::Handle::current().block_on(async {
+                    // get_connection is now async, so we need to block_on it using Tauri's async runtime
+                    let conn = match tauri::async_runtime::block_on(async {
                         db_manager.get_connection().await
                     }) {
                         Ok(conn) => conn,
@@ -380,7 +381,7 @@ pub fn run() {
                         logger_for_init.info("Starting polling for existing enabled channels...");
                         {
                             let mut poller = poller_for_init.lock().await;
-                            match start_existing_channels_polling(&db_manager, &mut poller, &app_handle_for_init) {
+                            match start_existing_channels_polling(&db_manager, &mut poller, &app_handle_for_init).await {
                                 Ok(count) => {
                                     logger_for_init.info(&format!("Started polling for {} existing enabled channel(s)", count));
                                 }
@@ -411,7 +412,16 @@ pub fn run() {
 
                         // Start AutoDiscoveryPoller if enabled
                         if let Some(auto_discovery_settings) = &settings.auto_discovery {
+                            logger_for_init.info(&format!(
+                                "AutoDiscovery settings found - enabled: {}, poll_interval: {}s, max_streams: {}, game_ids: {:?}",
+                                auto_discovery_settings.enabled,
+                                auto_discovery_settings.poll_interval,
+                                auto_discovery_settings.max_streams,
+                                auto_discovery_settings.filters.game_ids
+                            ));
+
                             if auto_discovery_settings.enabled {
+                                logger_for_init.info("Starting AutoDiscoveryPoller...");
                                 match discovery_poller.start().await {
                                     Ok(_) => {
                                         logger_for_init.info("AutoDiscoveryPoller started successfully");
@@ -424,10 +434,10 @@ pub fn run() {
                                     }
                                 }
                             } else {
-                                logger_for_init.info("AutoDiscovery is disabled in settings");
+                                logger_for_init.info("AutoDiscovery is disabled in settings - enable it in Settings > Twitch自動発見");
                             }
                         } else {
-                            logger_for_init.info("AutoDiscovery settings not configured");
+                            logger_for_init.info("AutoDiscovery settings not configured - configure it in Settings > Twitch自動発見");
                         }
 
                         // Store the AutoDiscoveryPoller in app state
@@ -472,7 +482,7 @@ pub fn run() {
                             // グレースフルシャットダウン
                             if let Some(db_manager) = _app.try_state::<DatabaseManager>() {
                                 eprintln!("[App Exit] Performing graceful shutdown...");
-                                let _ = tokio::runtime::Handle::current().block_on(async {
+                                let _ = tauri::async_runtime::block_on(async {
                                     db_manager.shutdown().await
                                 });
                             }

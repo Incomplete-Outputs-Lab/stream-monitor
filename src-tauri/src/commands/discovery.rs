@@ -6,6 +6,7 @@ use crate::error::ResultExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Manager, State};
 use tokio::sync::Mutex;
 
@@ -30,6 +31,16 @@ pub async fn save_auto_discovery_settings(
 ) -> Result<(), String> {
     // max_streamsのバリデーション（1-500の範囲に制限）
     settings.max_streams = settings.max_streams.clamp(1, 500);
+
+    // game_idsのバリデーション（最大100件に制限）
+    if settings.filters.game_ids.len() > 100 {
+        return Err("ゲームIDは最大100件までです".to_string());
+    }
+
+    // languagesのバリデーション（最大10件に制限）
+    if settings.filters.languages.len() > 10 {
+        return Err("言語は最大10件までです".to_string());
+    }
 
     // 設定をロード
     let mut app_settings = SettingsManager::load_settings(&app_handle)
@@ -143,6 +154,43 @@ pub async fn get_discovered_streams(
     app_handle: AppHandle,
     db_manager: State<'_, DatabaseManager>,
 ) -> Result<Vec<DiscoveredStreamInfo>, String> {
+    // 自動発見が有効かチェック
+    let settings = SettingsManager::load_settings(&app_handle)
+        .config_context("load settings")
+        .map_err(|e| e.to_string())?;
+
+    let auto_discovery_enabled = settings
+        .auto_discovery
+        .as_ref()
+        .map(|s| s.enabled)
+        .unwrap_or(false);
+
+    // 自動発見が無効の場合は即座に空配列を返す
+    if !auto_discovery_enabled {
+        eprintln!("[Discovery] Auto-discovery is disabled, returning empty list");
+        return Ok(Vec::new());
+    }
+
+    // 初期化待機（最大2秒 - デッドロック防止のため短く設定）
+    let cache: tauri::State<'_, Arc<crate::DiscoveredStreamsCache>> = app_handle.state();
+
+    if !cache.initialized.load(Ordering::SeqCst) {
+        eprintln!("[Discovery] Auto-discovery enabled but not yet initialized, waiting...");
+        let timeout = tokio::time::Duration::from_secs(2);
+        let start = tokio::time::Instant::now();
+
+        while !cache.initialized.load(Ordering::SeqCst) {
+            if start.elapsed() > timeout {
+                eprintln!("[Discovery] Timeout waiting for first poll cycle, returning empty list");
+                // 初期化未完了の場合は空配列を返す（フロントエンドのrefetchIntervalとイベントで再試行）
+                return Ok(Vec::new());
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        }
+
+        eprintln!("[Discovery] First poll cycle completed, proceeding with query");
+    }
+
     // 1. 既に登録されているチャンネルのtwitch_user_idを取得
     let registered_user_ids: HashSet<i64> = {
         let conn = db_manager
@@ -168,11 +216,13 @@ pub async fn get_discovered_streams(
         ids.into_iter().collect()
     };
 
-    // 2. メモリキャッシュから配信を取得
-    let cache: tauri::State<'_, Arc<crate::DiscoveredStreamsCache>> = app_handle.state();
-    let streams_lock = cache.streams.lock().await;
-    let streams = streams_lock.clone();
-    drop(streams_lock);
+    // 2. メモリキャッシュから配信を取得（既に取得済みのcache変数を再利用）
+    let streams = {
+        let streams_lock = cache.streams.lock().await;
+        let streams = streams_lock.clone();
+        drop(streams_lock);
+        streams
+    };
 
     // 3. 既に登録されているチャンネルを除外
     let filtered_streams: Vec<DiscoveredStreamInfo> = streams

@@ -22,12 +22,13 @@ pub async fn get_database_info(app_handle: AppHandle) -> Result<DatabaseInfo, St
         total_size += metadata.len();
     }
 
-    // Add temporary files (*.tmp)
+    // Add temporary files (*.tmp) - excluding already counted main DB and WAL files
     if let Some(parent_dir) = path.parent() {
         if let Ok(entries) = std::fs::read_dir(parent_dir) {
             for entry in entries.flatten() {
                 if let Ok(file_name) = entry.file_name().into_string() {
-                    if file_name.ends_with(".tmp") || file_name.contains("stream_stats") {
+                    // Only count .tmp files, not the main DB or WAL files (already counted above)
+                    if file_name.ends_with(".tmp") {
                         if let Ok(metadata) = entry.metadata() {
                             total_size += metadata.len();
                         }

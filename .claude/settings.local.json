@@ -36,7 +36,8 @@
       "Bash(\"C:\\\\Users\\\\Flowing\\\\stream-monitor\\\\src-tauri\\\\target\\\\release\\\\stream-monitor-cli.exe\" --db-path \"%APPDATA%\\\\stream-stats-collector\\\\stream_stats.db\" system-health)",
       "Bash(\"C:\\\\Users\\\\Flowing\\\\stream-monitor\\\\src-tauri\\\\target\\\\release\\\\stream-monitor-cli.exe\" --db-path \"C:\\\\Users\\\\Flowing\\\\AppData\\\\Roaming\\\\stream-stats-collector\\\\stream_stats.db\" system-health)",
       "Bash(npm install:*)",
-      "WebFetch(domain:playwright.dev)"
+      "WebFetch(domain:playwright.dev)",
+      "Bash(bun run tsc:*)"
     ]
   }
 }

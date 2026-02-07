@@ -90,3 +90,72 @@ export const ChartSkeleton = ({ height = 300 }: { height?: number }) => (
     <Skeleton variant="rectangular" width="100%" height={height} />
   </div>
 );
+
+// チャットメッセージリスト用Skeleton
+export const ChatMessagesSkeleton = ({ count = 8 }: { count?: number }) => (
+  <div className="space-y-3">
+    {Array.from({ length: count }).map((_, index) => (
+      <div key={index} className="flex flex-col space-y-1 p-2">
+        {/* Time and User */}
+        <div className="flex items-center gap-2">
+          <Skeleton variant="text" width={80} height={12} />
+          <Skeleton variant="text" width={120} height={12} />
+          <Skeleton variant="rectangular" width={40} height={16} className="rounded" />
+        </div>
+        {/* Message */}
+        <Skeleton variant="text" width="90%" height={14} />
+      </div>
+    ))}
+  </div>
+);
+
+// 統計ダッシュボード用Skeleton（サマリーカード + チャート）
+export const StatsDashboardSkeleton = ({
+  cardCount = 3,
+  chartCount = 1
+}: {
+  cardCount?: number;
+  chartCount?: number;
+}) => {
+  const getGridClass = () => {
+    switch (cardCount) {
+      case 1:
+        return 'grid grid-cols-1 gap-4';
+      case 2:
+        return 'grid grid-cols-1 md:grid-cols-2 gap-4';
+      case 3:
+        return 'grid grid-cols-1 md:grid-cols-3 gap-4';
+      case 4:
+        return 'grid grid-cols-1 md:grid-cols-4 gap-4';
+      default:
+        return 'grid grid-cols-1 md:grid-cols-3 gap-4';
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Summary Cards */}
+      <div className={getGridClass()}>
+        {Array.from({ length: cardCount }).map((_, index) => (
+          <StatCardSkeleton key={index} />
+        ))}
+      </div>
+      {/* Charts */}
+      {Array.from({ length: chartCount }).map((_, index) => (
+        <ChartSkeleton key={index} />
+      ))}
+    </div>
+  );
+};
+
+// フォーム用Skeleton
+export const FormSkeleton = ({ rows = 4 }: { rows?: number }) => (
+  <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-700 space-y-4">
+    {Array.from({ length: rows }).map((_, index) => (
+      <div key={index} className="space-y-2">
+        <Skeleton variant="text" width="30%" height={16} />
+        <Skeleton variant="rectangular" width="100%" height={40} className="rounded" />
+      </div>
+    ))}
+  </div>
+);

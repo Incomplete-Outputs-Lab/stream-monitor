@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { PieChart, BarChart } from '../../common/charts';
-import { LoadingSpinner } from '../../common/LoadingSpinner';
+import { StatsDashboardSkeleton } from '../../common/Skeleton';
 import { getUserSegmentStats } from '../../../api/statistics';
 
 interface UserSegmentTabProps {
@@ -44,11 +44,7 @@ const UserSegmentTab = ({ channelId, startTime, endTime }: UserSegmentTabProps) 
   }
 
   if (isLoading) {
-    return (
-      <div className="flex justify-center items-center p-8">
-        <LoadingSpinner size="lg" message="ユーザーセグメントデータを読み込み中..." />
-      </div>
-    );
+    return <StatsDashboardSkeleton cardCount={3} chartCount={2} />;
   }
 
   const segmentLabels: Record<string, string> = {

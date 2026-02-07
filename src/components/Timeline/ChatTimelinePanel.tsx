@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import type { ChatMessage } from '../../types';
-import { LoadingSpinner } from '../common/LoadingSpinner';
+import { ChatMessagesSkeleton } from '../common/Skeleton';
 
 interface ChatTimelinePanelProps {
   streamId: number;
@@ -74,9 +74,7 @@ const ChatTimelinePanel: React.FC<ChatTimelinePanelProps> = ({
       {/* Chat messages */}
       <div className="flex-1 overflow-y-auto p-4">
         {isLoading ? (
-          <div className="flex items-center justify-center h-full">
-            <LoadingSpinner />
-          </div>
+          <ChatMessagesSkeleton count={10} />
         ) : messages && messages.length > 0 ? (
           <div className="space-y-3">
             {messages.map((message, index) => (

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { BarChart } from '../../common/charts/BarChart';
 import { LineChart } from '../../common/charts/LineChart';
-import { LoadingSpinner } from '../../common/LoadingSpinner';
+import { StatsDashboardSkeleton } from '../../common/Skeleton';
 import { getWordFrequencyAnalysis, getEmoteAnalysis, getMessageLengthStats } from '../../../api/statistics';
 
 interface WordAnalysisTabProps {
@@ -72,11 +72,7 @@ const WordAnalysisTab = ({ channelId, startTime, endTime }: WordAnalysisTabProps
   }
 
   if (wordLoading || emoteLoading || lengthLoading) {
-    return (
-      <div className="flex justify-center items-center p-8">
-        <LoadingSpinner size="lg" message="ワード分析データを読み込み中..." />
-      </div>
-    );
+    return <StatsDashboardSkeleton cardCount={4} chartCount={3} />;
   }
 
   return (

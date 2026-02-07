@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { BarChart } from '../../common/charts';
-import { LoadingSpinner } from '../../common/LoadingSpinner';
+import { StatsDashboardSkeleton } from '../../common/Skeleton';
 import { getTopChatters, getChatterBehaviorStats } from '../../../api/statistics';
 
 interface ChatterBehaviorTabProps {
@@ -57,11 +57,7 @@ const ChatterBehaviorTab = ({ channelId, startTime, endTime }: ChatterBehaviorTa
   }
 
   if (chattersLoading || behaviorLoading) {
-    return (
-      <div className="flex justify-center items-center p-8">
-        <LoadingSpinner size="lg" message="チャット者行動データを読み込み中..." />
-      </div>
-    );
+    return <StatsDashboardSkeleton cardCount={4} chartCount={2} />;
   }
 
   return (

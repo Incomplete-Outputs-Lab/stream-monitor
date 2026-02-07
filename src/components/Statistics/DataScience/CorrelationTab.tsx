@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { BarChart } from '../../common/charts/BarChart';
 import { Scatter, ScatterChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ZAxis } from 'recharts';
-import { LoadingSpinner } from '../../common/LoadingSpinner';
+import { StatsDashboardSkeleton } from '../../common/Skeleton';
 import { getViewerChatCorrelation } from '../../../api/statistics';
 
 interface CorrelationTabProps {
@@ -46,11 +46,7 @@ const CorrelationTab = ({ channelId, startTime, endTime }: CorrelationTabProps) 
   }
 
   if (isLoading) {
-    return (
-      <div className="flex justify-center items-center p-8">
-        <LoadingSpinner size="lg" message="相関分析データを読み込み中..." />
-      </div>
-    );
+    return <StatsDashboardSkeleton cardCount={1} chartCount={2} />;
   }
 
   if (!data) {

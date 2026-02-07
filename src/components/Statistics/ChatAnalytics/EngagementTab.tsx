@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { LineChart } from '../../common/charts';
-import { LoadingSpinner } from '../../common/LoadingSpinner';
+import { StatsDashboardSkeleton, TableSkeleton } from '../../common/Skeleton';
 import { getChatEngagementTimeline, detectChatSpikes } from '../../../api/statistics';
 
 interface EngagementTabProps {
@@ -58,11 +58,7 @@ const EngagementTab = ({ channelId, startTime, endTime }: EngagementTabProps) =>
   }
 
   if (timelineLoading) {
-    return (
-      <div className="flex justify-center items-center p-8">
-        <LoadingSpinner size="lg" message="エンゲージメントデータを読み込み中..." />
-      </div>
-    );
+    return <StatsDashboardSkeleton cardCount={3} chartCount={2} />;
   }
 
   // Summary Cards
@@ -139,7 +135,7 @@ const EngagementTab = ({ channelId, startTime, endTime }: EngagementTabProps) =>
           チャットスパイク検出（2倍以上の急増）
         </h3>
         {spikesLoading ? (
-          <LoadingSpinner />
+          <TableSkeleton rows={5} columns={4} />
         ) : spikesData && spikesData.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">

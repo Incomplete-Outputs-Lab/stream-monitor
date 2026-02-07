@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart } from '../../common/charts';
-import { LoadingSpinner } from '../../common/LoadingSpinner';
+import { StatsDashboardSkeleton } from '../../common/Skeleton';
 import { getTimePatternStats } from '../../../api/statistics';
 
 interface TimePatternTabProps {
@@ -48,11 +48,7 @@ const TimePatternTab = ({ channelId, startTime, endTime }: TimePatternTabProps) 
   }
 
   if (isLoading) {
-    return (
-      <div className="flex justify-center items-center p-8">
-        <LoadingSpinner size="lg" message="時間帯パターンデータを読み込み中..." />
-      </div>
-    );
+    return <StatsDashboardSkeleton cardCount={3} chartCount={1} />;
   }
 
   const dayLabels = ['日', '月', '火', '水', '木', '金', '土'];

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { BarChart } from '../../common/charts/BarChart';
-import { LoadingSpinner } from '../../common/LoadingSpinner';
+import { StatsDashboardSkeleton } from '../../common/Skeleton';
 import { getChatterActivityScores } from '../../../api/statistics';
 
 interface ChatterScoreTabProps {
@@ -46,11 +46,7 @@ const ChatterScoreTab = ({ channelId, startTime, endTime }: ChatterScoreTabProps
   }
 
   if (isLoading) {
-    return (
-      <div className="flex justify-center items-center p-8">
-        <LoadingSpinner size="lg" message="チャッタースコアデータを読み込み中..." />
-      </div>
-    );
+    return <StatsDashboardSkeleton cardCount={2} chartCount={1} />;
   }
 
   if (!data || data.scores.length === 0) {

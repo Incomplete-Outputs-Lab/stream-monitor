@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { ExportForm } from './ExportForm';
-import { LoadingSpinner } from '../common/LoadingSpinner';
+import { Skeleton } from '../common/Skeleton';
 import type { Channel, ExportQuery } from '../../types';
 
 export function Export() {
@@ -238,7 +238,9 @@ export function Export() {
                 データプレビュー（最初の10行）
               </h3>
               {isLoadingPreview && (
-                <LoadingSpinner size="sm" message="" />
+                <div className="ml-2">
+                  <Skeleton variant="circular" width={20} height={20} />
+                </div>
               )}
             </div>
             

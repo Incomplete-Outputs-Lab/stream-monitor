@@ -9,7 +9,7 @@ import type {
 } from "../../types";
 import { toast } from "../../utils/toast";
 import { confirm } from "../../utils/confirm";
-import { LoadingSpinner } from "../common/LoadingSpinner";
+import { TableSkeleton } from "../common/Skeleton";
 import * as sqlApi from "../../api/sql";
 
 export function SQLViewer() {
@@ -413,9 +413,7 @@ export function SQLViewer() {
 
           {/* クエリ実行中 */}
           {isExecuting && (
-            <div className="card p-8">
-              <LoadingSpinner size="lg" message="クエリを実行中..." />
-            </div>
+            <TableSkeleton rows={10} columns={5} />
           )}
 
           {/* クエリ結果 */}

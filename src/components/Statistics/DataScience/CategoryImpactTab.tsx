@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { BarChart } from '../../common/charts/BarChart';
-import { LoadingSpinner } from '../../common/LoadingSpinner';
+import { StatsDashboardSkeleton } from '../../common/Skeleton';
 import { getCategoryChangeImpact } from '../../../api/statistics';
 
 interface CategoryImpactTabProps {
@@ -46,11 +46,7 @@ const CategoryImpactTab = ({ channelId, startTime, endTime }: CategoryImpactTabP
   }
 
   if (isLoading) {
-    return (
-      <div className="flex justify-center items-center p-8">
-        <LoadingSpinner size="lg" message="カテゴリ影響分析データを読み込み中..." />
-      </div>
-    );
+    return <StatsDashboardSkeleton cardCount={2} chartCount={2} />;
   }
 
   if (!data || (data.changes.length === 0 && data.categoryPerformance.length === 0)) {

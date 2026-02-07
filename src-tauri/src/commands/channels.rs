@@ -254,18 +254,25 @@ async fn enrich_channels_with_twitch_info(
         .filter(|c| c.platform == crate::constants::database::PLATFORM_TWITCH)
         .collect();
 
-    // Twitch API クライアントを取得（非ブロッキング）
+    // Twitch API クライアントを取得（タイムアウト付き）
     let twitch_collector = if let Some(poller) = app_handle.try_state::<Arc<Mutex<ChannelPoller>>>()
     {
-        // try_lock()を使って非ブロッキングでロック取得を試みる
-        match poller.try_lock() {
-            Ok(poller) => poller.get_twitch_collector().cloned(),
+        // 15秒のタイムアウトでロック取得を試みる（初期化完了まで待つ）
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            poller.lock()
+        ).await {
+            Ok(poller) => {
+                eprintln!("[list_channels] Successfully acquired poller lock");
+                poller.get_twitch_collector().cloned()
+            },
             Err(_) => {
-                eprintln!("[list_channels] Poller is busy, returning channels without Twitch info (will be updated in next refetch)");
+                eprintln!("[list_channels] Timeout waiting for poller lock, returning channels without Twitch info");
                 None
             }
         }
     } else {
+        eprintln!("[list_channels] Poller not found in app state");
         None
     };
 

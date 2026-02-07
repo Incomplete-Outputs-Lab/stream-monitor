@@ -65,6 +65,7 @@ pub async fn get_channel_streams(
 ) -> Result<Vec<StreamInfo>, String> {
     let conn = db_manager
         .get_connection()
+        .await
         .map_err(|e| format!("Database connection error: {}", e))?;
 
     get_channel_streams_internal(&conn, channel_id, limit, offset)
@@ -216,6 +217,7 @@ pub async fn get_stream_timeline(
 ) -> Result<StreamTimelineData, String> {
     let conn = db_manager
         .get_connection()
+        .await
         .map_err(|e| format!("Database connection error: {}", e))?;
 
     get_stream_timeline_internal(&conn, stream_id)
@@ -380,15 +382,21 @@ fn get_timeline_stats(
 ) -> Result<Vec<TimelinePoint>, Box<dyn std::error::Error + Send + Sync>> {
     let query = r#"
         SELECT 
-            CAST(collected_at AS VARCHAR) as collected_at,
-            viewer_count,
-            chat_rate_1min,
-            category,
-            title,
-            follower_count
-        FROM stream_stats
-        WHERE stream_id = ?
-        ORDER BY collected_at ASC
+            CAST(ss.collected_at AS VARCHAR) as collected_at,
+            ss.viewer_count,
+            COALESCE((
+                SELECT COUNT(*)
+                FROM chat_messages cm
+                WHERE cm.stream_id = ss.stream_id
+                  AND cm.timestamp >= ss.collected_at - INTERVAL '1 minute'
+                  AND cm.timestamp < ss.collected_at
+            ), 0) AS chat_rate_1min,
+            ss.category,
+            ss.title,
+            ss.follower_count
+        FROM stream_stats ss
+        WHERE ss.stream_id = ?
+        ORDER BY ss.collected_at ASC
     "#;
 
     let stream_id_str = stream_id.to_string();
@@ -419,14 +427,17 @@ fn detect_category_changes(stats: &[TimelinePoint]) -> Vec<CategoryChange> {
 
     for stat in stats {
         if let Some(ref current_category) = stat.category {
-            if prev_category.as_ref() != Some(current_category) {
-                changes.push(CategoryChange {
-                    timestamp: stat.collected_at.clone(),
-                    from_category: prev_category.clone(),
-                    to_category: current_category.clone(),
-                });
-                prev_category = Some(current_category.clone());
+            // Only record changes where prev_category is Some and differs from current
+            if let Some(ref prev) = prev_category {
+                if prev != current_category {
+                    changes.push(CategoryChange {
+                        timestamp: stat.collected_at.clone(),
+                        from_category: Some(prev.clone()),
+                        to_category: current_category.clone(),
+                    });
+                }
             }
+            prev_category = Some(current_category.clone());
         }
     }
 
@@ -439,14 +450,17 @@ fn detect_title_changes(stats: &[TimelinePoint]) -> Vec<TitleChange> {
 
     for stat in stats {
         if let Some(ref current_title) = stat.title {
-            if prev_title.as_ref() != Some(current_title) {
-                changes.push(TitleChange {
-                    timestamp: stat.collected_at.clone(),
-                    from_title: prev_title.clone(),
-                    to_title: current_title.clone(),
-                });
-                prev_title = Some(current_title.clone());
+            // Only record changes where prev_title is Some and differs from current
+            if let Some(ref prev) = prev_title {
+                if prev != current_title {
+                    changes.push(TitleChange {
+                        timestamp: stat.collected_at.clone(),
+                        from_title: Some(prev.clone()),
+                        to_title: current_title.clone(),
+                    });
+                }
             }
+            prev_title = Some(current_title.clone());
         }
     }
 

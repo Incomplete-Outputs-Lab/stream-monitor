@@ -292,6 +292,7 @@ pub async fn execute_sql(
 
     let conn = db_manager
         .get_connection()
+        .await
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 
@@ -651,6 +652,7 @@ pub async fn list_sql_templates(
 ) -> Result<Vec<SqlTemplate>, String> {
     let conn = db_manager
         .get_connection()
+        .await
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 
@@ -693,6 +695,7 @@ pub async fn save_sql_template(
 ) -> Result<SqlTemplate, String> {
     let conn = db_manager
         .get_connection()
+        .await
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 
@@ -765,6 +768,7 @@ pub async fn delete_sql_template(
 ) -> Result<(), String> {
     let conn = db_manager
         .get_connection()
+        .await
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 
@@ -793,6 +797,7 @@ pub async fn list_database_tables(
 ) -> Result<Vec<TableInfo>, String> {
     let conn = db_manager
         .get_connection()
+        .await
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 

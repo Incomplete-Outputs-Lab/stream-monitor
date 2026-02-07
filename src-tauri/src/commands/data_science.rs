@@ -17,6 +17,7 @@ pub async fn get_word_frequency_analysis(
 ) -> Result<data_science_analytics::WordFrequencyResult, String> {
     let conn = db_manager
         .get_connection()
+        .await
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 
@@ -42,6 +43,7 @@ pub async fn get_emote_analysis(
 ) -> Result<data_science_analytics::EmoteAnalysisResult, String> {
     let conn = db_manager
         .get_connection()
+        .await
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 
@@ -66,6 +68,7 @@ pub async fn get_message_length_stats(
 ) -> Result<data_science_analytics::MessageLengthStats, String> {
     let conn = db_manager
         .get_connection()
+        .await
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 
@@ -94,6 +97,7 @@ pub async fn get_viewer_chat_correlation(
 ) -> Result<data_science_analytics::CorrelationResult, String> {
     let conn = db_manager
         .get_connection()
+        .await
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 
@@ -117,6 +121,7 @@ pub async fn get_category_change_impact(
 ) -> Result<data_science_analytics::CategoryImpactResult, String> {
     let conn = db_manager
         .get_connection()
+        .await
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 
@@ -145,6 +150,7 @@ pub async fn get_chatter_activity_scores(
 ) -> Result<data_science_analytics::ChatterScoreResult, String> {
     let conn = db_manager
         .get_connection()
+        .await
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 
@@ -175,6 +181,7 @@ pub async fn detect_anomalies(
 ) -> Result<data_science_analytics::AnomalyResult, String> {
     let conn = db_manager
         .get_connection()
+        .await
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 

@@ -74,7 +74,6 @@ pub fn init_database(conn: &Connection) -> Result<(), duckdb::Error> {
             stream_id BIGINT,
             collected_at TIMESTAMP NOT NULL,
             viewer_count INTEGER,
-            chat_rate_1min INTEGER DEFAULT 0,
             twitch_user_id TEXT,
             channel_name TEXT,
             FOREIGN KEY (stream_id) REFERENCES streams(id)
@@ -510,9 +509,9 @@ fn migrate_database_schema(conn: &Connection) -> Result<(), duckdb::Error> {
 
             eprintln!("[Migration] badges column conversion completed");
         }
-        Some("TEXT[]") => {
-            // 既に TEXT[] 型の場合は何もしない
-            eprintln!("[Migration] badges column already TEXT[], skipping");
+        Some("TEXT[]") | Some("VARCHAR[]") => {
+            // 既に TEXT[] または VARCHAR[] 型の場合は何もしない（DuckDBでは同等）
+            eprintln!("[Migration] badges column already TEXT[]/VARCHAR[], skipping");
         }
         Some(other) => {
             eprintln!(
@@ -533,6 +532,19 @@ fn migrate_database_schema(conn: &Connection) -> Result<(), duckdb::Error> {
         eprintln!("[Migration] Adding badge_info column to chat_messages table");
         conn.execute("ALTER TABLE chat_messages ADD COLUMN badge_info TEXT", [])?;
         eprintln!("[Migration] badge_info column added successfully");
+    }
+
+    // chat_messagesテーブルにdisplay_nameフィールドを追加
+    let mut chat_messages_has_display_name = conn.prepare(
+        "SELECT COUNT(*) FROM pragma_table_info('chat_messages') WHERE name = 'display_name'",
+    )?;
+    let chat_messages_has_display_name_count: i64 =
+        chat_messages_has_display_name.query_row([], |row| row.get(0))?;
+
+    if chat_messages_has_display_name_count == 0 {
+        eprintln!("[Migration] Adding display_name column to chat_messages table");
+        conn.execute("ALTER TABLE chat_messages ADD COLUMN display_name TEXT", [])?;
+        eprintln!("[Migration] display_name column added successfully");
     }
 
     // 既存のchat_messagesのchannel_idをstreams経由で更新
@@ -566,5 +578,67 @@ fn migrate_database_schema(conn: &Connection) -> Result<(), duckdb::Error> {
         }
     }
 
+    // chat_rate_1min列を削除（存在する場合）
+    let mut stream_stats_has_chat_rate = conn.prepare(
+        "SELECT COUNT(*) FROM pragma_table_info('stream_stats') WHERE name = 'chat_rate_1min'",
+    )?;
+    let stream_stats_has_chat_rate_count: i64 =
+        stream_stats_has_chat_rate.query_row([], |row| row.get(0))?;
+
+    if stream_stats_has_chat_rate_count > 0 {
+        eprintln!("[Migration] Dropping chat_rate_1min column from stream_stats table");
+        conn.execute("ALTER TABLE stream_stats DROP COLUMN chat_rate_1min", [])?;
+        eprintln!("[Migration] chat_rate_1min column dropped successfully");
+    }
+
+    // chat_messagesテーブルに複合インデックス追加（パフォーマンス最適化）
+    eprintln!("[Migration] Creating composite index on chat_messages(stream_id, timestamp)");
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chat_messages_stream_timestamp ON chat_messages(stream_id, timestamp)",
+        [],
+    )?;
+    eprintln!("[Migration] Composite index created successfully");
+
+    // chat_messagesテーブルのuser_idにインデックス追加（ユーザー識別子ベースの集計用）
+    eprintln!("[Migration] Creating index on chat_messages.user_id");
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chat_messages_user_id ON chat_messages(user_id)",
+        [],
+    )?;
+    eprintln!("[Migration] chat_messages.user_id index created successfully");
+
+    // game_categoriesテーブルを作成（カテゴリIDキャッシュ用）
+    eprintln!("[Migration] Creating game_categories table if not exists");
+    conn.execute(
+        r#"
+        CREATE TABLE IF NOT EXISTS game_categories (
+            game_id TEXT PRIMARY KEY,
+            game_name TEXT NOT NULL,
+            box_art_url TEXT,
+            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        "#,
+        [],
+    )?;
+    eprintln!("[Migration] game_categories table created");
+
+    // stream_statsテーブルにgame_idフィールドを追加
+    let mut stream_stats_has_game_id = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('stream_stats') WHERE name = 'game_id'")?;
+    let stream_stats_has_game_id_count: i64 =
+        stream_stats_has_game_id.query_row([], |row| row.get(0))?;
+
+    if stream_stats_has_game_id_count == 0 {
+        eprintln!("[Migration] Adding game_id column to stream_stats table");
+        conn.execute("ALTER TABLE stream_stats ADD COLUMN game_id TEXT", [])?;
+        // インデックスを作成（検索パフォーマンス向上のため）
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_stream_stats_game_id ON stream_stats(game_id)",
+            [],
+        )?;
+        eprintln!("[Migration] Created index on stream_stats.game_id");
+    }
+
+    eprintln!("[Migration] All migrations completed successfully");
     Ok(())
 }

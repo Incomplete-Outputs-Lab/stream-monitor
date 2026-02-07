@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import CodeMirror from "@uiw/react-codemirror";
 import { sql } from "@codemirror/lang-sql";
 import type {
@@ -10,6 +9,8 @@ import type {
 } from "../../types";
 import { toast } from "../../utils/toast";
 import { confirm } from "../../utils/confirm";
+import { TableSkeleton } from "../common/Skeleton";
+import * as sqlApi from "../../api/sql";
 
 export function SQLViewer() {
   const [query, setQuery] = useState<string>(
@@ -34,7 +35,7 @@ export function SQLViewer() {
   // テンプレート一覧を読み込み
   const loadTemplates = async () => {
     try {
-      const result = await invoke<SqlTemplate[]>("list_sql_templates");
+      const result = await sqlApi.listSqlTemplates();
       setTemplates(result);
     } catch (err) {
       console.error("Failed to load templates:", err);
@@ -44,7 +45,7 @@ export function SQLViewer() {
   // テーブル一覧を読み込み
   const loadTables = async () => {
     try {
-      const result = await invoke<TableInfo[]>("list_database_tables");
+      const result = await sqlApi.listDatabaseTables();
       setTables(result);
     } catch (err) {
       console.error("Failed to load tables:", err);
@@ -54,9 +55,7 @@ export function SQLViewer() {
   // データベース情報を読み込み
   const loadDbInfo = async () => {
     try {
-      const result = await invoke<{ path: string; size_bytes: number }>(
-        "get_database_info"
-      );
+      const result = await sqlApi.getDatabaseInfo();
       setDbInfo(result);
     } catch (err) {
       console.error("Failed to load database info:", err);
@@ -81,7 +80,7 @@ export function SQLViewer() {
     setResult(null);
 
     try {
-      const result = await invoke<SqlQueryResult>("execute_sql", { query });
+      const result = await sqlApi.executeSqlQuery(query);
       setResult(result);
     } catch (err) {
       setError(String(err));
@@ -104,7 +103,7 @@ export function SQLViewer() {
         description: templateDescription || undefined,
         query,
       };
-      await invoke("save_sql_template", { request });
+      await sqlApi.saveSqlTemplate(request);
       setShowSaveDialog(false);
       setTemplateName("");
       setTemplateDescription("");
@@ -129,7 +128,7 @@ export function SQLViewer() {
     }
 
     try {
-      await invoke("delete_sql_template", { id });
+      await sqlApi.deleteSqlTemplate(id);
       await loadTemplates();
       if (selectedTemplate?.id === id) {
         setSelectedTemplate(null);
@@ -168,7 +167,7 @@ export function SQLViewer() {
         </p>
         {dbInfo && (
           <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 font-mono select-text">
-            📁 {dbInfo.path} ({(dbInfo.size_bytes / 1024 / 1024).toFixed(2)} MB)
+            📁 {dbInfo.path} ({((dbInfo.size_bytes || 0) / 1024 / 1024).toFixed(2)} MB)
           </div>
         )}
       </div>
@@ -412,8 +411,13 @@ export function SQLViewer() {
             </div>
           )}
 
+          {/* クエリ実行中 */}
+          {isExecuting && (
+            <TableSkeleton rows={10} columns={5} />
+          )}
+
           {/* クエリ結果 */}
-          {result && (
+          {!isExecuting && result && (
             <div className="card p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">

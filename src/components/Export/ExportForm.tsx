@@ -16,9 +16,10 @@ interface ExportFormProps {
   config: ExportConfig;
   onConfigChange: (config: ExportConfig) => void;
   channels: Channel[];
+  isLoadingChannels?: boolean;
 }
 
-export function ExportForm({ config, onConfigChange, channels }: ExportFormProps) {
+export function ExportForm({ config, onConfigChange, channels, isLoadingChannels = false }: ExportFormProps) {
   const updateConfig = (updates: Partial<ExportConfig>) => {
     onConfigChange({ ...config, ...updates });
   };
@@ -65,20 +66,35 @@ export function ExportForm({ config, onConfigChange, channels }: ExportFormProps
         <div className="flex space-x-4 mb-3">
           <button
             onClick={handleSelectAllChannels}
-            className="px-3 py-1 text-sm bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-800 dark:text-blue-200 rounded-md transition-colors"
+            disabled={isLoadingChannels}
+            className="px-3 py-1 text-sm bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-800 dark:text-blue-200 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             全て選択
           </button>
           <button
             onClick={handleDeselectAllChannels}
-            className="px-3 py-1 text-sm bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-800 dark:text-gray-200 rounded-md transition-colors"
+            disabled={isLoadingChannels}
+            className="px-3 py-1 text-sm bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-800 dark:text-gray-200 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             全て解除
           </button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-48 overflow-y-auto border border-gray-300 dark:border-slate-600 rounded-md p-3 bg-white dark:bg-slate-800">
-          {channels.length === 0 ? (
+          {isLoadingChannels ? (
+            // Skeleton loading state
+            <>
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="flex items-center space-x-2 animate-pulse">
+                  <div className="w-4 h-4 bg-gray-300 dark:bg-slate-600 rounded"></div>
+                  <div className="flex-1 space-y-1">
+                    <div className="h-3 bg-gray-300 dark:bg-slate-600 rounded w-3/4"></div>
+                    <div className="h-2 bg-gray-300 dark:bg-slate-600 rounded w-1/2"></div>
+                  </div>
+                </div>
+              ))}
+            </>
+          ) : channels.length === 0 ? (
             <p className="text-gray-500 dark:text-gray-400 text-sm">チャンネルが登録されていません</p>
           ) : (
             channels.map((channel) => (

@@ -120,11 +120,12 @@ impl YouTubeLiveChatClient {
         Some(ChatMessage {
             id: None,
             channel_id: None, // YouTube の場合は channel_id を保存しない
+            display_name: Some(user_name.clone()),
             stream_id: Some(self.stream_id),
             timestamp: timestamp.to_string(),
             platform: youtube::PLATFORM_NAME.to_string(),
             user_id,
-            user_name,
+            user_name: user_name.clone(),
             message: message_text,
             message_type,
             badges: None,     // YouTube の場合は badges を保存しない（現状未対応）

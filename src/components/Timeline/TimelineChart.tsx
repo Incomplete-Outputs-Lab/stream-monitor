@@ -19,6 +19,11 @@ interface TimelineChartProps {
 
 const TimelineChart: React.FC<TimelineChartProps> = ({ timelineData }) => {
   const chartData = useMemo(() => {
+    // 配信開始時のフォロワー数を取得（最初のデータポイント）
+    const initialFollowerCount = timelineData.stats.length > 0
+      ? (timelineData.stats[0].follower_count || 0)
+      : 0;
+
     return timelineData.stats.map((stat) => {
       const date = new Date(stat.collected_at);
       const timeStr = date.toLocaleTimeString('ja-JP', {
@@ -26,12 +31,16 @@ const TimelineChart: React.FC<TimelineChartProps> = ({ timelineData }) => {
         minute: '2-digit',
       });
 
+      const currentFollowers = stat.follower_count || 0;
+      const followerGain = currentFollowers - initialFollowerCount;
+
       return {
         time: timeStr,
         timestamp: stat.collected_at,
         viewers: stat.viewer_count || 0,
         chatRate: stat.chat_rate_1min,
-        followers: stat.follower_count || 0,
+        followers: currentFollowers,
+        followerGain: followerGain,
         category: stat.category,
         title: stat.title,
       };
@@ -41,6 +50,10 @@ const TimelineChart: React.FC<TimelineChartProps> = ({ timelineData }) => {
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
+      const followerGainDisplay = data.followerGain >= 0
+        ? `+${data.followerGain.toLocaleString()}`
+        : data.followerGain.toLocaleString();
+
       return (
         <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-4">
           <p className="font-medium text-gray-900 dark:text-white mb-2">{data.time}</p>
@@ -52,7 +65,10 @@ const TimelineChart: React.FC<TimelineChartProps> = ({ timelineData }) => {
               チャットレート: <span className="font-medium">{data.chatRate}</span>
             </p>
             <p className="text-purple-600 dark:text-purple-400">
-              フォロワー: <span className="font-medium">{data.followers.toLocaleString()}</span>
+              フォロワー増減: <span className="font-medium">{followerGainDisplay}</span>
+            </p>
+            <p className="text-purple-600 dark:text-purple-400 text-xs opacity-75">
+              (現在: {data.followers.toLocaleString()})
             </p>
             {data.category && (
               <p className="text-orange-600 dark:text-orange-400">
@@ -131,7 +147,7 @@ const TimelineChart: React.FC<TimelineChartProps> = ({ timelineData }) => {
       {timelineData.stats.some((s) => s.follower_count !== null && s.follower_count !== undefined) && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
           <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">
-            フォロワー数の推移
+            フォロワー増減の推移
           </h3>
           <ResponsiveContainer width="100%" height={300}>
             <ComposedChart data={chartData}>
@@ -146,17 +162,17 @@ const TimelineChart: React.FC<TimelineChartProps> = ({ timelineData }) => {
                 stroke="#8B5CF6"
                 tick={{ fill: '#6B7280' }}
                 tickLine={{ stroke: '#6B7280' }}
-                label={{ value: 'フォロワー数', angle: -90, position: 'insideLeft', fill: '#6B7280' }}
+                label={{ value: 'フォロワー増減', angle: -90, position: 'insideLeft', fill: '#6B7280' }}
               />
               <Tooltip content={<CustomTooltip />} />
               <Legend />
               <Line
                 type="monotone"
-                dataKey="followers"
+                dataKey="followerGain"
                 stroke="#8B5CF6"
                 strokeWidth={2}
                 dot={false}
-                name="フォロワー数"
+                name="フォロワー増減"
               />
             </ComposedChart>
           </ResponsiveContainer>

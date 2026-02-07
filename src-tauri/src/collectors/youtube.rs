@@ -78,10 +78,10 @@ impl Collector for YouTubeCollector {
                 stream_id,
                 title: video.snippet.as_ref().and_then(|s| s.title.clone()),
                 category: video.snippet.as_ref().and_then(|s| s.category_id.clone()),
+                game_id: video.snippet.as_ref().and_then(|s| s.category_id.clone()),
                 thumbnail_url,
                 started_at,
                 viewer_count,
-                chat_rate_1min: 0,    // Phase 2で実装（チャット機能）
                 follower_count: None, // YouTube APIではフォロワー数は取得していない
             }))
         } else {

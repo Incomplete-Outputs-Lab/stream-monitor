@@ -6,6 +6,7 @@ import { OAuthConfigForm } from './OAuthConfigForm';
 import { TokenForm } from './TokenForm';
 import { TwitchAuthPanel } from './TwitchAuthPanel';
 import { AutoDiscoveryForm } from './AutoDiscoveryForm';
+import { GameCategoryManager } from './GameCategoryManager';
 import { useConfigStore } from '../../stores/configStore';
 import { useThemeStore } from '../../stores/themeStore';
 
@@ -255,6 +256,9 @@ export function Settings() {
 
         {/* Twitch自動発見設定 */}
         <AutoDiscoveryForm />
+
+        {/* ゲームカテゴリ管理 */}
+        <GameCategoryManager />
       </div>
 
       {/* ビルド情報 */}

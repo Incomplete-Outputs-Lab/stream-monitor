@@ -1,8 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
-import type { UserSegmentStats } from '../../../types';
 import { PieChart, BarChart } from '../../common/charts';
-import { LoadingSpinner } from '../../common/LoadingSpinner';
+import { StatsDashboardSkeleton } from '../../common/Skeleton';
+import { getUserSegmentStats } from '../../../api/statistics';
 
 interface UserSegmentTabProps {
   channelId: number | null;
@@ -13,19 +12,39 @@ interface UserSegmentTabProps {
 const UserSegmentTab = ({ channelId, startTime, endTime }: UserSegmentTabProps) => {
   const { data: segmentData, isLoading } = useQuery({
     queryKey: ['userSegmentStats', channelId, startTime, endTime],
-    queryFn: async () => {
-      const result = await invoke<UserSegmentStats[]>('get_user_segment_stats', {
-        channelId,
-        streamId: null,
-        startTime,
-        endTime,
-      });
-      return result;
-    },
+    queryFn: () => getUserSegmentStats({
+      channelId: channelId ?? undefined,
+      startTime,
+      endTime,
+    }),
+    enabled: !!channelId,
   });
 
+  // チャンネル選択チェック
+  if (channelId === null) {
+    return (
+      <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-6">
+        <div className="flex items-start">
+          <div className="flex-shrink-0">
+            <svg className="h-6 w-6 text-yellow-600 dark:text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <div className="ml-3">
+            <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+              チャンネルを選択してください
+            </h3>
+            <p className="mt-2 text-sm text-yellow-700 dark:text-yellow-300">
+              ユーザーセグメント分析には特定のチャンネルを選択する必要があります。上部のチャンネル選択ドロップダウンから分析対象のチャンネルを選んでください。
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (isLoading) {
-    return <LoadingSpinner />;
+    return <StatsDashboardSkeleton cardCount={3} chartCount={2} />;
   }
 
   const segmentLabels: Record<string, string> = {
@@ -67,9 +86,7 @@ const UserSegmentTab = ({ channelId, startTime, endTime }: UserSegmentTabProps) 
             サブスク率
           </h3>
           <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">
-            {segmentData?.find((s) => s.segment === 'subscriber')?.percentage.toFixed(1) ||
-              0}
-            %
+            {(segmentData?.find((s) => s.segment === 'subscriber')?.percentage || 0).toFixed(1)}%
           </p>
         </div>
       </div>
@@ -106,7 +123,7 @@ const UserSegmentTab = ({ channelId, startTime, endTime }: UserSegmentTabProps) 
           <BarChart
             data={segmentData.map((s) => ({
               segment: segmentLabels[s.segment] || s.segment,
-              平均発言数: Number(s.avgMessagesPerUser.toFixed(2)),
+              平均発言数: Number((s.avgMessagesPerUser || 0).toFixed(2)),
             }))}
             xKey="segment"
             bars={[{ key: '平均発言数', color: '#3b82f6' }]}
@@ -159,10 +176,10 @@ const UserSegmentTab = ({ channelId, startTime, endTime }: UserSegmentTabProps) 
                       {segment.userCount.toLocaleString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                      {segment.avgMessagesPerUser.toFixed(2)}
+                      {(segment.avgMessagesPerUser || 0).toFixed(2)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                      {segment.percentage.toFixed(2)}%
+                      {(segment.percentage || 0).toFixed(2)}%
                     </td>
                   </tr>
                 ))}

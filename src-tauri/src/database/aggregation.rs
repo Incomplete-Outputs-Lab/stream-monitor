@@ -151,16 +151,9 @@ impl DataAggregator {
         let max_viewer_count = viewer_counts.iter().max().copied();
         let min_viewer_count = viewer_counts.iter().min().copied();
 
-        // チャットレートの平均
-        let chat_rates: Vec<f64> = stats
-            .iter()
-            .map(|stat| stat.chat_rate_1min as f64)
-            .collect();
-        let chat_rate_avg = if chat_rates.is_empty() {
-            0.0
-        } else {
-            chat_rates.iter().sum::<f64>() / chat_rates.len() as f64
-        };
+        // チャットレートは動的に計算されるため、ここでは0を設定
+        // 実際のチャットレートは chat_messages テーブルから計算される
+        let chat_rate_avg = 0.0;
 
         AggregatedStreamStats {
             timestamp: timestamp.to_string(),
@@ -270,8 +263,9 @@ mod tests {
             stream_id: 1,
             collected_at: "2024-01-01T12:00:00Z".to_string(),
             viewer_count: Some(100),
-            chat_rate_1min: 10,
+            chat_rate_1min: None,
             category: None,
+            game_id: None,
             title: None,
             follower_count: None,
             twitch_user_id: None,
@@ -283,7 +277,7 @@ mod tests {
         assert_eq!(result[0].avg_viewer_count, Some(100.0));
         assert_eq!(result[0].max_viewer_count, Some(100));
         assert_eq!(result[0].min_viewer_count, Some(100));
-        assert_eq!(result[0].chat_rate_avg, 10.0);
+        assert_eq!(result[0].chat_rate_avg, 0.0);
         assert_eq!(result[0].data_points, 1);
     }
 
@@ -295,8 +289,9 @@ mod tests {
                 stream_id: 1,
                 collected_at: "2024-01-01T12:00:00Z".to_string(),
                 viewer_count: Some(100),
-                chat_rate_1min: 10,
+                chat_rate_1min: None,
                 category: None,
+                game_id: None,
                 title: None,
                 follower_count: None,
                 twitch_user_id: None,
@@ -307,8 +302,9 @@ mod tests {
                 stream_id: 1,
                 collected_at: "2024-01-01T12:01:00Z".to_string(),
                 viewer_count: Some(150),
-                chat_rate_1min: 15,
+                chat_rate_1min: None,
                 category: None,
+                game_id: None,
                 title: None,
                 follower_count: None,
                 twitch_user_id: None,
@@ -321,7 +317,7 @@ mod tests {
         assert_eq!(result[0].avg_viewer_count, Some(125.0)); // (100 + 150) / 2
         assert_eq!(result[0].max_viewer_count, Some(150));
         assert_eq!(result[0].min_viewer_count, Some(100));
-        assert_eq!(result[0].chat_rate_avg, 12.5); // (10 + 15) / 2
+        assert_eq!(result[0].chat_rate_avg, 0.0);
         assert_eq!(result[0].data_points, 2);
     }
 
@@ -336,6 +332,7 @@ mod tests {
                 platform: crate::constants::database::PLATFORM_TWITCH.to_string(),
                 user_id: Some("user1".to_string()),
                 user_name: "User1".to_string(),
+                display_name: Some("User1".to_string()),
                 message: "Hello".to_string(),
                 message_type: "normal".to_string(),
                 badges: Some(vec!["broadcaster".to_string()]),
@@ -349,6 +346,7 @@ mod tests {
                 platform: crate::constants::database::PLATFORM_TWITCH.to_string(),
                 user_id: Some("user2".to_string()),
                 user_name: "User2".to_string(),
+                display_name: Some("User2".to_string()),
                 message: "Hi".to_string(),
                 message_type: "normal".to_string(),
                 badges: None,

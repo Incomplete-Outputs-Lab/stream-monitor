@@ -56,6 +56,7 @@ export interface ChatMessage {
   platform: string;
   user_id?: string;
   user_name: string;
+  display_name?: string; // Twitch表示名
   message: string;
   message_type: string;
   badges?: string[];
@@ -150,6 +151,7 @@ export interface TableInfo {
 export interface BroadcasterAnalytics {
   channel_id: number;
   channel_name: string;
+  login_name: string;
   minutes_watched: number;
   hours_broadcasted: number;
   average_ccu: number;
@@ -171,6 +173,10 @@ export interface GameAnalytics {
   average_ccu: number;
   unique_broadcasters: number;
   top_channel: string | null;
+  top_channel_login: string | null;
+  total_chat_messages: number;
+  avg_chat_rate: number;
+  engagement_rate: number;
 }
 
 export interface DataAvailability {
@@ -353,7 +359,9 @@ export interface UserSegmentStats {
 }
 
 export interface TopChatter {
-  userName: string;
+  userId?: string;          // Twitch user_id（プライマリ識別子）
+  userName: string;         // Twitchログイン名
+  displayName?: string;     // Twitch表示名
   messageCount: number;
   badges: string[];
   firstSeen: string;
@@ -526,15 +534,25 @@ export interface ChatterScoreResult {
 export interface Anomaly {
   timestamp: string;
   value: number;
-  zScore: number;
+  previousValue: number;
+  changeAmount: number;
+  changeRate: number;
+  modifiedZScore: number;
   isPositive: boolean;
+  minutesFromStreamStart?: number;
+  streamPhase: string;
+  streamId?: number;
 }
 
 export interface TrendStats {
   viewerTrend: string;
+  viewerMedian: number;
+  viewerMad: number;
   viewerAvg: number;
   viewerStdDev: number;
   chatTrend: string;
+  chatMedian: number;
+  chatMad: number;
   chatAvg: number;
   chatStdDev: number;
 }
@@ -554,4 +572,19 @@ export interface DataScienceQuery {
   endTime?: string;
   limit?: number;
   zThreshold?: number;
+}
+
+// Game Category
+
+export interface GameCategory {
+  gameId: string;         // Twitch game ID（プライマリキー）
+  gameName: string;       // カテゴリ名（表示用）
+  boxArtUrl?: string;     // ボックスアート画像URL
+  lastUpdated?: string;   // 最終更新日時
+}
+
+export interface UpsertGameCategoryRequest {
+  gameId: string;
+  gameName: string;
+  boxArtUrl?: string;
 }

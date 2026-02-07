@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Channel, StreamInfo, StreamTimelineData, SelectedStream } from '../../types';
-import { LoadingSpinner } from '../common/LoadingSpinner';
+import { Skeleton } from '../common/Skeleton';
 import { getStreamColor, truncateText } from './utils';
 
 interface ComparisonSelectorProps {
@@ -185,7 +185,12 @@ const ComparisonSelector: React.FC<ComparisonSelectorProps> = ({
   };
 
   if (loadingChannels) {
-    return <LoadingSpinner />;
+    return (
+      <div className="space-y-4">
+        <Skeleton variant="rectangular" height={40} className="rounded-lg" />
+        <Skeleton variant="rectangular" height={200} className="rounded-lg" />
+      </div>
+    );
   }
 
   return (
@@ -289,8 +294,10 @@ const ComparisonSelector: React.FC<ComparisonSelectorProps> = ({
           </label>
 
           {loadingStreams ? (
-            <div className="py-8">
-              <LoadingSpinner />
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} variant="rectangular" height={60} className="rounded-lg" />
+              ))}
             </div>
           ) : streams.length === 0 ? (
             <div className="text-center py-8 text-gray-500 dark:text-gray-400">
@@ -383,11 +390,8 @@ const ComparisonSelector: React.FC<ComparisonSelectorProps> = ({
       )}
 
       {loadingTimelines && (
-        <div className="mt-4 py-8">
-          <LoadingSpinner />
-          <p className="text-center text-gray-500 dark:text-gray-400 mt-2">
-            タイムラインデータを読み込んでいます...
-          </p>
+        <div className="mt-4 space-y-2">
+          <Skeleton variant="rectangular" height={300} className="rounded-lg" />
         </div>
       )}
     </div>

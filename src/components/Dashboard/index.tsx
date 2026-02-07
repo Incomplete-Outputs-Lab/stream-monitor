@@ -2,19 +2,13 @@ import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { ChannelWithStats, TwitchRateLimitStatus, DiscoveredStreamInfo } from "../../types";
 import { Tooltip as CustomTooltip } from "../common/Tooltip";
 import { toast } from "../../utils/toast";
 import { confirm } from "../../utils/confirm";
-
-interface StreamStats {
-  id?: number;
-  stream_id: number;
-  collected_at: string;
-  viewer_count?: number;
-  chat_rate_1min: number;
-}
+import * as discoveryApi from "../../api/discovery";
+import * as statisticsApi from "../../api/statistics";
 
 interface LiveChannelCardProps {
   channel: ChannelWithStats;
@@ -79,9 +73,9 @@ function LiveChannelCard({ channel }: LiveChannelCardProps) {
                     toast.error('このチャンネルにはTwitch User IDが設定されていません。');
                     return;
                   }
-                  await invoke('promote_discovered_channel', { 
-                    channelId: channel.twitch_user_id.toString()
-                  });
+                  await discoveryApi.promoteDiscoveredChannel(
+                    channel.twitch_user_id.toString()
+                  );
                   window.location.reload();
                 } catch (err) {
                   toast.error(`エラー: ${err}`);
@@ -209,15 +203,16 @@ function DiscoveredStreamCard({ stream, onPromote, isAlreadyRegistered = false }
 }
 
 export function Dashboard() {
-  const [statsData, setStatsData] = useState<StreamStats[]>([]);
-  const [localExpiresIn, setLocalExpiresIn] = useState<number | null>(null);
   const queryClient = useQueryClient();
 
   // チャンネル情報を取得し、ライブチャンネルのみをフィルタリング
-  const { data: allChannels, isLoading: channelsLoading } = useQuery({
+  const { data: allChannels, isLoading: channelsLoading, error: channelsError } = useQuery({
     queryKey: ["channels-with-twitch-info"],
     queryFn: async () => {
-      return await invoke<ChannelWithStats[]>("list_channels");
+      console.log('[Dashboard] Fetching channels...');
+      const result = await invoke<ChannelWithStats[]>("list_channels");
+      console.log('[Dashboard] Fetched channels:', result);
+      return result;
     },
     refetchInterval: 30000, // 30秒ごとに更新
     staleTime: 10000, // 10秒間はキャッシュを使用
@@ -226,16 +221,30 @@ export function Dashboard() {
 
   const liveChannels = allChannels?.filter(c => c.is_live) ?? [];
 
-  // 最新の統計データを取得
-  const { data: recentStats } = useQuery({
-    queryKey: ["recent-stats"],
-    queryFn: async () => {
-      return await invoke<StreamStats[]>("get_stream_stats", {
-        query: {
-          start_time: new Date(Date.now() - 3600000).toISOString(), // 1時間前から
-        },
+  // デバッグ: チャンネルデータの状態をログ出力
+  console.log('[Dashboard] All channels:', allChannels);
+  console.log('[Dashboard] Live channels:', liveChannels);
+  console.log('[Dashboard] Channels loading:', channelsLoading);
+  console.log('[Dashboard] Channels error:', channelsError);
+
+  // 各チャンネルの詳細を出力
+  if (allChannels && allChannels.length > 0) {
+    allChannels.forEach((ch, idx) => {
+      console.log(`[Dashboard] Channel ${idx}:`, {
+        name: ch.channel_name,
+        platform: ch.platform,
+        enabled: ch.enabled,
+        is_live: ch.is_live,
+        current_viewers: ch.current_viewers,
+        twitch_user_id: ch.twitch_user_id,
       });
-    },
+    });
+  }
+
+  // リアルタイムのチャットレートを取得
+  const { data: realtimeChatRate } = useQuery({
+    queryKey: ["realtime-chat-rate"],
+    queryFn: () => statisticsApi.getRealtimeChatRate(),
     refetchInterval: 10000, // 10秒ごとに更新
   });
 
@@ -246,43 +255,35 @@ export function Dashboard() {
     refetchInterval: 5000, // 5秒ごとに更新
   });
 
-  // rateLimitStatusが更新されたらlocalExpiresInを更新
-  useEffect(() => {
-    if (rateLimitStatus?.oldest_entry_expires_in_seconds != null) {
-      setLocalExpiresIn(rateLimitStatus.oldest_entry_expires_in_seconds);
-    }
-  }, [rateLimitStatus?.oldest_entry_expires_in_seconds]);
-
-  // localExpiresInを1秒ごとにデクリメント
-  useEffect(() => {
-    if (localExpiresIn === null || localExpiresIn <= 0) return;
-    const timer = setInterval(() => {
-      setLocalExpiresIn(prev => prev !== null && prev > 0 ? prev - 1 : null);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [localExpiresIn]);
-
   // 自動発見された配信を取得
-  const { data: discoveredStreams } = useQuery({
+  const { data: discoveredStreams, isLoading: isLoadingDiscovered } = useQuery({
     queryKey: ["discovered-streams"],
-    queryFn: () => invoke<DiscoveredStreamInfo[]>("get_discovered_streams"),
+    queryFn: () => discoveryApi.getDiscoveredStreams(),
     refetchInterval: 30000, // 30秒ごとに更新
+    staleTime: 5000, // キャッシュ有効期間を短縮
   });
 
   // 自動発見イベントをリッスンしてキャッシュ無効化
   useEffect(() => {
-    const unlisten = listen("discovered-streams-updated", () => {
+    const unlistenUpdate = listen("discovered-streams-updated", () => {
       queryClient.invalidateQueries({ queryKey: ["discovered-streams"] });
     });
+
+    // 自動発見エラーイベントのリッスン
+    const unlistenError = listen<string>("auto-discovery-error", (event) => {
+      toast.error(`自動発見エラー: ${event.payload}`);
+    });
+
     return () => {
-      unlisten.then(fn => fn());
+      unlistenUpdate.then(fn => fn());
+      unlistenError.then(fn => fn());
     };
   }, [queryClient]);
 
   // 楽観的更新を使用したチャンネル昇格mutation
   const promoteMutation = useMutation({
     mutationFn: async (channelId: string) => {
-      await invoke('promote_discovered_channel', { channelId });
+      await discoveryApi.promoteDiscoveredChannel(channelId);
     },
     onMutate: async (channelId: string) => {
       // 既存のクエリをキャンセル
@@ -360,12 +361,6 @@ export function Dashboard() {
     }
   };
 
-  useEffect(() => {
-    if (recentStats) {
-      setStatsData(recentStats);
-    }
-  }, [recentStats]);
-
   // チャンネルごとの統計データを整形
   // 重複を削除: channel_id + platform の組み合わせで一意にする
   const uniqueLiveChannelsMap = (liveChannels || []).reduce((acc, channel) => {
@@ -411,9 +406,6 @@ export function Dashboard() {
                 <div>使用: {rateLimitStatus.points_used} / {rateLimitStatus.bucket_capacity} ポイント</div>
                 <div>残り: {rateLimitStatus.points_remaining} ポイント</div>
                 <div>リクエスト数: {rateLimitStatus.request_count}回</div>
-                {localExpiresIn !== null && localExpiresIn > 0 && (
-                  <div>回復まで: {localExpiresIn}秒</div>
-                )}
               </div>
             }>
               <div className="flex items-center space-x-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors cursor-help">
@@ -482,7 +474,7 @@ export function Dashboard() {
             </div>
             <div className="ml-4">
               <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                {statsData.length > 0 ? statsData[statsData.length - 1]?.chat_rate_1min || 0 : 0}
+                {(realtimeChatRate ?? 0).toLocaleString()}
               </h3>
               <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">1分間チャット数</p>
             </div>
@@ -501,7 +493,17 @@ export function Dashboard() {
             )}
           </div>
           <div className="space-y-4 max-h-96 overflow-y-auto">
-            {channelsLoading ? (
+            {channelsError ? (
+              <div className="text-center py-12">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                  <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-1.964-1.333-2.732 0L3.732 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <p className="text-red-600 dark:text-red-400 font-medium mb-2">チャンネル情報の取得に失敗しました</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{String(channelsError)}</p>
+              </div>
+            ) : channelsLoading ? (
               <div className="text-center py-12">
                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600 mx-auto"></div>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-3 font-medium">読み込み中...</p>
@@ -517,14 +519,36 @@ export function Dashboard() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                   </svg>
                 </div>
-                <p className="text-gray-500 dark:text-gray-400 font-medium">現在ライブ中のチャンネルはありません</p>
+                <p className="text-gray-500 dark:text-gray-400 font-medium mb-1">現在ライブ中のチャンネルはありません</p>
+                {allChannels && allChannels.length > 0 && (
+                  <p className="text-xs text-gray-400 dark:text-gray-500">
+                    {allChannels.length}件のチャンネルを監視中
+                  </p>
+                )}
               </div>
             )}
           </div>
       </div>
 
       {/* 自動発見された配信 */}
-      {discoveredStreams && discoveredStreams.length > 0 && (
+      {isLoadingDiscovered ? (
+        <div className="card p-6 animate-fade-in mt-6">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                自動発見された配信
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                条件に合致する上位配信を自動的に監視しています
+              </p>
+            </div>
+          </div>
+          <div className="text-center py-12">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-amber-500 mx-auto"></div>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-3 font-medium">自動発見チャンネルを取得中...</p>
+          </div>
+        </div>
+      ) : discoveredStreams && discoveredStreams.length > 0 ? (
         <div className="card p-6 animate-fade-in mt-6">
           <div className="flex items-center justify-between mb-6">
             <div>
@@ -545,11 +569,11 @@ export function Dashboard() {
               const registeredChannelNames = new Set(
                 (allChannels || []).map(ch => ch.channel_name.toLowerCase())
               );
-              
+
               return discoveredStreams.map((stream) => {
                 // channel_nameが登録済みかチェック
                 const isAlreadyRegistered = registeredChannelNames.has(stream.channel_name.toLowerCase());
-                
+
                 return (
                   <DiscoveredStreamCard
                     key={`discovered-${stream.twitch_user_id}-${stream.channel_id}`}
@@ -562,7 +586,7 @@ export function Dashboard() {
             })()}
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

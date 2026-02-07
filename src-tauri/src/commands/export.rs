@@ -231,9 +231,10 @@ pub async fn preview_export_data(
         let viewer_count = stat.viewer_count.unwrap_or(0).to_string();
         let category = stat.category.as_deref().unwrap_or("");
         let title = stat.title.as_deref().unwrap_or("");
-        // Note: chat_rate_1min is now calculated dynamically from chat_messages table
-        // and is not stored in StreamStats. For CSV preview, we output "N/A".
-        let chat_rate = "N/A";
+        let chat_rate = stat
+            .chat_rate_1min
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "0".to_string());
 
         output.push_str(&format!(
             "{}{}{}{}{}{}{}{}{}{}{}\n",

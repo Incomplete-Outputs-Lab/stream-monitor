@@ -167,7 +167,7 @@ export function SQLViewer() {
         </p>
         {dbInfo && (
           <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 font-mono select-text">
-            📁 {dbInfo.path} ({(dbInfo.size_bytes / 1024 / 1024).toFixed(2)} MB)
+            📁 {dbInfo.path} ({((dbInfo.size_bytes || 0) / 1024 / 1024).toFixed(2)} MB)
           </div>
         )}
       </div>

@@ -62,11 +62,11 @@ const EngagementTab = ({ channelId, startTime, endTime }: EngagementTabProps) =>
   }
 
   // Summary Cards
-  const totalChats = timelineData?.reduce((sum, d) => sum + d.chatCount, 0) || 0;
+  const totalChats = timelineData?.reduce((sum, d) => sum + (d.chatCount || 0), 0) || 0;
   const avgEngagement = timelineData?.length
-    ? timelineData.reduce((sum, d) => sum + d.engagementRate, 0) / timelineData.length
+    ? timelineData.reduce((sum, d) => sum + (d.engagementRate || 0), 0) / timelineData.length
     : 0;
-  const peakChatters = Math.max(...(timelineData?.map((d) => d.uniqueChatters) || [0]));
+  const peakChatters = Math.max(...(timelineData?.map((d) => d.uniqueChatters || 0) || [0]));
 
   return (
     <div className="space-y-6">
@@ -84,7 +84,7 @@ const EngagementTab = ({ channelId, startTime, endTime }: EngagementTabProps) =>
             平均エンゲージメント率
           </h3>
           <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">
-            {avgEngagement.toFixed(2)}%
+            {(avgEngagement || 0).toFixed(2)}%
           </p>
         </div>
 
@@ -168,7 +168,7 @@ const EngagementTab = ({ channelId, startTime, endTime }: EngagementTabProps) =>
                       {spike.prevCount.toLocaleString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-red-600 dark:text-red-400">
-                      {spike.spikeRatio.toFixed(2)}x
+                      {(spike.spikeRatio || 0).toFixed(2)}x
                     </td>
                   </tr>
                 ))}

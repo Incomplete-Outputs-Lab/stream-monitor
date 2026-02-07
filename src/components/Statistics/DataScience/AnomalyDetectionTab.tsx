@@ -48,11 +48,11 @@ const CustomTooltip = ({ active, payload }: any) => {
             変化: <span style={{ fontWeight: 600 }}>
               {data.changeAmount > 0 ? '+' : ''}{Math.round(data.changeAmount).toLocaleString()}
             </span>
-            {' '}({data.changeRate > 0 ? '+' : ''}{data.changeRate.toFixed(1)}%)
+            {' '}({data.changeRate > 0 ? '+' : ''}{(data.changeRate || 0).toFixed(1)}%)
           </p>
         )}
         {data.modifiedZScore !== undefined && (
-          <p>M-Z Score: <span style={{ fontWeight: 600 }}>{data.modifiedZScore.toFixed(2)}</span></p>
+          <p>M-Z Score: <span style={{ fontWeight: 600 }}>{(data.modifiedZScore || 0).toFixed(2)}</span></p>
         )}
       </div>
     </div>
@@ -402,12 +402,12 @@ const AnomalyDetectionTab = ({ channelId, startTime, endTime }: AnomalyDetection
                       <td className={`px-4 py-3 whitespace-nowrap text-sm font-bold ${
                         anomaly.isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
                       }`}>
-                        {anomaly.changeRate > 0 ? '+' : ''}{anomaly.changeRate.toFixed(1)}%
+                        {anomaly.changeRate > 0 ? '+' : ''}{(anomaly.changeRate || 0).toFixed(1)}%
                       </td>
                       <td className={`px-4 py-3 whitespace-nowrap text-sm font-bold ${
                         anomaly.isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
                       }`}>
-                        {anomaly.modifiedZScore.toFixed(2)}
+                        {(anomaly.modifiedZScore || 0).toFixed(2)}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm">
                         <span className={`px-2 py-1 rounded text-xs ${
@@ -593,12 +593,12 @@ const AnomalyDetectionTab = ({ channelId, startTime, endTime }: AnomalyDetection
                       <td className={`px-4 py-3 whitespace-nowrap text-sm font-bold ${
                         anomaly.isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
                       }`}>
-                        {anomaly.changeRate > 0 ? '+' : ''}{anomaly.changeRate.toFixed(1)}%
+                        {anomaly.changeRate > 0 ? '+' : ''}{(anomaly.changeRate || 0).toFixed(1)}%
                       </td>
                       <td className={`px-4 py-3 whitespace-nowrap text-sm font-bold ${
                         anomaly.isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
                       }`}>
-                        {anomaly.modifiedZScore.toFixed(2)}
+                        {(anomaly.modifiedZScore || 0).toFixed(2)}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm">
                         <span className={`px-2 py-1 rounded text-xs ${

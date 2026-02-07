@@ -99,7 +99,7 @@ const WordAnalysisTab = ({ channelId, startTime, endTime }: WordAnalysisTabProps
             <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4">
               <p className="text-sm text-purple-600 dark:text-purple-400">平均単語/メッセージ</p>
               <p className="text-2xl font-bold text-purple-900 dark:text-purple-100">
-                {wordData.avgWordsPerMessage.toFixed(2)}
+                {(wordData.avgWordsPerMessage || 0).toFixed(2)}
               </p>
             </div>
             <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4">
@@ -160,7 +160,7 @@ const WordAnalysisTab = ({ channelId, startTime, endTime }: WordAnalysisTabProps
                       {word.count.toLocaleString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                      {word.percentage.toFixed(2)}%
+                      {(word.percentage || 0).toFixed(2)}%
                     </td>
                   </tr>
                 ))}
@@ -186,7 +186,7 @@ const WordAnalysisTab = ({ channelId, startTime, endTime }: WordAnalysisTabProps
             <div className="bg-pink-50 dark:bg-pink-900/20 rounded-lg p-4">
               <p className="text-sm text-pink-600 dark:text-pink-400">エモート/メッセージ</p>
               <p className="text-2xl font-bold text-pink-900 dark:text-pink-100">
-                {emoteData.emotePerMessageRate.toFixed(2)}
+                {(emoteData.emotePerMessageRate || 0).toFixed(2)}
               </p>
             </div>
           </div>
@@ -239,19 +239,19 @@ const WordAnalysisTab = ({ channelId, startTime, endTime }: WordAnalysisTabProps
             <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
               <p className="text-sm text-gray-600 dark:text-gray-400">平均</p>
               <p className="text-xl font-bold text-gray-900 dark:text-gray-100">
-                {lengthData.avgLength.toFixed(1)}
+                {(lengthData.avgLength || 0).toFixed(1)}
               </p>
             </div>
             <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
               <p className="text-sm text-gray-600 dark:text-gray-400">中央値</p>
               <p className="text-xl font-bold text-gray-900 dark:text-gray-100">
-                {lengthData.medianLength.toFixed(1)}
+                {(lengthData.medianLength || 0).toFixed(1)}
               </p>
             </div>
             <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
               <p className="text-sm text-gray-600 dark:text-gray-400">標準偏差</p>
               <p className="text-xl font-bold text-gray-900 dark:text-gray-100">
-                {lengthData.stdDev.toFixed(1)}
+                {(lengthData.stdDev || 0).toFixed(1)}
               </p>
             </div>
             <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">

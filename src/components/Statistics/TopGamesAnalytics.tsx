@@ -80,11 +80,11 @@ export default function TopGamesAnalytics({
   };
 
   const formatHours = (hours: number): string => {
-    return hours.toFixed(1);
+    return (hours || 0).toFixed(1);
   };
 
   const formatDecimal = (num: number): string => {
-    return num.toFixed(2);
+    return (num || 0).toFixed(2);
   };
 
   // Top 30 for ranking

@@ -161,7 +161,7 @@ const ChatterScoreTab = ({ channelId, startTime, endTime }: ChatterScoreTabProps
                     </div>
                   </td>
                   <td className={`px-4 py-3 whitespace-nowrap text-sm font-bold ${getScoreColor(chatter.score)}`}>
-                    {chatter.score.toFixed(1)}
+                    {(chatter.score || 0).toFixed(1)}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                     {chatter.messageCount.toLocaleString()}

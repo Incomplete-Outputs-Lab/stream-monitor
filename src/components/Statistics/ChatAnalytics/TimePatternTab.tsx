@@ -95,7 +95,7 @@ const TimePatternTab = ({ channelId, startTime, endTime }: TimePatternTabProps) 
               data={patternData.map((p) => ({
                 時間: `${p.hour}:00`,
                 チャット数: p.totalMessages,
-                平均エンゲージメント: Number(p.avgEngagement.toFixed(2)),
+                平均エンゲージメント: Number((p.avgEngagement || 0).toFixed(2)),
               }))}
               xKey="時間"
               bars={[
@@ -212,10 +212,10 @@ const TimePatternTab = ({ channelId, startTime, endTime }: TimePatternTabProps) 
                       {pattern.totalMessages.toLocaleString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                      {pattern.avgChatRate.toFixed(2)}
+                      {(pattern.avgChatRate || 0).toFixed(2)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                      {pattern.avgEngagement.toFixed(2)}
+                      {(pattern.avgEngagement || 0).toFixed(2)}
                     </td>
                   </tr>
                 ))}

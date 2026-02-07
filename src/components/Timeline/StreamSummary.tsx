@@ -84,8 +84,8 @@ const StreamSummary: React.FC<StreamSummaryProps> = ({ streamInfo }) => {
         <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4">
           <p className="text-sm text-orange-600 dark:text-orange-400 mb-1">ピーク/平均比</p>
           <p className="text-2xl font-bold text-orange-900 dark:text-orange-300">
-            {streamInfo.avg_viewers > 0 
-              ? (streamInfo.peak_viewers / streamInfo.avg_viewers).toFixed(2) 
+            {streamInfo.avg_viewers > 0
+              ? ((streamInfo.peak_viewers || 0) / (streamInfo.avg_viewers || 1)).toFixed(2)
               : 'N/A'}
           </p>
         </div>
@@ -114,7 +114,7 @@ const StreamSummary: React.FC<StreamSummaryProps> = ({ streamInfo }) => {
         <div className="bg-teal-50 dark:bg-teal-900/20 rounded-lg p-4">
           <p className="text-sm text-teal-600 dark:text-teal-400 mb-1">エンゲージメント率</p>
           <p className="text-2xl font-bold text-teal-900 dark:text-teal-300">
-            {streamInfo.engagement_rate.toFixed(2)}
+            {(streamInfo.engagement_rate || 0).toFixed(2)}
           </p>
         </div>
       </div>

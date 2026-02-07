@@ -86,9 +86,7 @@ const UserSegmentTab = ({ channelId, startTime, endTime }: UserSegmentTabProps) 
             サブスク率
           </h3>
           <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">
-            {segmentData?.find((s) => s.segment === 'subscriber')?.percentage.toFixed(1) ||
-              0}
-            %
+            {(segmentData?.find((s) => s.segment === 'subscriber')?.percentage || 0).toFixed(1)}%
           </p>
         </div>
       </div>
@@ -125,7 +123,7 @@ const UserSegmentTab = ({ channelId, startTime, endTime }: UserSegmentTabProps) 
           <BarChart
             data={segmentData.map((s) => ({
               segment: segmentLabels[s.segment] || s.segment,
-              平均発言数: Number(s.avgMessagesPerUser.toFixed(2)),
+              平均発言数: Number((s.avgMessagesPerUser || 0).toFixed(2)),
             }))}
             xKey="segment"
             bars={[{ key: '平均発言数', color: '#3b82f6' }]}
@@ -178,10 +176,10 @@ const UserSegmentTab = ({ channelId, startTime, endTime }: UserSegmentTabProps) 
                       {segment.userCount.toLocaleString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                      {segment.avgMessagesPerUser.toFixed(2)}
+                      {(segment.avgMessagesPerUser || 0).toFixed(2)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                      {segment.percentage.toFixed(2)}%
+                      {(segment.percentage || 0).toFixed(2)}%
                     </td>
                   </tr>
                 ))}

@@ -87,7 +87,7 @@ const ChatterBehaviorTab = ({ channelId, startTime, endTime }: ChatterBehaviorTa
             リピーター率
           </h3>
           <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">
-            {behaviorStats?.repeaterPercentage.toFixed(1) || 0}%
+            {(behaviorStats?.repeaterPercentage || 0).toFixed(1)}%
           </p>
         </div>
 

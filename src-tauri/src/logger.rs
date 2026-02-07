@@ -2,7 +2,8 @@ use chrono::Local;
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 const MAX_LOG_SIZE: u64 = 1_048_576; // 1MB
 
@@ -44,7 +45,7 @@ impl AppLogger {
             .open(&self.log_path)?;
 
         let buf_writer = BufWriter::new(file);
-        let mut writer = self.writer.lock().unwrap();
+        let mut writer = self.writer.blocking_lock();
         *writer = Some(buf_writer);
 
         Ok(())
@@ -62,11 +63,10 @@ impl AppLogger {
         }
 
         // ファイルに書き込み
-        if let Ok(mut writer_guard) = self.writer.lock() {
-            if let Some(writer) = writer_guard.as_mut() {
-                let _ = writer.write_all(log_line.as_bytes());
-                let _ = writer.flush();
-            }
+        let mut writer_guard = self.writer.blocking_lock();
+        if let Some(writer) = writer_guard.as_mut() {
+            let _ = writer.write_all(log_line.as_bytes());
+            let _ = writer.flush();
         }
     }
 

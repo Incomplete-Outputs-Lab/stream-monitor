@@ -123,11 +123,8 @@ pub async fn get_twitch_rate_limit_status(
         // pollerのロックを早期に解放
         drop(poller_guard);
 
-        let status = match rate_limiter.lock() {
-            Ok(limiter) => Ok(limiter.get_status()),
-            Err(e) => Err(format!("レート制限トラッカーのロックに失敗しました: {}", e)),
-        };
-        status
+        let limiter = rate_limiter.lock().await;
+        Ok(limiter.get_status())
     } else {
         // TwitchCollectorが初期化されていない場合、デフォルト値を返す
         Ok(TwitchRateLimitStatus {

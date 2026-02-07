@@ -316,8 +316,6 @@ pub fn run() {
                             }
                         };
 
-                        let mut poller = poller_for_init.lock().await;
-
                         // Initialize Twitch collector if credentials are available
                         // Device Code Flow uses only client_id (no client_secret required)
                         if let Some(client_id) = &settings.twitch.client_id {
@@ -334,7 +332,12 @@ pub fn run() {
                                     ));
                                     // IRC DB ハンドラーを初期化
                                     collector.initialize_irc().await;
-                                    poller.register_twitch_collector(collector);
+
+                                    // Register collector - lock only for registration
+                                    {
+                                        let mut poller = poller_for_init.lock().await;
+                                        poller.register_twitch_collector(collector);
+                                    }
                                     logger_for_init.info("Twitch collector initialized successfully with IRC support");
                                 }
                                 Err(e) => {
@@ -353,7 +356,11 @@ pub fn run() {
                                     let db_conn = Arc::new(Mutex::new(yt_conn));
                                     match YouTubeCollector::new(client_id.clone(), client_secret.clone(), "http://localhost:8081/callback".to_string(), Arc::clone(&db_conn)).await {
                                         Ok(collector) => {
-                                            poller.register_collector(crate::constants::database::PLATFORM_YOUTUBE.to_string(), Arc::new(collector));
+                                            // Register collector - lock only for registration
+                                            {
+                                                let mut poller = poller_for_init.lock().await;
+                                                poller.register_collector(crate::constants::database::PLATFORM_YOUTUBE.to_string(), Arc::new(collector));
+                                            }
                                             logger_for_init.info("YouTube collector initialized successfully");
                                         }
                                         Err(e) => {
@@ -371,17 +378,17 @@ pub fn run() {
 
                         // Start polling for existing enabled channels
                         logger_for_init.info("Starting polling for existing enabled channels...");
-                        match start_existing_channels_polling(&db_manager, &mut poller, &app_handle_for_init) {
-                            Ok(count) => {
-                                logger_for_init.info(&format!("Started polling for {} existing enabled channel(s)", count));
+                        {
+                            let mut poller = poller_for_init.lock().await;
+                            match start_existing_channels_polling(&db_manager, &mut poller, &app_handle_for_init) {
+                                Ok(count) => {
+                                    logger_for_init.info(&format!("Started polling for {} existing enabled channel(s)", count));
+                                }
+                                Err(e) => {
+                                    logger_for_init.error(&format!("Failed to start polling for existing channels: {}", e));
+                                }
                             }
-                            Err(e) => {
-                                logger_for_init.error(&format!("Failed to start polling for existing channels: {}", e));
-                            }
-                        }
-
-                        // Unlock poller before initializing AutoDiscoveryPoller
-                        drop(poller);
+                        } // ロックを解放
 
                         // Initialize AutoDiscoveryPoller
                         logger_for_init.info("Initializing AutoDiscoveryPoller...");

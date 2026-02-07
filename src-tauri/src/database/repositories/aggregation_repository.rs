@@ -156,9 +156,9 @@ impl AggregationRepository {
         // ユニークチャッター数を取得
         let mut chatters_sql = String::from(
             r#"
-            SELECT 
+            SELECT
                 c.id AS channel_id,
-                COUNT(DISTINCT cm.user_name) AS unique_chatters
+                COUNT(DISTINCT cm.user_id) AS unique_chatters
             FROM channels c
             LEFT JOIN streams s ON c.id = s.channel_id
             LEFT JOIN chat_messages cm ON s.id = cm.stream_id
@@ -247,20 +247,20 @@ impl AggregationRepository {
         Ok(results)
     }
 
-    /// ゲーム別統計を計算
+    /// ゲーム別統計を計算（game_idベース）
     pub fn calculate_game_analytics(
         conn: &Connection,
-        category: Option<&str>,
+        game_id: Option<&str>,
         start_time: Option<&str>,
         end_time: Option<&str>,
     ) -> Result<Vec<GameAnalytics>, duckdb::Error> {
         let mut sql = format!(
             r#"
             WITH stats_with_interval AS (
-                SELECT 
+                SELECT
                     COALESCE(s.channel_id, c2.id) as channel_id,
                     COALESCE(c1.channel_name, c2.channel_name, ss.channel_name) as channel_name,
-                    ss.category,
+                    ss.game_id,
                     ss.viewer_count,
                     ss.collected_at,
                     ss.stream_id,
@@ -276,16 +276,16 @@ impl AggregationRepository {
                 LEFT JOIN streams s ON ss.stream_id = s.id
                 LEFT JOIN channels c1 ON s.channel_id = c1.id
                 LEFT JOIN channels c2 ON ss.channel_name = c2.channel_id AND c2.platform = 'twitch'
-                WHERE ss.category IS NOT NULL
+                WHERE ss.game_id IS NOT NULL
             "#,
             stream_stats_query::interval_with_fallback("ss")
         );
 
         let mut params: Vec<String> = Vec::new();
 
-        if let Some(cat) = category {
-            sql.push_str(" AND ss.category = ?");
-            params.push(cat.to_string());
+        if let Some(gid) = game_id {
+            sql.push_str(" AND ss.game_id = ?");
+            params.push(gid.to_string());
         }
 
         if let Some(start) = start_time {
@@ -302,8 +302,8 @@ impl AggregationRepository {
             r#"
             ),
             game_stats AS (
-                SELECT 
-                    category,
+                SELECT
+                    game_id,
                     COALESCE(SUM(viewer_count * COALESCE(interval_minutes, 1)), 0)::BIGINT AS minutes_watched,
                     COALESCE(SUM(COALESCE(interval_minutes, 1)) / 60.0, 0) AS hours_broadcasted,
                     COALESCE(AVG(viewer_count), 0) AS average_ccu,
@@ -313,28 +313,29 @@ impl AggregationRepository {
                 FROM stats_with_interval
                 WHERE viewer_count IS NOT NULL
                     AND channel_name IS NOT NULL
-                GROUP BY category
+                GROUP BY game_id
             ),
             channel_by_category AS (
-                SELECT 
-                    category,
+                SELECT
+                    game_id,
                     channel_name,
                     COALESCE(SUM(viewer_count * COALESCE(interval_minutes, 1)), 0)::BIGINT AS channel_mw,
-                    ROW_NUMBER() OVER (PARTITION BY category ORDER BY SUM(viewer_count * COALESCE(interval_minutes, 1)) DESC) as rn
+                    ROW_NUMBER() OVER (PARTITION BY game_id ORDER BY SUM(viewer_count * COALESCE(interval_minutes, 1)) DESC) as rn
                 FROM stats_with_interval
-                WHERE viewer_count IS NOT NULL 
+                WHERE viewer_count IS NOT NULL
                     AND channel_name IS NOT NULL
-                GROUP BY category, channel_name
+                GROUP BY game_id, channel_name
             ),
             top_channels AS (
-                SELECT 
-                    category,
+                SELECT
+                    game_id,
                     channel_name as top_channel
                 FROM channel_by_category
                 WHERE rn = 1
             )
-            SELECT 
-                gs.category,
+            SELECT
+                gs.game_id,
+                COALESCE(gc.game_name, 'Unknown') as category,
                 gs.minutes_watched,
                 gs.hours_broadcasted,
                 gs.average_ccu,
@@ -342,13 +343,14 @@ impl AggregationRepository {
                 tc.top_channel,
                 gs.total_chat_messages,
                 gs.avg_chat_rate,
-                CASE 
-                    WHEN gs.minutes_watched > 0 
+                CASE
+                    WHEN gs.minutes_watched > 0
                     THEN (gs.total_chat_messages::DOUBLE / gs.minutes_watched::DOUBLE) * 1000.0
                     ELSE 0.0
                 END as engagement_rate
             FROM game_stats gs
-            LEFT JOIN top_channels tc ON gs.category = tc.category
+            LEFT JOIN top_channels tc ON gs.game_id = tc.game_id
+            LEFT JOIN game_categories gc ON gs.game_id = gc.game_id
             ORDER BY gs.minutes_watched DESC
             "#,
         );
@@ -357,15 +359,16 @@ impl AggregationRepository {
         let results: Vec<GameAnalytics> =
             utils::query_map_with_params(&mut stmt, &params, |row| {
                 Ok(GameAnalytics {
-                    category: row.get::<_, String>(0)?,
-                    minutes_watched: row.get::<_, i64>(1)?,
-                    hours_broadcasted: row.get::<_, f64>(2)?,
-                    average_ccu: row.get::<_, f64>(3)?,
-                    unique_broadcasters: row.get::<_, i32>(4)?,
-                    top_channel: row.get::<_, Option<String>>(5)?,
-                    total_chat_messages: row.get::<_, i64>(6)?,
-                    avg_chat_rate: row.get::<_, f64>(7)?,
-                    engagement_rate: row.get::<_, f64>(8)?,
+                    game_id: row.get::<_, Option<String>>(0)?,
+                    category: row.get::<_, String>(1)?,
+                    minutes_watched: row.get::<_, i64>(2)?,
+                    hours_broadcasted: row.get::<_, f64>(3)?,
+                    average_ccu: row.get::<_, f64>(4)?,
+                    unique_broadcasters: row.get::<_, i32>(5)?,
+                    top_channel: row.get::<_, Option<String>>(6)?,
+                    total_chat_messages: row.get::<_, i64>(7)?,
+                    avg_chat_rate: row.get::<_, f64>(8)?,
+                    engagement_rate: row.get::<_, f64>(9)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;

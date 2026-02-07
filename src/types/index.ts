@@ -56,6 +56,7 @@ export interface ChatMessage {
   platform: string;
   user_id?: string;
   user_name: string;
+  display_name?: string; // Twitch表示名
   message: string;
   message_type: string;
   badges?: string[];
@@ -356,7 +357,9 @@ export interface UserSegmentStats {
 }
 
 export interface TopChatter {
-  userName: string;
+  userId?: string;          // Twitch user_id（プライマリ識別子）
+  userName: string;         // Twitchログイン名
+  displayName?: string;     // Twitch表示名
   messageCount: number;
   badges: string[];
   firstSeen: string;
@@ -567,4 +570,19 @@ export interface DataScienceQuery {
   endTime?: string;
   limit?: number;
   zThreshold?: number;
+}
+
+// Game Category
+
+export interface GameCategory {
+  gameId: string;         // Twitch game ID（プライマリキー）
+  gameName: string;       // カテゴリ名（表示用）
+  boxArtUrl?: string;     // ボックスアート画像URL
+  lastUpdated?: string;   // 最終更新日時
+}
+
+export interface UpsertGameCategoryRequest {
+  gameId: string;
+  gameName: string;
+  boxArtUrl?: string;
 }

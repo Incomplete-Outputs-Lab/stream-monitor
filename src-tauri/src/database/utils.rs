@@ -118,10 +118,11 @@ pub fn row_to_chat_message(row: &Row) -> DuckResult<ChatMessage> {
         platform: row.get(4)?,
         user_id: row.get::<_, Option<String>>(5)?,
         user_name: row.get(6)?,
-        message: row.get(7)?,
-        message_type: row.get(8)?,
+        display_name: row.get::<_, Option<String>>(7)?,
+        message: row.get(8)?,
+        message_type: row.get(9)?,
         badges,
-        badge_info: row.get::<_, Option<String>>(10).ok().flatten(),
+        badge_info: row.get::<_, Option<String>>(11).ok().flatten(),
     })
 }
 

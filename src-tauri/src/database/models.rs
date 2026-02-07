@@ -87,10 +87,21 @@ pub struct ChatMessage {
     pub platform: String,
     pub user_id: Option<String>,
     pub user_name: String,
+    pub display_name: Option<String>, // Twitch表示名（ユーザーが設定した名前）
     pub message: String,
     pub message_type: String,
     pub badges: Option<Vec<String>>,
     pub badge_info: Option<String>, // サブスク月数等の詳細情報 (例: "subscriber:24")
+}
+
+/// ゲームカテゴリ（Twitch game/category）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameCategory {
+    pub game_id: String,           // Twitch game ID（プライマリキー）
+    pub game_name: String,         // カテゴリ名（表示用、言語ごとに異なる可能性あり）
+    pub box_art_url: Option<String>, // ボックスアート画像URL
+    pub last_updated: Option<String>, // 最終更新日時
 }
 
 #[cfg(test)]

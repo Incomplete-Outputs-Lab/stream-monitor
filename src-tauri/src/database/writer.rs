@@ -124,12 +124,12 @@ impl DatabaseWriter {
                             format!("ARRAY[{}]", escaped_badges.join(", "))
                         }
                     };
-                    format!("(?, ?, ?, ?, ?, ?, ?, ?, {}, ?)", badges_literal)
+                    format!("(?, ?, ?, ?, ?, ?, ?, ?, ?, {}, ?)", badges_literal)
                 })
                 .collect();
 
             let sql = format!(
-                "INSERT INTO chat_messages (channel_id, stream_id, timestamp, platform, user_id, user_name, message, message_type, badges, badge_info) VALUES {}",
+                "INSERT INTO chat_messages (channel_id, stream_id, timestamp, platform, user_id, user_name, display_name, message, message_type, badges, badge_info) VALUES {}",
                 values_placeholders.join(", ")
             );
 
@@ -142,6 +142,7 @@ impl DatabaseWriter {
                 params.push(Box::new(message.platform.clone()));
                 params.push(Box::new(message.user_id.clone()));
                 params.push(Box::new(message.user_name.clone()));
+                params.push(Box::new(message.display_name.clone()));
                 params.push(Box::new(message.message.clone()));
                 params.push(Box::new(message.message_type.clone()));
                 // badges はリテラルで埋め込み済みのためスキップ

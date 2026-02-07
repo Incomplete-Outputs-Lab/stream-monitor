@@ -113,7 +113,7 @@ const ChatterBehaviorTab = ({ channelId, startTime, endTime }: ChatterBehaviorTa
         {topChatters && topChatters.length > 0 ? (
           <BarChart
             data={topChatters.slice(0, 20).map((c) => ({
-              user: c.userName,
+              user: c.displayName || c.userName,
               発言数: c.messageCount,
             }))}
             xKey="user"
@@ -159,12 +159,12 @@ const ChatterBehaviorTab = ({ channelId, startTime, endTime }: ChatterBehaviorTa
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                 {topChatters.map((chatter, index) => (
-                  <tr key={chatter.userName}>
+                  <tr key={chatter.userId || chatter.userName}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                       {index + 1}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
-                      {chatter.userName}
+                      {chatter.displayName || chatter.userName}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                       {chatter.messageCount.toLocaleString()}

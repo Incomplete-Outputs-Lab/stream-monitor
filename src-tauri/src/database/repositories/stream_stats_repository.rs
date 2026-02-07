@@ -238,17 +238,17 @@ impl StreamStatsRepository {
         results.collect::<Result<Vec<_>, _>>()
     }
 
-    /// ゲーム別日次統計を取得
+    /// ゲーム別日次統計を取得（game_idベース）
     pub fn get_game_daily_stats(
         conn: &Connection,
-        category: &str,
+        game_id: &str,
         start_time: &str,
         end_time: &str,
     ) -> Result<Vec<DailyStats>, duckdb::Error> {
         let sql = format!(
             r#"
             WITH stats_with_interval AS (
-                SELECT 
+                SELECT
                     DATE(ss.collected_at) as date,
                     ss.viewer_count,
                     ss.stream_id,
@@ -256,12 +256,12 @@ impl StreamStatsRepository {
                     {},
                     ss.collected_at
                 FROM stream_stats ss
-                WHERE ss.category = ?
+                WHERE ss.game_id = ?
                     AND ss.collected_at >= ?
                     AND ss.collected_at <= ?
             ),
             daily_broadcast_hours AS (
-                SELECT 
+                SELECT
                     DATE(s.started_at) as date,
                     COALESCE(SUM(
                         EXTRACT(EPOCH FROM (
@@ -270,12 +270,12 @@ impl StreamStatsRepository {
                     ), 0) AS hours_broadcasted
                 FROM streams s
                 JOIN stream_stats ss ON s.id = ss.stream_id
-                WHERE ss.category = ?
+                WHERE ss.game_id = ?
                     AND s.started_at >= ?
                     AND s.started_at <= ?
                 GROUP BY DATE(s.started_at)
             )
-            SELECT 
+            SELECT
                 swi.date::VARCHAR as date,
                 COALESCE(SUM(swi.viewer_count * COALESCE(swi.interval_minutes, 1)), 0)::BIGINT AS minutes_watched,
                 COALESCE(dbh.hours_broadcasted, 0) AS hours_broadcasted,
@@ -292,10 +292,10 @@ impl StreamStatsRepository {
 
         let mut stmt = conn.prepare(&sql)?;
         let params = vec![
-            category.to_string(),
+            game_id.to_string(),
             start_time.to_string(),
             end_time.to_string(),
-            category.to_string(),
+            game_id.to_string(),
             start_time.to_string(),
             end_time.to_string(),
         ];

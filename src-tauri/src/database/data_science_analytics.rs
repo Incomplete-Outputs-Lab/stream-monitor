@@ -773,6 +773,18 @@ pub fn get_viewer_chat_correlation(
     start_time: Option<&str>,
     end_time: Option<&str>,
 ) -> Result<CorrelationResult, duckdb::Error> {
+    // channel_id が指定されている場合、channel_name を取得してフィルター
+    let filter_channel_name = if let Some(ch_id) = channel_id {
+        conn.query_row(
+            "SELECT channel_name FROM channels WHERE id = ? AND platform = 'twitch'",
+            [ch_id.to_string()],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+    } else {
+        None
+    };
+
     // Get time-bucketed data with viewers and chats
     let mut sql = String::from(
         r#"
@@ -781,6 +793,7 @@ pub fn get_viewer_chat_correlation(
                 time_bucket(INTERVAL '5 minutes', ss.collected_at) as bucket,
                 AVG(ss.viewer_count) as avg_viewers
             FROM stream_stats ss
+            LEFT JOIN streams s ON ss.stream_id = s.id
             WHERE ss.viewer_count IS NOT NULL
               AND ss.collected_at IS NOT NULL
               AND ss.collected_at > '1971-01-01'
@@ -789,34 +802,9 @@ pub fn get_viewer_chat_correlation(
 
     let mut params: Vec<String> = Vec::new();
 
-    if let Some(ch_id) = channel_id {
-        match conn.query_row(
-            "SELECT channel_name FROM channels WHERE id = ?",
-            [ch_id.to_string()],
-            |row| row.get::<_, String>(0),
-        ) {
-            Ok(ch_name) => {
-                eprintln!(
-                    "[Correlation Debug] Channel ID {} -> Channel Name: {}",
-                    ch_id, ch_name
-                );
-                sql.push_str(" AND ss.channel_name = ?");
-                params.push(ch_name);
-            }
-            Err(e) => {
-                // Channel not found, return empty result
-                eprintln!(
-                    "[Correlation Debug] Channel ID {} not found: {:?}",
-                    ch_id, e
-                );
-                return Ok(CorrelationResult {
-                    pearson_coefficient: 0.0,
-                    interpretation: "No data available".to_string(),
-                    scatter_data: vec![],
-                    hourly_correlation: vec![],
-                });
-            }
-        }
+    if let Some(ref ch_name) = filter_channel_name {
+        sql.push_str(" AND ss.channel_name = ?");
+        params.push(ch_name.clone());
     }
 
     if let Some(st_id) = stream_id {
@@ -971,6 +959,18 @@ fn calculate_hourly_correlation(
     start_time: Option<&str>,
     end_time: Option<&str>,
 ) -> Result<Vec<HourlyCorrelation>, duckdb::Error> {
+    // channel_id が指定されている場合、channel_name を取得してフィルター
+    let filter_channel_name = if let Some(ch_id) = channel_id {
+        conn.query_row(
+            "SELECT channel_name FROM channels WHERE id = ? AND platform = 'twitch'",
+            [ch_id.to_string()],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+    } else {
+        None
+    };
+
     let mut hourly_data: HashMap<i32, (Vec<f64>, Vec<f64>)> = HashMap::new();
 
     // Get hourly data
@@ -982,27 +982,16 @@ fn calculate_hourly_correlation(
                 time_bucket(INTERVAL '5 minutes', ss.collected_at) as bucket,
                 AVG(ss.viewer_count) as avg_viewers
             FROM stream_stats ss
+            LEFT JOIN streams s ON ss.stream_id = s.id
             WHERE ss.viewer_count IS NOT NULL
         "#,
     );
 
     let mut params: Vec<String> = Vec::new();
 
-    if let Some(ch_id) = channel_id {
-        match conn.query_row(
-            "SELECT channel_name FROM channels WHERE id = ?",
-            [ch_id.to_string()],
-            |row| row.get::<_, String>(0),
-        ) {
-            Ok(ch_name) => {
-                sql.push_str(" AND ss.channel_name = ?");
-                params.push(ch_name);
-            }
-            Err(_) => {
-                // Channel not found, return empty result
-                return Ok(vec![]);
-            }
-        }
+    if let Some(ref ch_name) = filter_channel_name {
+        sql.push_str(" AND ss.channel_name = ?");
+        params.push(ch_name.clone());
     }
 
     if let Some(st_id) = stream_id {
@@ -1102,14 +1091,28 @@ pub fn get_category_change_impact(
     start_time: Option<&str>,
     end_time: Option<&str>,
 ) -> Result<CategoryImpactResult, duckdb::Error> {
+    // channel_id を channel_name に変換してフィルター
+    let filter_channel_name = conn
+        .query_row(
+            "SELECT channel_name FROM channels WHERE id = ? AND platform = 'twitch'",
+            [channel_id.to_string()],
+            |row| row.get::<_, String>(0),
+        )
+        .ok();
+
+    if filter_channel_name.is_none() {
+        // channel_name が取得できない場合は空の結果を返す
+        return Ok(CategoryImpactResult {
+            changes: vec![],
+            category_performance: vec![],
+        });
+    }
+
     // Get category changes
     let mut sql = String::from(
         r#"
-        WITH channel_lookup AS (
-            SELECT channel_name FROM channels WHERE id = ?
-        ),
-        ordered_stats AS (
-            SELECT 
+        WITH ordered_stats AS (
+            SELECT
                 ss.collected_at,
                 ss.category,
                 ss.viewer_count,
@@ -1117,13 +1120,13 @@ pub fn get_category_change_impact(
                 LAG(ss.viewer_count) OVER (ORDER BY ss.collected_at) as prev_viewers,
                 LEAD(ss.viewer_count, 5) OVER (ORDER BY ss.collected_at) as after_viewers
             FROM stream_stats ss
-            WHERE ss.channel_name = (SELECT channel_id FROM channel_lookup)
+            WHERE ss.channel_name = ?
                 AND ss.category IS NOT NULL
                 AND ss.viewer_count IS NOT NULL
         "#,
     );
 
-    let mut params = vec![channel_id.to_string()];
+    let mut params = vec![filter_channel_name.clone().unwrap()];
 
     if let Some(start) = start_time {
         sql.push_str(" AND ss.collected_at >= ?");
@@ -1188,13 +1191,11 @@ pub fn get_category_change_impact(
         .collect();
 
     // Get category performance
+    let filter_channel_name_ref = filter_channel_name.as_ref().unwrap();
     let mut perf_sql = String::from(
         r#"
-        WITH channel_lookup AS (
-            SELECT channel_name FROM channels WHERE id = ?
-        ),
-        stats_with_interval AS (
-            SELECT 
+        WITH stats_with_interval AS (
+            SELECT
                 ss.category,
                 ss.viewer_count,
                 COALESCE((
@@ -1208,13 +1209,13 @@ pub fn get_category_change_impact(
                     LEAD(ss.collected_at) OVER (ORDER BY ss.collected_at) - ss.collected_at
                 )) / 60.0 AS interval_minutes
             FROM stream_stats ss
-            WHERE ss.channel_name = (SELECT channel_id FROM channel_lookup)
+            WHERE ss.channel_name = ?
                 AND ss.category IS NOT NULL
                 AND ss.viewer_count IS NOT NULL
         "#,
     );
 
-    let mut perf_params = vec![channel_id.to_string()];
+    let mut perf_params = vec![filter_channel_name_ref.clone()];
 
     if let Some(start) = start_time {
         perf_sql.push_str(" AND ss.collected_at >= ?");
@@ -1272,10 +1273,10 @@ pub fn get_chatter_activity_scores(
     let mut sql = format!(
         r#"
         WITH user_badges AS (
-            SELECT 
-                user_name,
+            SELECT
+                user_id,
                 {},
-                ROW_NUMBER() OVER (PARTITION BY user_name ORDER BY timestamp DESC) as rn
+                ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY timestamp DESC) as rn
             FROM chat_messages
             WHERE badges IS NOT NULL
         ),
@@ -1286,7 +1287,8 @@ pub fn get_chatter_activity_scores(
     sql.push_str(
         r#"
         chatter_stats AS (
-            SELECT 
+            SELECT
+                cm.user_id,
                 cm.user_name,
                 COUNT(*) as message_count,
                 COUNT(DISTINCT cm.stream_id) as stream_count,
@@ -1322,16 +1324,16 @@ pub fn get_chatter_activity_scores(
 
     sql.push_str(
         r#"
-            GROUP BY cm.user_name
+            GROUP BY cm.user_id, cm.user_name
         )
-        SELECT 
+        SELECT
             cs.user_name,
             cs.message_count,
             cs.stream_count,
             cs.active_days,
             ub.badges
         FROM chatter_stats cs
-        LEFT JOIN user_badges ub ON cs.user_name = ub.user_name AND ub.rn = 1
+        LEFT JOIN user_badges ub ON cs.user_id = ub.user_id AND ub.rn = 1
         ORDER BY cs.message_count DESC
         "#,
     );
@@ -1458,6 +1460,18 @@ pub fn detect_anomalies(
     end_time: Option<&str>,
     z_threshold: f64,
 ) -> Result<AnomalyResult, duckdb::Error> {
+    // channel_id が指定されている場合、channel_name を取得してフィルター
+    let filter_channel_name = if let Some(ch_id) = channel_id {
+        conn.query_row(
+            "SELECT channel_name FROM channels WHERE id = ? AND platform = 'twitch'",
+            [ch_id.to_string()],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+    } else {
+        None
+    };
+
     // Get viewer data with stream information
     let mut viewer_sql = String::from(
         r#"
@@ -1477,20 +1491,9 @@ pub fn detect_anomalies(
 
     let mut params: Vec<String> = Vec::new();
 
-    if let Some(ch_id) = channel_id {
-        match conn.query_row(
-            "SELECT channel_name FROM channels WHERE id = ?",
-            [ch_id.to_string()],
-            |row| row.get::<_, String>(0),
-        ) {
-            Ok(ch_name) => {
-                viewer_sql.push_str(" AND ss.channel_name = ?");
-                params.push(ch_name);
-            }
-            Err(_) => {
-                return Ok(create_empty_anomaly_result());
-            }
-        }
+    if let Some(ref ch_name) = filter_channel_name {
+        viewer_sql.push_str(" AND ss.channel_name = ?");
+        params.push(ch_name.clone());
     }
 
     if let Some(st_id) = stream_id {
@@ -1720,39 +1723,9 @@ pub fn detect_anomalies(
 
     let mut chat_params: Vec<String> = Vec::new();
 
-    if let Some(ch_id) = channel_id {
-        match conn.query_row(
-            "SELECT channel_name FROM channels WHERE id = ?",
-            [ch_id.to_string()],
-            |row| row.get::<_, String>(0),
-        ) {
-            Ok(ch_name) => {
-                chat_sql.push_str(" AND ss.channel_name = ?");
-                chat_params.push(ch_name);
-            }
-            Err(_) => {
-                // Channel not found, skip chat anomaly detection
-                let chat_anomalies = vec![];
-                let viewer_trend = calculate_trend(&viewer_values, viewer_median, viewer_mad);
-
-                return Ok(AnomalyResult {
-                    viewer_anomalies,
-                    chat_anomalies,
-                    trend_stats: TrendStats {
-                        viewer_trend,
-                        viewer_median,
-                        viewer_mad,
-                        viewer_avg,
-                        viewer_std_dev,
-                        chat_trend: "N/A".to_string(),
-                        chat_median: 0.0,
-                        chat_mad: 0.0,
-                        chat_avg: 0.0,
-                        chat_std_dev: 0.0,
-                    },
-                });
-            }
-        }
+    if let Some(ref ch_name) = filter_channel_name {
+        chat_sql.push_str(" AND ss.channel_name = ?");
+        chat_params.push(ch_name.clone());
     }
 
     if let Some(st_id) = stream_id {

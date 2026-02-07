@@ -19,7 +19,24 @@
       "Bash(grep:*)",
       "Bash(find:*)",
       "Bash(cargo build:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(cargo fmt:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(git restore:*)",
+      "Bash(git push:*)",
+      "Bash(bun add:*)",
+      "Bash(bun run build:*)",
+      "WebFetch(domain:v2.tauri.app)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.github.com)",
+      "Bash(dir:*)",
+      "Bash(targetreleasestream-monitor-cli.exe:*)",
+      "Bash(\"target/release/stream-monitor-cli.exe\" --help)",
+      "Bash(\"C:\\\\Users\\\\Flowing\\\\stream-monitor\\\\src-tauri\\\\target\\\\release\\\\stream-monitor-cli.exe\" --db-path \"%APPDATA%\\\\stream-stats-collector\\\\stream_stats.db\" system-health)",
+      "Bash(\"C:\\\\Users\\\\Flowing\\\\stream-monitor\\\\src-tauri\\\\target\\\\release\\\\stream-monitor-cli.exe\" --db-path \"C:\\\\Users\\\\Flowing\\\\AppData\\\\Roaming\\\\stream-stats-collector\\\\stream_stats.db\" system-health)",
+      "Bash(npm install:*)",
+      "WebFetch(domain:playwright.dev)"
     ]
   }
 }

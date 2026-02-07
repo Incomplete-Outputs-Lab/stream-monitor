@@ -46,6 +46,10 @@ use commands::{
         promote_discovered_channel, save_auto_discovery_settings, search_twitch_games,
         toggle_auto_discovery, DiscoveredStreamInfo,
     },
+    game_categories::{
+        delete_game_category, get_game_categories, get_game_category, search_game_categories,
+        upsert_game_category,
+    },
     export::{export_to_delimited, preview_export_data},
     logs::get_logs,
     oauth::{poll_twitch_device_token, start_twitch_device_auth},
@@ -259,7 +263,7 @@ pub fn run() {
             let logger_for_init = logger.clone();
             let app_handle_for_init = app_handle.clone();
             std::thread::Builder::new()
-                .stack_size(512 * 1024 * 1024) // 512MB stack for DuckDB initialization
+                .stack_size(2 * 1024 * 1024 * 1024) // 2GB stack for DuckDB initialization
                 .spawn(move || {
                     // DatabaseManagerを取得
                     let db_manager: tauri::State<'_, DatabaseManager> = app_handle_for_init.state();
@@ -541,6 +545,12 @@ pub fn run() {
             search_twitch_games,
             get_games_by_ids,
             promote_discovered_channel,
+            // Game Category commands
+            get_game_categories,
+            get_game_category,
+            upsert_game_category,
+            delete_game_category,
+            search_game_categories,
             // SQL commands
             execute_sql,
             list_sql_templates,

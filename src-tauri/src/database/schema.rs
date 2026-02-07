@@ -534,6 +534,19 @@ fn migrate_database_schema(conn: &Connection) -> Result<(), duckdb::Error> {
         eprintln!("[Migration] badge_info column added successfully");
     }
 
+    // chat_messagesテーブルにdisplay_nameフィールドを追加
+    let mut chat_messages_has_display_name = conn.prepare(
+        "SELECT COUNT(*) FROM pragma_table_info('chat_messages') WHERE name = 'display_name'",
+    )?;
+    let chat_messages_has_display_name_count: i64 =
+        chat_messages_has_display_name.query_row([], |row| row.get(0))?;
+
+    if chat_messages_has_display_name_count == 0 {
+        eprintln!("[Migration] Adding display_name column to chat_messages table");
+        conn.execute("ALTER TABLE chat_messages ADD COLUMN display_name TEXT", [])?;
+        eprintln!("[Migration] display_name column added successfully");
+    }
+
     // 既存のchat_messagesのchannel_idをstreams経由で更新
     eprintln!("[Migration] Updating chat_messages.channel_id from streams table");
     let update_result = conn.execute(
@@ -586,6 +599,14 @@ fn migrate_database_schema(conn: &Connection) -> Result<(), duckdb::Error> {
     )?;
     eprintln!("[Migration] Composite index created successfully");
 
+    // chat_messagesテーブルのuser_idにインデックス追加（ユーザー識別子ベースの集計用）
+    eprintln!("[Migration] Creating index on chat_messages.user_id");
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chat_messages_user_id ON chat_messages(user_id)",
+        [],
+    )?;
+    eprintln!("[Migration] chat_messages.user_id index created successfully");
+
     // game_categoriesテーブルを作成（カテゴリIDキャッシュ用）
     eprintln!("[Migration] Creating game_categories table if not exists");
     conn.execute(
@@ -618,5 +639,6 @@ fn migrate_database_schema(conn: &Connection) -> Result<(), duckdb::Error> {
         eprintln!("[Migration] Created index on stream_stats.game_id");
     }
 
+    eprintln!("[Migration] All migrations completed successfully");
     Ok(())
 }

@@ -461,7 +461,7 @@ impl ChannelPoller {
 
         // プラットフォーム別にtwitch_user_idを設定
         let twitch_user_id = if channel.platform == db_constants::PLATFORM_TWITCH {
-            Some(channel.channel_id.clone())
+            channel.twitch_user_id.map(|id| id.to_string()) // FIX: 正しいuser_idを使用
         } else {
             None
         };
@@ -483,6 +483,20 @@ impl ChannelPoller {
 
         // ストリーム統計を保存
         DatabaseWriter::insert_stream_stats(conn, &stats)?;
+
+        // ゲームカテゴリをgame_categoriesテーブルに自動保存（ID->名前解決用）
+        if let (Some(game_id), Some(game_name)) = (&stream_data.game_id, &stream_data.category) {
+            use crate::database::repositories::GameCategoryRepository;
+            if let Err(e) =
+                GameCategoryRepository::upsert_category(conn, game_id, game_name, None)
+            {
+                eprintln!(
+                    "[Poller] Warning: Failed to upsert game_category {}: {}",
+                    game_id, e
+                );
+                // エラーでもストリームデータ保存は成功させる（非致命的）
+            }
+        }
 
         Ok(stream_db_id)
     }

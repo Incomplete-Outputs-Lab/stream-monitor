@@ -81,7 +81,7 @@ const ChatTimelinePanel: React.FC<ChatTimelinePanelProps> = ({
                 <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                   <span className="font-mono">{formatTime(message.timestamp)}</span>
                   <span className="font-medium text-gray-900 dark:text-white">
-                    {message.user_name}
+                    {message.display_name || message.user_name}
                   </span>
                   {/* Badges */}
                   {message.badges && message.badges.length > 0 && (

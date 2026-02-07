@@ -27,8 +27,10 @@ pub struct BroadcasterAnalytics {
 
 /// ゲームタイトル別統計
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GameAnalytics {
-    pub category: String,
+    pub game_id: Option<String>,   // Twitch game ID（プライマリキー）
+    pub category: String,           // カテゴリ名（表示用、game_categoriesから取得）
     pub minutes_watched: i64,
     pub hours_broadcasted: f64,
     pub average_ccu: f64,
@@ -218,9 +220,9 @@ fn get_broadcaster_analytics_old(
     // ユニークチャッター数を取得
     let mut chatters_sql = String::from(
         r#"
-        SELECT 
+        SELECT
             c.id AS channel_id,
-            COUNT(DISTINCT cm.user_name) AS unique_chatters
+            COUNT(DISTINCT cm.user_id) AS unique_chatters
         FROM channels c
         LEFT JOIN streams s ON c.id = s.channel_id
         LEFT JOIN chat_messages cm ON s.id = cm.stream_id
@@ -311,16 +313,16 @@ fn get_broadcaster_analytics_old(
     Ok(results)
 }
 
-/// ゲームタイトル別統計を取得
+/// ゲームタイトル別統計を取得（game_idベース）
 ///
 /// AggregationRepositoryを使用して統計を計算します。
 pub fn get_game_analytics(
     conn: &Connection,
-    category: Option<&str>,
+    game_id: Option<&str>,
     start_time: Option<&str>,
     end_time: Option<&str>,
 ) -> Result<Vec<GameAnalytics>, duckdb::Error> {
-    AggregationRepository::calculate_game_analytics(conn, category, start_time, end_time)
+    AggregationRepository::calculate_game_analytics(conn, game_id, start_time, end_time)
 }
 
 /// ゲームタイトル別統計を取得（旧実装 - 使用しない）
@@ -436,6 +438,7 @@ fn get_game_analytics_old(
     let mut stmt = conn.prepare(&sql)?;
     let results: Vec<GameAnalytics> = utils::query_map_with_params(&mut stmt, &params, |row| {
         Ok(GameAnalytics {
+            game_id: None, // Old implementation doesn't have game_id
             category: row.get::<_, String>(0)?,
             minutes_watched: row.get::<_, i64>(1)?,
             hours_broadcasted: row.get::<_, f64>(2)?,
@@ -536,16 +539,16 @@ pub fn get_data_availability(conn: &Connection) -> Result<DataAvailability, duck
     })
 }
 
-/// ゲーム別日次統計を取得
+/// ゲーム別日次統計を取得（game_idベース）
 ///
 /// StreamStatsRepositoryを使用して日次統計を取得します。
 pub fn get_game_daily_stats(
     conn: &Connection,
-    category: &str,
+    game_id: &str,
     start_time: &str,
     end_time: &str,
 ) -> Result<Vec<DailyStats>, duckdb::Error> {
-    StreamStatsRepository::get_game_daily_stats(conn, category, start_time, end_time)
+    StreamStatsRepository::get_game_daily_stats(conn, game_id, start_time, end_time)
 }
 
 /// ゲーム別日次統計を取得（旧実装 - 使用しない）

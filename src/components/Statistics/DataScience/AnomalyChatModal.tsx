@@ -152,7 +152,7 @@ const AnomalyChatModal: React.FC<AnomalyChatModalProps> = ({
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="font-semibold text-sm text-gray-900 dark:text-white">
-                          {msg.user_name}
+                          {msg.display_name || msg.user_name}
                         </span>
                         {msg.badges && msg.badges.length > 0 && (
                           <div className="flex gap-1">

@@ -28,7 +28,9 @@ pub struct UserSegmentStats {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatterWithBadges {
-    pub user_name: String,
+    pub user_id: Option<String>,       // Twitch user_id（プライマリ識別子）
+    pub user_name: String,             // Twitchログイン名
+    pub display_name: Option<String>,  // Twitch表示名
     pub message_count: i64,
     pub badges: Vec<String>,
     pub first_seen: String,
@@ -58,10 +60,10 @@ impl ChatMessageRepository {
     ) -> Result<Vec<TimeBucketChatStats>, duckdb::Error> {
         let mut sql = format!(
             r#"
-            SELECT 
+            SELECT
                 time_bucket(INTERVAL '{} minutes', cm.timestamp)::VARCHAR as bucket,
                 COUNT(*) as chat_count,
-                COUNT(DISTINCT cm.user_name) as unique_chatters
+                COUNT(DISTINCT cm.user_id) as unique_chatters
             FROM chat_messages cm
             LEFT JOIN streams s ON cm.stream_id = s.id
             WHERE 1=1
@@ -156,12 +158,12 @@ impl ChatMessageRepository {
         // 重要: badges を直接 SELECT せず、list_contains() で判定
         sql.push_str(
             r#"
-                GROUP BY cm.user_name, cm.badges
+                GROUP BY cm.user_id, cm.badges
             ),
             classified_messages AS (
-                SELECT 
+                SELECT
                     message_count,
-                    CASE 
+                    CASE
                         WHEN badges IS NULL THEN 'regular'
                         WHEN list_contains(badges, 'broadcaster') THEN 'broadcaster'
                         WHEN list_contains(badges, 'moderator') THEN 'moderator'
@@ -171,7 +173,7 @@ impl ChatMessageRepository {
                     END as segment
                 FROM all_messages
             )
-            SELECT 
+            SELECT
                 segment,
                 SUM(message_count) as total_messages,
                 COUNT(*) as user_count
@@ -207,10 +209,10 @@ impl ChatMessageRepository {
         let mut sql = format!(
             r#"
             WITH user_badges AS (
-                SELECT 
-                    user_name,
+                SELECT
+                    user_id,
                     {},
-                    ROW_NUMBER() OVER (PARTITION BY user_name ORDER BY timestamp DESC) as rn
+                    ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY timestamp DESC) as rn
                 FROM chat_messages
                 WHERE badges IS NOT NULL
             "#,
@@ -240,8 +242,10 @@ impl ChatMessageRepository {
         sql.push_str(
             r#"
             )
-            SELECT 
+            SELECT
+                cm.user_id,
                 cm.user_name,
+                cm.display_name,
                 COUNT(*) as message_count,
                 MIN(cm.timestamp)::VARCHAR as first_seen,
                 MAX(cm.timestamp)::VARCHAR as last_seen,
@@ -249,7 +253,7 @@ impl ChatMessageRepository {
                 ub.badges
             FROM chat_messages cm
             LEFT JOIN streams s ON cm.stream_id = s.id
-            LEFT JOIN user_badges ub ON cm.user_name = ub.user_name AND ub.rn = 1
+            LEFT JOIN user_badges ub ON cm.user_id = ub.user_id AND ub.rn = 1
             WHERE 1=1
             "#,
         );
@@ -278,7 +282,7 @@ impl ChatMessageRepository {
 
         sql.push_str(
             r#"
-            GROUP BY cm.user_name, ub.badges
+            GROUP BY cm.user_id, cm.user_name, cm.display_name, ub.badges
             ORDER BY message_count DESC
             LIMIT ?
             "#,
@@ -288,7 +292,7 @@ impl ChatMessageRepository {
         let mut stmt = conn.prepare(&sql)?;
         let results: Vec<ChatterWithBadges> =
             utils::query_map_with_params(&mut stmt, &params, |row| {
-                let badges_str: Option<String> = row.get(5).ok();
+                let badges_str: Option<String> = row.get(7).ok();
                 let badges = if let Some(b) = badges_str {
                     utils::parse_badges(&b).unwrap_or_default()
                 } else {
@@ -296,12 +300,14 @@ impl ChatMessageRepository {
                 };
 
                 Ok(ChatterWithBadges {
-                    user_name: row.get(0)?,
-                    message_count: row.get(1)?,
+                    user_id: row.get(0).ok(),
+                    user_name: row.get(1)?,
+                    display_name: row.get(2).ok(),
+                    message_count: row.get(3)?,
                     badges,
-                    first_seen: row.get(2)?,
-                    last_seen: row.get(3)?,
-                    stream_count: row.get(4)?,
+                    first_seen: row.get(4)?,
+                    last_seen: row.get(5)?,
+                    stream_count: row.get(6)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -309,23 +315,23 @@ impl ChatMessageRepository {
         Ok(results)
     }
 
-    /// 指定ユーザーのバッジ情報を取得
+    /// 指定ユーザーのバッジ情報を取得（user_idで検索）
     pub fn get_user_badges(
         conn: &Connection,
-        user_name: &str,
+        user_id: &str,
         channel_id: Option<i64>,
     ) -> Result<Option<Vec<String>>, duckdb::Error> {
         let mut sql = format!(
             r#"
             SELECT {}
             FROM chat_messages cm
-            WHERE cm.user_name = ?
+            WHERE cm.user_id = ?
                 AND cm.badges IS NOT NULL
             "#,
             chat_query::badges_select("cm")
         );
 
-        let params = vec![user_name.to_string()];
+        let params = vec![user_id.to_string()];
 
         if let Some(ch_id) = channel_id {
             sql.push_str(&format!(" AND cm.channel_id = {}", ch_id));
@@ -565,8 +571,8 @@ impl ChatMessageRepository {
         let mut sql = String::from(
             r#"
             WITH chatter_streams AS (
-                SELECT 
-                    cm.user_name,
+                SELECT
+                    cm.user_id,
                     COUNT(DISTINCT cm.stream_id) as stream_count,
                     COUNT(*) as message_count
                 FROM chat_messages cm
@@ -596,10 +602,10 @@ impl ChatMessageRepository {
 
         sql.push_str(
             r#"
-                GROUP BY cm.user_name
+                GROUP BY cm.user_id
             ),
             stream_viewers AS (
-                SELECT 
+                SELECT
                     ss.stream_id,
                     MAX(ss.viewer_count) as peak_ccu
                 FROM stream_stats ss
@@ -635,8 +641,8 @@ impl ChatMessageRepository {
             r#"
                 GROUP BY ss.stream_id
             )
-            SELECT 
-                COUNT(DISTINCT cs.user_name) as total_unique_chatters,
+            SELECT
+                COUNT(DISTINCT cs.user_id) as total_unique_chatters,
                 SUM(CASE WHEN cs.stream_count > 1 THEN 1 ELSE 0 END) as repeater_count,
                 SUM(CASE WHEN cs.stream_count = 1 THEN 1 ELSE 0 END) as new_chatter_count,
                 AVG(CASE WHEN sv.peak_ccu > 0 THEN cs.message_count::FLOAT / sv.peak_ccu::FLOAT ELSE 0 END) * 100.0 as avg_participation_rate

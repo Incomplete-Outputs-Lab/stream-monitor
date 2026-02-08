@@ -354,7 +354,7 @@ WHERE timestamp >= CURRENT_TIMESTAMP - INTERVAL '1 minute'
 - E2E/統合テスト: 未実装
 
 ### ビルド
-- **開発**: `bun install` → `npm run tauri dev`
+- **開発**: `bun install` → `bun run tauri dev`
 - **本番**: `bun run tauri build`
 - **注意**: DuckDB初回ビルド5-10分、CMake必須、スタックサイズ512MB
 

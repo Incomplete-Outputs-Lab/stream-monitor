@@ -1,6 +1,7 @@
 use crate::api::twitch_api::TwitchApiClient;
 use crate::commands::discovery::DiscoveredStreamInfo;
 use crate::config::settings::{AutoDiscoverySettings, SettingsManager};
+use crate::database::repositories::game_category_repository::GameCategoryRepository;
 use crate::database::DatabaseManager;
 use crate::error::ResultExt;
 use crate::DiscoveredStreamsCache;
@@ -263,6 +264,7 @@ impl AutoDiscoveryPoller {
 
         // メモリキャッシュに保存するための配信情報を構築
         let mut discovered_streams_info = Vec::new();
+        let mut categories_to_upsert: HashMap<String, String> = HashMap::new();
         let now = Local::now().to_rfc3339();
 
         for stream in filtered_streams {
@@ -309,24 +311,32 @@ impl AutoDiscoveryPoller {
             discovered_streams_info.push(stream_info);
 
             // stream_statsテーブルに統計データを記録
-            let conn = db_manager.get_connection().await?;
-            conn.execute(
-                r#"
-                INSERT INTO stream_stats (
-                    stream_id, collected_at, viewer_count,
-                    twitch_user_id, channel_name, category
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                "#,
-                duckdb::params![
-                    None::<i64>, // stream_id = NULL
-                    now.as_str(),
-                    stream.viewer_count as i32,
-                    user_id.as_str(),
-                    user_login.as_str(),
-                    stream.game_name.as_str(),
-                ],
-            )?;
-            drop(conn);
+            {
+                let conn = db_manager.get_connection().await?;
+                conn.execute(
+                    r#"
+                    INSERT INTO stream_stats (
+                        stream_id, collected_at, viewer_count,
+                        twitch_user_id, channel_name, category
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    "#,
+                    duckdb::params![
+                        None::<i64>, // stream_id = NULL
+                        now.as_str(),
+                        stream.viewer_count as i32,
+                        user_id.as_str(),
+                        user_login.as_str(),
+                        stream.game_name.as_str(),
+                    ],
+                )?;
+            }
+
+            // カテゴリ情報を収集（ループ後にバッチ処理）
+            let game_id_str = stream.game_id.to_string();
+            let game_name_str = stream.game_name.to_string();
+            if !game_id_str.is_empty() && !game_name_str.is_empty() {
+                categories_to_upsert.insert(game_id_str, game_name_str);
+            }
 
             eprintln!(
                 "[AutoDiscovery] Discovered stream: {} ({}) - {} viewers, category: {}",
@@ -335,6 +345,27 @@ impl AutoDiscoveryPoller {
         }
 
         let discovered_count = discovered_streams_info.len();
+
+        // game_categoriesをバッチ更新（ループ内の個別書き込みを避けてTransactionConflictを防ぐ）
+        if !categories_to_upsert.is_empty() {
+            match db_manager.get_connection().await {
+                Ok(conn) => {
+                    for (game_id, game_name) in &categories_to_upsert {
+                        if let Err(e) =
+                            GameCategoryRepository::upsert_category(&conn, game_id, game_name, None)
+                        {
+                            eprintln!(
+                                "[AutoDiscovery] Failed to upsert category {}: {}",
+                                game_id, e
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[AutoDiscovery] Failed to get connection for category upsert: {}", e);
+                }
+            }
+        }
 
         // メモリキャッシュに保存
         let cache: tauri::State<'_, Arc<DiscoveredStreamsCache>> = app_handle.state();

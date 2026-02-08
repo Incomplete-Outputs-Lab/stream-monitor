@@ -1,10 +1,21 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { listen } from '@tauri-apps/api/event';
 import * as gameCategoriesApi from '../../api/gameCategories';
 
 export function GameCategoryManager() {
   const [searchQuery, setSearchQuery] = useState('');
   const queryClient = useQueryClient();
+
+  // 自動発見イベントでカテゴリリストを更新
+  useEffect(() => {
+    const unlisten = listen('discovered-streams-updated', () => {
+      queryClient.invalidateQueries({ queryKey: ['game-categories'] });
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [queryClient]);
 
   // 全カテゴリ取得
   const { data: categories, isLoading } = useQuery({

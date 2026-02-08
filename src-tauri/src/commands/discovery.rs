@@ -175,20 +175,10 @@ pub async fn get_discovered_streams(
     let cache: tauri::State<'_, Arc<crate::DiscoveredStreamsCache>> = app_handle.state();
 
     if !cache.initialized.load(Ordering::SeqCst) {
-        eprintln!("[Discovery] Auto-discovery enabled but not yet initialized, waiting...");
-        let timeout = tokio::time::Duration::from_secs(2);
-        let start = tokio::time::Instant::now();
-
-        while !cache.initialized.load(Ordering::SeqCst) {
-            if start.elapsed() > timeout {
-                eprintln!("[Discovery] Timeout waiting for first poll cycle, returning empty list");
-                // 初期化未完了の場合は空配列を返す（フロントエンドのrefetchIntervalとイベントで再試行）
-                return Ok(Vec::new());
-            }
-            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-        }
-
-        eprintln!("[Discovery] First poll cycle completed, proceeding with query");
+        // 初期化未完了の場合は即座に空配列を返す
+        // （discovered-streams-updatedイベントでフロントエンドが自動更新される）
+        eprintln!("[Discovery] Auto-discovery not yet initialized, returning empty list");
+        return Ok(Vec::new());
     }
 
     // 1. 既に登録されているチャンネルのtwitch_user_idを取得

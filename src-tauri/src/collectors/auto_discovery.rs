@@ -7,8 +7,8 @@ use crate::error::ResultExt;
 use crate::DiscoveredStreamsCache;
 use chrono::Local;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
@@ -56,7 +56,8 @@ impl AutoDiscoveryPoller {
 
         // Twitch Client IDの確認（事前チェック）
         if settings.twitch.client_id.is_none() && self.twitch_client.is_none() {
-            let error_msg = "Twitch Client IDが設定されていません。設定画面でClient IDを設定してください。";
+            let error_msg =
+                "Twitch Client IDが設定されていません。設定画面でClient IDを設定してください。";
             eprintln!("[AutoDiscovery] {}", error_msg);
 
             // フロントエンドにエラー通知イベントを発行
@@ -93,9 +94,7 @@ impl AutoDiscoveryPoller {
             let poll_interval_secs = auto_discovery_settings.poll_interval as u64;
             let mut ticker = interval(Duration::from_secs(poll_interval_secs));
 
-            eprintln!(
-                "[AutoDiscovery] ===== AUTO DISCOVERY STARTED ====="
-            );
+            eprintln!("[AutoDiscovery] ===== AUTO DISCOVERY STARTED =====");
             eprintln!(
                 "[AutoDiscovery] Poll interval: {} seconds",
                 poll_interval_secs
@@ -108,9 +107,7 @@ impl AutoDiscoveryPoller {
                 "[AutoDiscovery] Game IDs filter: {:?}",
                 auto_discovery_settings.filters.game_ids
             );
-            eprintln!(
-                "[AutoDiscovery] First run: IMMEDIATE"
-            );
+            eprintln!("[AutoDiscovery] First run: IMMEDIATE");
 
             // 初回は即座に実行
             let mut is_first_run = true;
@@ -209,10 +206,15 @@ impl AutoDiscoveryPoller {
 
         // フィルター条件を準備
         let game_ids = if settings.filters.game_ids.is_empty() {
-            eprintln!("[AutoDiscovery] No game ID filter - fetching top streams from all categories");
+            eprintln!(
+                "[AutoDiscovery] No game ID filter - fetching top streams from all categories"
+            );
             None
         } else {
-            eprintln!("[AutoDiscovery] Game ID filter: {:?}", settings.filters.game_ids);
+            eprintln!(
+                "[AutoDiscovery] Game ID filter: {:?}",
+                settings.filters.game_ids
+            );
             Some(settings.filters.game_ids.clone())
         };
 
@@ -220,17 +222,26 @@ impl AutoDiscoveryPoller {
             eprintln!("[AutoDiscovery] No language filter");
             None
         } else {
-            eprintln!("[AutoDiscovery] Language filter: {:?}", settings.filters.languages);
+            eprintln!(
+                "[AutoDiscovery] Language filter: {:?}",
+                settings.filters.languages
+            );
             Some(settings.filters.languages.clone())
         };
 
         // 配信を取得
-        eprintln!("[AutoDiscovery] Calling Twitch API to get top {} streams...", settings.max_streams);
+        eprintln!(
+            "[AutoDiscovery] Calling Twitch API to get top {} streams...",
+            settings.max_streams
+        );
         let streams = twitch_client
             .get_top_streams(game_ids, languages, Some(settings.max_streams as usize))
             .await?;
 
-        eprintln!("[AutoDiscovery] Twitch API returned {} streams", streams.len());
+        eprintln!(
+            "[AutoDiscovery] Twitch API returned {} streams",
+            streams.len()
+        );
 
         // 最小視聴者数フィルターを適用
         let filtered_streams: Vec<_> = streams
@@ -362,7 +373,10 @@ impl AutoDiscoveryPoller {
                     }
                 }
                 Err(e) => {
-                    eprintln!("[AutoDiscovery] Failed to get connection for category upsert: {}", e);
+                    eprintln!(
+                        "[AutoDiscovery] Failed to get connection for category upsert: {}",
+                        e
+                    );
                 }
             }
         }
@@ -395,10 +409,11 @@ impl AutoDiscoveryPoller {
         // トランザクション開始
         conn.execute("BEGIN TRANSACTION", [])?;
 
-        let cleanup_result: Result<Vec<(i64, String)>, Box<dyn std::error::Error + Send + Sync>> = (|| {
-            // 自動発見されたチャンネルで、最新の配信が終了しているものを取得
-            let mut stmt = conn.prepare(
-                r#"
+        let cleanup_result: Result<Vec<(i64, String)>, Box<dyn std::error::Error + Send + Sync>> =
+            (|| {
+                // 自動発見されたチャンネルで、最新の配信が終了しているものを取得
+                let mut stmt = conn.prepare(
+                    r#"
                 SELECT c.id, c.channel_name
                 FROM channels c
                 WHERE c.is_auto_discovered = true
@@ -412,40 +427,40 @@ impl AutoDiscoveryPoller {
                     WHERE s.channel_id = c.id
                 )
                 "#,
-            )?;
+                )?;
 
-            let channels: Vec<(i64, String)> = stmt
-                .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-                .collect::<Result<Vec<_>, _>>()?;
+                let channels: Vec<(i64, String)> = stmt
+                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+                    .collect::<Result<Vec<_>, _>>()?;
 
-            drop(stmt);
+                drop(stmt);
 
-            // データベースから削除（ポーリングは自動的に停止される）
-            for (channel_id, channel_name) in &channels {
-                // 削除前に再度ライブ状態をチェック（競合回避）
-                let mut check_stmt = conn.prepare(
+                // データベースから削除（ポーリングは自動的に停止される）
+                for (channel_id, channel_name) in &channels {
+                    // 削除前に再度ライブ状態をチェック（競合回避）
+                    let mut check_stmt = conn.prepare(
                     "SELECT EXISTS(SELECT 1 FROM streams WHERE channel_id = ? AND ended_at IS NULL)"
                 )?;
-                let is_live: bool = check_stmt.query_row([channel_id], |row| row.get(0))?;
-                drop(check_stmt);
+                    let is_live: bool = check_stmt.query_row([channel_id], |row| row.get(0))?;
+                    drop(check_stmt);
 
-                if is_live {
-                    eprintln!(
+                    if is_live {
+                        eprintln!(
                         "[AutoDiscovery] Skip cleanup for {} (id: {}) - channel went live again",
                         channel_name, channel_id
                     );
-                    continue;
+                        continue;
+                    }
+
+                    conn.execute("DELETE FROM channels WHERE id = ?", [channel_id])?;
+                    eprintln!(
+                        "[AutoDiscovery] Cleaned up offline channel: {} (id: {})",
+                        channel_name, channel_id
+                    );
                 }
 
-                conn.execute("DELETE FROM channels WHERE id = ?", [channel_id])?;
-                eprintln!(
-                    "[AutoDiscovery] Cleaned up offline channel: {} (id: {})",
-                    channel_name, channel_id
-                );
-            }
-
-            Ok(channels)
-        })();
+                Ok(channels)
+            })();
 
         match cleanup_result {
             Ok(channels) => {

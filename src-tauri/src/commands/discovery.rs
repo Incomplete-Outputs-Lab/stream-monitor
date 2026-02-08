@@ -5,8 +5,8 @@ use crate::database::DatabaseManager;
 use crate::error::ResultExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 use tokio::sync::Mutex;
 

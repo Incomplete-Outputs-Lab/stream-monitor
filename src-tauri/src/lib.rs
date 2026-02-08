@@ -10,13 +10,13 @@ mod logger;
 mod oauth;
 mod websocket;
 
+use std::sync::atomic::AtomicBool;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager, WindowEvent,
 };
 use tokio::sync::Mutex;
-use std::sync::atomic::AtomicBool;
 
 use collectors::{
     auto_discovery::AutoDiscoveryPoller, poller::ChannelPoller, twitch::TwitchCollector,

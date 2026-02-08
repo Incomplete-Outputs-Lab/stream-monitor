@@ -133,7 +133,9 @@ impl DatabaseManager {
     }
 
     /// データベース接続を取得
-    pub async fn get_connection(&self) -> Result<Connection, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn get_connection(
+        &self,
+    ) -> Result<Connection, Box<dyn std::error::Error + Send + Sync>> {
         let conn = self.conn.lock().await;
         conn.try_clone()
             .db_context("clone connection")
@@ -150,10 +152,7 @@ impl DatabaseManager {
     pub async fn shutdown(&self) -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("[DB Shutdown] Starting graceful shutdown...");
 
-        let conn = self
-            .conn
-            .lock()
-            .await;
+        let conn = self.conn.lock().await;
 
         // WALチェックポイントを強制実行（全データをメインDBにフラッシュ）
         match conn.execute("CHECKPOINT", []) {

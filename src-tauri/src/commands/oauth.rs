@@ -80,7 +80,8 @@ pub async fn reinitialize_twitch_collector(
     // 新しいTwitchCollectorを作成
     let db_conn = db_manager
         .get_connection()
-        .config_context("get database connection")
+        .await
+        .db_context("get database connection")
         .map_err(|e| e.to_string())?;
     let db_conn = Arc::new(Mutex::new(db_conn));
 

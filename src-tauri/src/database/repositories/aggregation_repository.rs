@@ -236,8 +236,8 @@ impl AggregationRepository {
                 minutes_watched: mw,
                 hours_broadcasted: hours,
                 average_ccu: avg_ccu,
-                main_played_title: main_title,
-                main_title_mw_percent: main_mw_percent,
+                main_played_title: main_title.unwrap_or_default(),
+                main_title_mw_percent: main_mw_percent.unwrap_or_default(),
                 peak_ccu,
                 stream_count,
                 total_chat_messages: total_chat,
@@ -365,14 +365,14 @@ impl AggregationRepository {
         let results: Vec<GameAnalytics> =
             utils::query_map_with_params(&mut stmt, &params, |row| {
                 Ok(GameAnalytics {
-                    game_id: row.get::<_, Option<String>>(0)?,
+                    game_id: row.get::<_, String>(0).unwrap_or_default(),
                     category: row.get::<_, String>(1)?,
                     minutes_watched: row.get::<_, i64>(2)?,
                     hours_broadcasted: row.get::<_, f64>(3)?,
                     average_ccu: row.get::<_, f64>(4)?,
                     unique_broadcasters: row.get::<_, i32>(5)?,
-                    top_channel: row.get::<_, Option<String>>(6)?,
-                    top_channel_login: row.get::<_, Option<String>>(7)?,
+                    top_channel: row.get::<_, String>(6).unwrap_or_default(),
+                    top_channel_login: row.get::<_, String>(7).unwrap_or_default(),
                     total_chat_messages: row.get::<_, i64>(8)?,
                     avg_chat_rate: row.get::<_, f64>(9)?,
                     engagement_rate: row.get::<_, f64>(10)?,

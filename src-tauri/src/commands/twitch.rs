@@ -20,7 +20,9 @@ pub struct TwitchChannelInfo {
     pub display_name: String,
     pub profile_image_url: String,
     pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub follower_count: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub broadcaster_type: Option<String>,
 }
 

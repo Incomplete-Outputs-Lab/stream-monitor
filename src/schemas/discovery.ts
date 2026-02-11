@@ -25,14 +25,14 @@ export const DiscoveredStreamInfoSchema = z.object({
   twitch_user_id: z.number(),
   channel_id: z.string(),
   channel_name: z.string(),
-  display_name: z.string().optional(),
-  profile_image_url: z.string().optional(),
-  discovered_at: z.string().optional(),
-  title: z.string().optional(),
-  category: z.string().optional(),
-  viewer_count: z.number().optional(),
-  follower_count: z.number().optional(),
-  broadcaster_type: z.string().optional(),
+  display_name: z.string().nullable().optional(),
+  profile_image_url: z.string().nullable().optional(),
+  discovered_at: z.string().nullable().optional(),
+  title: z.string().nullable().optional(),
+  category: z.string().nullable().optional(),
+  viewer_count: z.number().nullable().optional(),
+  follower_count: z.number(),
+  broadcaster_type: z.string().nullable().optional(),
 });
 
 /**
@@ -41,7 +41,7 @@ export const DiscoveredStreamInfoSchema = z.object({
 export const AutoDiscoveryFiltersSchema = z.object({
   game_ids: z.array(z.string()),
   languages: z.array(z.string()),
-  min_viewers: z.number().optional(),
+  min_viewers: z.number(),
 });
 
 /**

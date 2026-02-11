@@ -11,7 +11,7 @@ export function AutoDiscoveryForm() {
     filters: {
       game_ids: [],
       languages: [],
-      min_viewers: undefined,
+      min_viewers: 0,
     },
   });
   const [loading, setLoading] = useState(false);
@@ -34,13 +34,26 @@ export function AutoDiscoveryForm() {
   useEffect(() => {
     const loadSettings = async () => {
       try {
+        // #region agent log
+        fetch('http://127.0.0.1:7245/ingest/0d9d8352-eae8-4480-b5a0-b0206438daef',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AutoDiscoveryForm.tsx:36',message:'Loading settings START',data:{},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+        // #endregion
+        
         // Client IDが設定されているかチェック
         const twitchOAuth = await configApi.getOAuthConfig('twitch');
         setHasClientId(!!twitchOAuth.client_id);
 
         const result = await discoveryApi.getAutoDiscoverySettings();
+        
+        // #region agent log
+        fetch('http://127.0.0.1:7245/ingest/0d9d8352-eae8-4480-b5a0-b0206438daef',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AutoDiscoveryForm.tsx:48',message:'Settings loaded',data:{hasResult:!!result,enabled:result?.enabled,resultStr:JSON.stringify(result)},timestamp:Date.now(),hypothesisId:'H1,H2'})}).catch(()=>{});
+        // #endregion
+        
         if (result) {
           setSettings(result);
+          
+          // #region agent log
+          fetch('http://127.0.0.1:7245/ingest/0d9d8352-eae8-4480-b5a0-b0206438daef',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AutoDiscoveryForm.tsx:57',message:'State updated',data:{enabled:result.enabled},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+          // #endregion
 
           // 既存のgame_idsからゲーム名を取得
           if (result.filters.game_ids.length > 0) {
@@ -55,6 +68,9 @@ export function AutoDiscoveryForm() {
           }
         }
       } catch (err) {
+        // #region agent log
+        fetch('http://127.0.0.1:7245/ingest/0d9d8352-eae8-4480-b5a0-b0206438daef',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AutoDiscoveryForm.tsx:76',message:'Load error',data:{error:String(err)},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+        // #endregion
         console.error('Failed to load auto-discovery settings:', err);
       }
     };
@@ -323,20 +339,18 @@ export function AutoDiscoveryForm() {
             <input
               type="number"
               min="0"
-              value={settings.filters.min_viewers || ''}
+              value={settings.filters.min_viewers}
               onChange={(e) =>
                 setSettings((prev) => ({
                   ...prev,
                   filters: {
                     ...prev.filters,
-                    min_viewers: e.target.value
-                      ? parseInt(e.target.value)
-                      : undefined,
+                    min_viewers: parseInt(e.target.value) || 0,
                   },
                 }))
               }
               className="input-field"
-              placeholder="指定しない場合は全て取得"
+              placeholder="0を指定すると全て取得"
             />
           </div>
 

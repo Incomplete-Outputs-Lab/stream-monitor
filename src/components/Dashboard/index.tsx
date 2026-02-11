@@ -1,8 +1,8 @@
+import { useEffect } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useEffect } from "react";
 import { ChannelWithStats, TwitchRateLimitStatus, DiscoveredStreamInfo } from "../../types";
 import { Tooltip as CustomTooltip } from "../common/Tooltip";
 import { toast } from "../../utils/toast";
@@ -11,6 +11,7 @@ import * as discoveryApi from "../../api/discovery";
 import * as statisticsApi from "../../api/statistics";
 import { DesktopAppNotice } from "../common/DesktopAppNotice";
 import { OAuthWarningBanner } from "../common/OAuthWarningBanner";
+import { useAppStateStore } from "../../stores/appStateStore";
 
 interface LiveChannelCardProps {
   channel: ChannelWithStats;
@@ -206,6 +207,7 @@ function DiscoveredStreamCard({ stream, onPromote, isAlreadyRegistered = false }
 
 export function Dashboard() {
   const queryClient = useQueryClient();
+  const backendReady = useAppStateStore((state) => state.backendReady);
 
   // チャンネル情報を取得し、ライブチャンネルのみをフィルタリング
   const { 
@@ -213,19 +215,37 @@ export function Dashboard() {
     isLoading: channelsLoading, 
     error: channelsError
   } = useQuery({
-    queryKey: ["live-channels"],
+    queryKey: ["channels"],
     queryFn: async () => {
       console.log('[Dashboard] Fetching channels...');
       const result = await invoke<ChannelWithStats[]>("list_channels");
       console.log('[Dashboard] Fetched channels:', result?.length, 'channels');
       return result;
     },
+    enabled: backendReady, // バックエンド初期化完了まで実行しない
     refetchInterval: 30000, // 30秒ごとに更新
     staleTime: 25000, // 25秒間はキャッシュを使用（refetchIntervalより短く）
     gcTime: 60000, // 1分間キャッシュを保持
     retry: 1, // リトライは1回まで
   });
   const liveChannels = allChannels?.filter(c => c.is_live) ?? [];
+
+  // 自動発見イベントリスナー：バックエンドからのリアルタイム更新を受信
+  useEffect(() => {
+    console.log('[Dashboard] Setting up discovered-streams-updated event listener');
+    
+    const unlistenPromise = listen('discovered-streams-updated', () => {
+      console.log('[Dashboard] ✅ discovered-streams-updated event received');
+      // 自動発見された配信のクエリを無効化して再取得
+      queryClient.invalidateQueries({ queryKey: ["discovered-streams"] });
+      console.log('[Dashboard] discovered-streams query invalidated');
+    });
+
+    return () => {
+      console.log('[Dashboard] Cleaning up event listeners');
+      unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, [queryClient]);
 
   // リアルタイムのチャットレートを取得
   const { data: realtimeChatRate } = useQuery({
@@ -244,27 +264,18 @@ export function Dashboard() {
   // 自動発見された配信を取得
   const { data: discoveredStreams, isLoading: isLoadingDiscovered } = useQuery({
     queryKey: ["discovered-streams"],
-    queryFn: () => discoveryApi.getDiscoveredStreams(),
-    refetchInterval: 30000, // 30秒ごとに更新
+    queryFn: async () => {
+      console.log('[Dashboard] Fetching discovered streams...');
+      const result = await discoveryApi.getDiscoveredStreams();
+      console.log('[Dashboard] Fetched discovered streams:', result?.length, 'streams');
+      return result;
+    },
+    // enabled条件を削除：バックエンドが初期化されていなければ空配列が返る
+    refetchInterval: 10000, // 10秒ごとに更新（より頻繁に）
     staleTime: 5000, // キャッシュ有効期間を短縮
+    retry: 1, // リトライは1回まで
   });
 
-  // 自動発見イベントをリッスンしてキャッシュ無効化
-  useEffect(() => {
-    const unlistenUpdate = listen("discovered-streams-updated", () => {
-      queryClient.invalidateQueries({ queryKey: ["discovered-streams"] });
-    });
-
-    // 自動発見エラーイベントのリッスン
-    const unlistenError = listen<string>("auto-discovery-error", (event) => {
-      toast.error(`自動発見エラー: ${event.payload}`);
-    });
-
-    return () => {
-      unlistenUpdate.then(fn => fn());
-      unlistenError.then(fn => fn());
-    };
-  }, [queryClient]);
 
   // 楽観的更新を使用したチャンネル昇格mutation
   const promoteMutation = useMutation({
@@ -274,11 +285,11 @@ export function Dashboard() {
     onMutate: async (channelId: string) => {
       // 既存のクエリをキャンセル
       await queryClient.cancelQueries({ queryKey: ["discovered-streams"] });
-      await queryClient.cancelQueries({ queryKey: ["live-channels"] });
+      await queryClient.cancelQueries({ queryKey: ["channels"] });
 
       // 現在のキャッシュを保存（ロールバック用）
       const previousDiscovered = queryClient.getQueryData<DiscoveredStreamInfo[]>(["discovered-streams"]);
-      const previousChannels = queryClient.getQueryData<ChannelWithStats[]>(["live-channels"]);
+      const previousChannels = queryClient.getQueryData<ChannelWithStats[]>(["channels"]);
 
       // 昇格するストリーム情報を取得
       const promotingStream = previousDiscovered?.find(
@@ -313,7 +324,7 @@ export function Dashboard() {
           profile_image_url: promotingStream.profile_image_url ?? undefined,
         };
         queryClient.setQueryData<ChannelWithStats[]>(
-          ["live-channels"],
+          ["channels"],
           [...previousChannels, newChannel]
         );
       }
@@ -326,14 +337,13 @@ export function Dashboard() {
         queryClient.setQueryData(["discovered-streams"], context.previousDiscovered);
       }
       if (context?.previousChannels) {
-        queryClient.setQueryData(["live-channels"], context.previousChannels);
+        queryClient.setQueryData(["channels"], context.previousChannels);
       }
       toast.error(`エラー: ${_err}`);
     },
     onSettled: () => {
       // 完了後にクエリを再検証して最新データを取得
       queryClient.invalidateQueries({ queryKey: ["discovered-streams"] });
-      queryClient.invalidateQueries({ queryKey: ["live-channels"] });
       queryClient.invalidateQueries({ queryKey: ["channels"] });
     },
   });

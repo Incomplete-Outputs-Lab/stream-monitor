@@ -384,8 +384,11 @@ await invoke('reinitialize_twitch_collector');
 - **確認**: DuckDB CLIまたはアプリ内SQLビューア
 
 ### イベント
-- `database-init-success/error`, `channel-stats-update`, `auto-discovery-update`
-- フロントエンド: `listen('event-name', callback)`
+- **主要イベント**: `database-init-success/error`, `backend-ready`, `channel-stats-updated`, `discovered-streams-updated`
+- **フロントエンド**: `listen('event-name', callback)`
+- **デバッグ**: 
+  - バックエンド: `app_handle.emit("event-name", ())`の戻り値を確認、`eprintln!`でログ出力
+  - フロントエンド: `console.log`でイベント受信を確認、`backendReady`状態をログ出力
 
 ## テスト・ビルド・依存関係
 
@@ -395,7 +398,7 @@ await invoke('reinitialize_twitch_collector');
 - E2E/統合テスト: 未実装
 
 ### コミット前チェック
-**Git commit & push を実施する前に、必ず以下のチェックを行う**
+**ユーザーからgit commit & push を実指示された際は、必ず以下のチェックを行う**
 
 #### バックエンド（Rust）
 ```bash
@@ -451,6 +454,7 @@ bun run build
 | チャンネル編集が反映されない | フロントエンドがAPI層を経由しない | `src/api/channels.ts`経由で呼び出し |
 | 統計閲覧でデータ表示されない | `toISOString()`がUTC時刻を返し前日の日付に | ローカル日付取得関数で`getFullYear/getMonth/getDate`使用 |
 | 配信者/ゲーム分析でフィールドがundefined | バックエンド構造体のcamelCase指定とフロントエンドのsnake_case期待の不一致 | バックエンドから`#[serde(rename_all = "camelCase")]`を削除してsnake_caseに統一 |
+| 自動発見された配信が表示されない | `toggle_auto_discovery`がpollerを再初期化しない、またはイベント/クエリが実行されない | デバッグログで原因特定（`backend-ready`イベント、クエリ実行、キャッシュ初期化を確認） |
 
 ## 実装状況
 

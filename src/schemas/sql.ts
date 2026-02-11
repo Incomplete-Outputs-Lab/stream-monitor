@@ -6,7 +6,7 @@ import { z } from 'zod';
 export const SqlQueryResultSchema = z.object({
   columns: z.array(z.string()),
   rows: z.array(z.array(z.unknown())),
-  affected_rows: z.number().optional(),
+  affected_rows: z.number(),
   execution_time_ms: z.number(),
 });
 

@@ -14,8 +14,8 @@ pub struct BroadcasterAnalytics {
     pub minutes_watched: i64,
     pub hours_broadcasted: f64,
     pub average_ccu: f64,
-    pub main_played_title: Option<String>,
-    pub main_title_mw_percent: Option<f64>,
+    pub main_played_title: String,
+    pub main_title_mw_percent: f64,
     // 新規追加
     pub peak_ccu: i32,
     pub stream_count: i32,
@@ -29,14 +29,14 @@ pub struct BroadcasterAnalytics {
 /// ゲームタイトル別統計
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameAnalytics {
-    pub game_id: Option<String>, // Twitch game ID（プライマリキー）
+    pub game_id: String, // Twitch game ID（プライマリキー）
     pub category: String,        // カテゴリ名（表示用、game_categoriesから取得）
     pub minutes_watched: i64,
     pub hours_broadcasted: f64,
     pub average_ccu: f64,
     pub unique_broadcasters: i32,
-    pub top_channel: Option<String>,
-    pub top_channel_login: Option<String>, // Twitch login name of top channel (URL用)
+    pub top_channel: String,
+    pub top_channel_login: String, // Twitch login name of top channel (URL用)
     pub total_chat_messages: i64,
     pub avg_chat_rate: f64,
     pub engagement_rate: f64,
@@ -300,8 +300,8 @@ fn get_broadcaster_analytics_old(
             minutes_watched: mw,
             hours_broadcasted: hours,
             average_ccu: avg_ccu,
-            main_played_title: main_title,
-            main_title_mw_percent: main_mw_percent,
+            main_played_title: main_title.unwrap_or_default(),
+            main_title_mw_percent: main_mw_percent.unwrap_or_default(),
             peak_ccu,
             stream_count,
             total_chat_messages: total_chat,
@@ -439,9 +439,9 @@ fn get_game_analytics_old(
 
     let mut stmt = conn.prepare(&sql)?;
     let results: Vec<GameAnalytics> = utils::query_map_with_params(&mut stmt, &params, |row| {
-        let top_channel_login = row.get::<_, Option<String>>(5)?;
+        let top_channel_login = row.get::<_, String>(5).unwrap_or_default();
         Ok(GameAnalytics {
-            game_id: None, // Old implementation doesn't have game_id
+            game_id: String::new(), // Old implementation doesn't have game_id
             category: row.get::<_, String>(0)?,
             minutes_watched: row.get::<_, i64>(1)?,
             hours_broadcasted: row.get::<_, f64>(2)?,

@@ -21,6 +21,9 @@ const DatabaseInfoSchema = z.object({
  */
 export const executeSqlQuery = async (query: string): Promise<SqlQueryResult> => {
   const result = await invoke<unknown>('execute_sql', { query });
+  // #region agent log
+  fetch('http://127.0.0.1:7245/ingest/0d9d8352-eae8-4480-b5a0-b0206438daef',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sql.ts:24',message:'Post-fix: Raw result from backend',data:{result,affected_rows:result?.['affected_rows'],affected_rows_type:typeof result?.['affected_rows']},timestamp:Date.now(),hypothesisId:'NEW_A',runId:'post-fix'})}).catch(()=>{});
+  // #endregion
   return SqlQueryResultSchema.parse(result);
 };
 

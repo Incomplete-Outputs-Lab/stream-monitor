@@ -12,7 +12,7 @@ pub struct StreamInfo {
     pub title: String,
     pub category: String,
     pub started_at: String,
-    pub ended_at: Option<String>,
+    pub ended_at: String,
     pub peak_viewers: i32,
     pub avg_viewers: i32,
     pub duration_minutes: i32,
@@ -20,30 +20,30 @@ pub struct StreamInfo {
     pub follower_gain: i32,
     pub total_chat_messages: i64,
     pub engagement_rate: f64,
-    pub last_collected_at: Option<String>,
+    pub last_collected_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimelinePoint {
     pub collected_at: String,
-    pub viewer_count: Option<i32>,
+    pub viewer_count: i32,
     pub chat_rate_1min: i32,
-    pub category: Option<String>,
-    pub title: Option<String>,
-    pub follower_count: Option<i32>,
+    pub category: String,
+    pub title: String,
+    pub follower_count: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CategoryChange {
     pub timestamp: String,
-    pub from_category: Option<String>,
+    pub from_category: String,
     pub to_category: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TitleChange {
     pub timestamp: String,
-    pub from_title: Option<String>,
+    pub from_title: String,
     pub to_title: String,
 }
 
@@ -189,7 +189,7 @@ fn get_channel_streams_internal(
             title: row.get::<_, String>(4)?,
             category: row.get::<_, String>(5)?,
             started_at: row.get::<_, String>(6)?,
-            ended_at: row.get::<_, Option<String>>(7)?,
+            ended_at: row.get::<_, String>(7).unwrap_or_default(),
             peak_viewers: row.get::<_, i32>(8)?,
             avg_viewers: row.get::<_, i32>(9)?,
             duration_minutes: row.get::<_, i32>(10)?,
@@ -197,7 +197,7 @@ fn get_channel_streams_internal(
             follower_gain: row.get::<_, i32>(12)?,
             total_chat_messages: row.get::<_, i64>(13)?,
             engagement_rate: row.get::<_, f64>(14)?,
-            last_collected_at: row.get::<_, Option<String>>(15)?,
+            last_collected_at: row.get::<_, String>(15).unwrap_or_default(),
         })
     })?;
 
@@ -360,7 +360,7 @@ fn get_stream_info_by_id(
                 title: row.get::<_, String>(4)?,
                 category: row.get::<_, String>(5)?,
                 started_at: row.get::<_, String>(6)?,
-                ended_at: row.get::<_, Option<String>>(7)?,
+                ended_at: row.get::<_, String>(7).unwrap_or_default(),
                 peak_viewers: row.get::<_, i32>(8)?,
                 avg_viewers: row.get::<_, i32>(9)?,
                 duration_minutes: row.get::<_, i32>(10)?,
@@ -368,7 +368,7 @@ fn get_stream_info_by_id(
                 follower_gain: row.get::<_, i32>(12)?,
                 total_chat_messages: row.get::<_, i64>(13)?,
                 engagement_rate: row.get::<_, f64>(14)?,
-                last_collected_at: row.get::<_, Option<String>>(15)?,
+                last_collected_at: row.get::<_, String>(15).unwrap_or_default(),
             })
         },
     )?;
@@ -405,11 +405,11 @@ fn get_timeline_stats(
     let stats = stmt.query_map([&stream_id_str], |row| {
         Ok(TimelinePoint {
             collected_at: row.get::<_, String>(0)?,
-            viewer_count: row.get::<_, Option<i32>>(1)?,
+            viewer_count: row.get::<_, i32>(1).unwrap_or_default(),
             chat_rate_1min: row.get::<_, i32>(2)?,
-            category: row.get::<_, Option<String>>(3)?,
-            title: row.get::<_, Option<String>>(4)?,
-            follower_count: row.get::<_, Option<i32>>(5)?,
+            category: row.get::<_, String>(3).unwrap_or_default(),
+            title: row.get::<_, String>(4).unwrap_or_default(),
+            follower_count: row.get::<_, i32>(5).unwrap_or_default(),
         })
     })?;
 
@@ -426,18 +426,18 @@ fn detect_category_changes(stats: &[TimelinePoint]) -> Vec<CategoryChange> {
     let mut prev_category: Option<String> = None;
 
     for stat in stats {
-        if let Some(ref current_category) = stat.category {
+        if !stat.category.is_empty() {
             // Only record changes where prev_category is Some and differs from current
             if let Some(ref prev) = prev_category {
-                if prev != current_category {
+                if prev != &stat.category {
                     changes.push(CategoryChange {
                         timestamp: stat.collected_at.clone(),
-                        from_category: Some(prev.clone()),
-                        to_category: current_category.clone(),
+                        from_category: prev.clone(),
+                        to_category: stat.category.clone(),
                     });
                 }
             }
-            prev_category = Some(current_category.clone());
+            prev_category = Some(stat.category.clone());
         }
     }
 
@@ -449,18 +449,18 @@ fn detect_title_changes(stats: &[TimelinePoint]) -> Vec<TitleChange> {
     let mut prev_title: Option<String> = None;
 
     for stat in stats {
-        if let Some(ref current_title) = stat.title {
+        if !stat.title.is_empty() {
             // Only record changes where prev_title is Some and differs from current
             if let Some(ref prev) = prev_title {
-                if prev != current_title {
+                if prev != &stat.title {
                     changes.push(TitleChange {
                         timestamp: stat.collected_at.clone(),
-                        from_title: Some(prev.clone()),
-                        to_title: current_title.clone(),
+                        from_title: prev.clone(),
+                        to_title: stat.title.clone(),
                     });
                 }
             }
-            prev_title = Some(current_title.clone());
+            prev_title = Some(stat.title.clone());
         }
     }
 

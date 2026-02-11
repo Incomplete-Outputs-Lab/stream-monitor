@@ -9,6 +9,7 @@ import { toast } from "../../utils/toast";
 import { confirm } from "../../utils/confirm";
 import * as channelsApi from "../../api/channels";
 import { DesktopAppNotice } from "../common/DesktopAppNotice";
+import { useAppStateStore } from "../../stores/appStateStore";
 
 export function ChannelList() {
   const [showAddForm, setShowAddForm] = useState(false);
@@ -16,11 +17,13 @@ export function ChannelList() {
   const [filter, setFilter] = useState<'all' | 'twitch' | 'youtube'>('all');
 
   const queryClient = useQueryClient();
+  const backendReady = useAppStateStore((state) => state.backendReady);
 
   // チャンネル取得
   const { data: channels = [], isLoading, error } = useQuery({
     queryKey: ["channels"],
     queryFn: () => invoke<ChannelWithStats[]>("list_channels"),
+    enabled: backendReady, // バックエンド初期化完了まで実行しない
     refetchInterval: 30000, // 30秒ごとに更新
     staleTime: 25000, // 25秒間はキャッシュを使用
     retry: 1, // リトライは1回まで
@@ -43,7 +46,6 @@ export function ChannelList() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
-      queryClient.invalidateQueries({ queryKey: ["live-channels"] });
     },
   });
 

@@ -2,6 +2,7 @@ use crate::api::twitch_api::TwitchApiClient;
 use crate::commands::discovery::DiscoveredStreamInfo;
 use crate::config::settings::{AutoDiscoverySettings, SettingsManager};
 use crate::database::repositories::game_category_repository::GameCategoryRepository;
+use crate::database::repositories::stream_stats_repository::StreamStatsRepository;
 use crate::database::DatabaseManager;
 use crate::error::ResultExt;
 use crate::DiscoveredStreamsCache;
@@ -247,8 +248,8 @@ impl AutoDiscoveryPoller {
         let filtered_streams: Vec<_> = streams
             .into_iter()
             .filter(|stream| {
-                if let Some(min_viewers) = settings.filters.min_viewers {
-                    (stream.viewer_count as u32) >= min_viewers
+                if settings.filters.min_viewers > 0 {
+                    (stream.viewer_count as u32) >= settings.filters.min_viewers
                 } else {
                     true
                 }
@@ -276,6 +277,7 @@ impl AutoDiscoveryPoller {
         // メモリキャッシュに保存するための配信情報を構築
         let mut discovered_streams_info = Vec::new();
         let mut categories_to_upsert: HashMap<String, String> = HashMap::new();
+        let mut stats_to_insert: Vec<(String, i32, String, String, String)> = Vec::new();
         let now = Local::now().to_rfc3339();
 
         for stream in filtered_streams {
@@ -297,7 +299,7 @@ impl AutoDiscoveryPoller {
                         twitch_api::types::BroadcasterType::Affiliate => "affiliate".to_string(),
                         _ => "".to_string(),
                     });
-            let follower_count: Option<i32> = None; // view_count is deprecated
+            let follower_count: i32 = 0; // フォロワー数は別APIが必要なため0固定
 
             // user_idをi64に変換
             let twitch_user_id: i64 = user_id
@@ -321,26 +323,14 @@ impl AutoDiscoveryPoller {
             };
             discovered_streams_info.push(stream_info);
 
-            // stream_statsテーブルに統計データを記録
-            {
-                let conn = db_manager.get_connection().await?;
-                conn.execute(
-                    r#"
-                    INSERT INTO stream_stats (
-                        stream_id, collected_at, viewer_count,
-                        twitch_user_id, channel_name, category
-                    ) VALUES (?, ?, ?, ?, ?, ?)
-                    "#,
-                    duckdb::params![
-                        None::<i64>, // stream_id = NULL
-                        now.as_str(),
-                        stream.viewer_count as i32,
-                        user_id.as_str(),
-                        user_login.as_str(),
-                        stream.game_name.as_str(),
-                    ],
-                )?;
-            }
+            // stream_statsデータを収集（後でバッチINSERT）
+            stats_to_insert.push((
+                now.clone(),
+                stream.viewer_count as i32,
+                user_id.clone(),
+                user_login.clone(),
+                stream.game_name.to_string(),
+            ));
 
             // カテゴリ情報を収集（ループ後にバッチ処理）
             let game_id_str = stream.game_id.to_string();
@@ -357,27 +347,67 @@ impl AutoDiscoveryPoller {
 
         let discovered_count = discovered_streams_info.len();
 
-        // game_categoriesをバッチ更新（ループ内の個別書き込みを避けてTransactionConflictを防ぐ）
-        if !categories_to_upsert.is_empty() {
-            match db_manager.get_connection().await {
-                Ok(conn) => {
-                    for (game_id, game_name) in &categories_to_upsert {
-                        if let Err(e) =
-                            GameCategoryRepository::upsert_category(&conn, game_id, game_name, None)
-                        {
+        // 単一の接続とトランザクションで全てのDB操作を実行（デッドロック防止）
+        match db_manager.get_connection().await {
+            Ok(conn) => {
+                // トランザクション開始
+                if let Err(e) = conn.execute("BEGIN TRANSACTION", []) {
+                    eprintln!("[AutoDiscovery] Failed to begin transaction: {}", e);
+                } else {
+                    let mut transaction_successful = true;
+
+                    // stream_statsをバッチINSERT（Repositoryメソッド使用）
+                    for (collected_at, viewer_count, user_id, user_login, game_name) in
+                        &stats_to_insert
+                    {
+                        if let Err(e) = StreamStatsRepository::insert_auto_discovery_stats(
+                            &conn,
+                            collected_at,
+                            *viewer_count,
+                            user_id,
+                            user_login,
+                            game_name,
+                        ) {
                             eprintln!(
-                                "[AutoDiscovery] Failed to upsert category {}: {}",
-                                game_id, e
+                                "[AutoDiscovery] Failed to insert stream stats for {}: {}",
+                                user_login, e
                             );
+                            transaction_successful = false;
+                            break;
                         }
                     }
+
+                    // game_categoriesをバッチUPSERT（Repositoryメソッド使用）
+                    if transaction_successful {
+                        for (game_id, game_name) in &categories_to_upsert {
+                            if let Err(e) = GameCategoryRepository::upsert_category(
+                                &conn, game_id, game_name, None,
+                            ) {
+                                eprintln!(
+                                    "[AutoDiscovery] Failed to upsert category {}: {}",
+                                    game_id, e
+                                );
+                                transaction_successful = false;
+                                break;
+                            }
+                        }
+                    }
+
+                    // トランザクションをコミットまたはロールバック
+                    if transaction_successful {
+                        if let Err(e) = conn.execute("COMMIT", []) {
+                            eprintln!("[AutoDiscovery] Failed to commit transaction: {}", e);
+                        }
+                    } else if let Err(e) = conn.execute("ROLLBACK", []) {
+                        eprintln!("[AutoDiscovery] Failed to rollback transaction: {}", e);
+                    }
                 }
-                Err(e) => {
-                    eprintln!(
-                        "[AutoDiscovery] Failed to get connection for category upsert: {}",
-                        e
-                    );
-                }
+            }
+            Err(e) => {
+                eprintln!(
+                    "[AutoDiscovery] Failed to get connection for database operations: {}",
+                    e
+                );
             }
         }
 
@@ -388,7 +418,14 @@ impl AutoDiscoveryPoller {
         drop(streams_lock);
 
         // フロントエンドにイベントを発行（キャッシュ無効化のトリガー）
-        let _ = app_handle.emit("discovered-streams-updated", ());
+        if let Err(e) = app_handle.emit("discovered-streams-updated", ()) {
+            eprintln!(
+                "[AutoDiscovery] Failed to emit discovered-streams-updated event: {}",
+                e
+            );
+        } else {
+            eprintln!("[AutoDiscovery] Event 'discovered-streams-updated' emitted successfully");
+        }
 
         eprintln!(
             "[AutoDiscovery] Discovered {} streams, saved to cache",

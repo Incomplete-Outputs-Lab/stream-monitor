@@ -445,6 +445,10 @@ pub fn run() {
                             app_handle_for_init.state();
                         let mut state = auto_discovery_state.lock().await;
                         *state = Some(discovery_poller);
+
+                        // Emit backend-ready event to notify frontend that all collectors and pollers are initialized
+                        let _ = app_handle_for_init.emit("backend-ready", ());
+                        logger_for_init.info("Backend fully initialized, frontend queries are now safe");
                     });
 
                     logger_for_init.info("Application daemon initialization completed");

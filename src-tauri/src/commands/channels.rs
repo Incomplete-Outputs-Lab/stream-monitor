@@ -15,7 +15,9 @@ pub struct AddChannelRequest {
     pub platform: String,
     pub channel_id: String,
     pub channel_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub poll_interval: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub twitch_user_id: Option<i64>, // Twitchの不変なuser ID
 }
 

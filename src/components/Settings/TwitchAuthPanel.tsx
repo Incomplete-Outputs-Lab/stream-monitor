@@ -43,27 +43,37 @@ export function TwitchAuthPanel({ onClose, onSuccess }: TwitchAuthPanelProps) {
       // 認証成功イベント
       unlistenSuccess = await listen('twitch-auth-success', async () => {
         console.log('[TwitchAuthPanel] Received twitch-auth-success event');
-        
+
         // Strongholdへの保存が完全に完了するまで少し待機
         await new Promise((resolve) => setTimeout(resolve, 800));
-        
+
         console.log('[TwitchAuthPanel] Checking token status after auth success...');
-        
+
         // トークンステータスを更新
         await checkTokens();
-        
+
+        // Twitchコレクターを再初期化
+        try {
+          console.log('[TwitchAuthPanel] Reinitializing Twitch collector...');
+          await invoke('reinitialize_twitch_collector');
+          console.log('[TwitchAuthPanel] Twitch collector reinitialized successfully');
+        } catch (error) {
+          console.error('[TwitchAuthPanel] Failed to reinitialize Twitch collector:', error);
+          // エラーは表示するが、認証成功は続行
+        }
+
         // UIを更新
         setPollingActive(false);
         setDeviceAuth(null);
         setSuccess('Twitch認証に成功しました！');
-        
+
         console.log('[TwitchAuthPanel] Token status updated successfully');
-        
+
         // コールバックを実行
         if (onSuccess) {
           await onSuccess();
         }
-        
+
         // 2秒後に画面を閉じる
         if (onClose) {
           setTimeout(() => onClose(), 2000);

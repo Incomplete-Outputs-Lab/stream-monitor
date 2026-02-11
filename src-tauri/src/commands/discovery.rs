@@ -28,6 +28,8 @@ pub async fn save_auto_discovery_settings(
     app_handle: AppHandle,
     mut settings: AutoDiscoverySettings,
     auto_discovery_poller: State<'_, Arc<Mutex<Option<AutoDiscoveryPoller>>>>,
+    channel_poller: State<'_, Arc<Mutex<crate::collectors::poller::ChannelPoller>>>,
+    db_manager: State<'_, DatabaseManager>,
 ) -> Result<(), String> {
     // max_streamsのバリデーション（1-500の範囲に制限）
     settings.max_streams = settings.max_streams.clamp(1, 500);
@@ -48,11 +50,6 @@ pub async fn save_auto_discovery_settings(
         .map_err(|e| e.to_string())?;
 
     // 自動発見設定を更新
-    let was_enabled = app_settings
-        .auto_discovery
-        .as_ref()
-        .map(|s| s.enabled)
-        .unwrap_or(false);
     let is_enabled = settings.enabled;
 
     app_settings.auto_discovery = Some(settings);
@@ -71,26 +68,46 @@ pub async fn save_auto_discovery_settings(
         eprintln!("[AutoDiscovery] Cache cleared due to settings change");
     }
 
-    // ポーラーの状態を更新
-    let poller_guard = auto_discovery_poller.lock().await;
-    if let Some(poller) = poller_guard.as_ref() {
-        if is_enabled && !was_enabled {
-            // 有効化された場合は開始
-            poller
+    // ポーラーを停止（存在する場合）
+    {
+        let mut poller_guard = auto_discovery_poller.lock().await;
+        if let Some(ref poller) = *poller_guard {
+            poller.stop().await;
+        }
+
+        // 新しいTwitchクライアントを取得（最新のトークンを使用）
+        let twitch_api_client = if app_settings.twitch.client_id.is_some() {
+            let channel_poller_guard = channel_poller.lock().await;
+            channel_poller_guard
+                .get_twitch_collector()
+                .map(|tc| Arc::clone(tc.get_api_client()))
+        } else {
+            None
+        };
+
+        eprintln!(
+            "[AutoDiscovery] Reinitializing AutoDiscoveryPoller with Twitch client: {}",
+            if twitch_api_client.is_some() { "available" } else { "unavailable" }
+        );
+
+        // 新しいAutoDiscoveryPollerを作成
+        let new_discovery_poller = AutoDiscoveryPoller::new(
+            twitch_api_client,
+            Arc::new(db_manager.inner().clone()),
+            app_handle.clone(),
+        );
+
+        // 設定が有効ならstart
+        if is_enabled {
+            new_discovery_poller
                 .start()
                 .await
                 .map_err(|e| format!("Auto-discovery start failed: {}", e))?;
-        } else if !is_enabled && was_enabled {
-            // 無効化された場合は停止
-            poller.stop().await;
-        } else if is_enabled {
-            // 設定が変更された場合は再起動
-            poller.stop().await;
-            poller
-                .start()
-                .await
-                .map_err(|e| format!("Auto-discovery restart failed: {}", e))?;
+            eprintln!("[AutoDiscovery] Started successfully");
         }
+
+        // 状態を更新
+        *poller_guard = Some(new_discovery_poller);
     }
 
     Ok(())

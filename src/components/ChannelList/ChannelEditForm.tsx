@@ -1,8 +1,8 @@
 import { useForm } from "react-hook-form";
 import { useMutation } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
 import { Channel } from "../../types";
 import { toast } from "../../utils/toast";
+import * as channelsApi from "../../api/channels";
 
 interface ChannelEditFormData {
   channel_name: string;
@@ -32,10 +32,10 @@ export function ChannelEditForm({ channel, onSuccess, onCancel }: ChannelEditFor
         enabled: channel.enabled,
       });
 
-      return await invoke<Channel>("update_channel", {
-        id: channel.id,
-        channelName: data.channel_name,
-        pollInterval: data.poll_interval,
+      return await channelsApi.updateChannel({
+        id: channel.id!,
+        channel_name: data.channel_name,
+        poll_interval: data.poll_interval,
         enabled: channel.enabled,
       });
     },

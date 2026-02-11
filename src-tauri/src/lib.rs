@@ -53,7 +53,7 @@ use commands::{
         upsert_game_category,
     },
     logs::get_logs,
-    oauth::{poll_twitch_device_token, start_twitch_device_auth},
+    oauth::{poll_twitch_device_token, reinitialize_twitch_collector, start_twitch_device_auth},
     sql::{
         delete_sql_template, execute_sql, list_database_tables, list_sql_templates,
         save_sql_template,
@@ -587,6 +587,7 @@ pub fn run() {
             // OAuth commands
             start_twitch_device_auth,
             poll_twitch_device_token,
+            reinitialize_twitch_collector,
             // Stats commands
             get_stream_stats,
             get_realtime_chat_rate,

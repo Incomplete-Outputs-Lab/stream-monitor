@@ -7,6 +7,7 @@ import { ChannelEditForm } from "./ChannelEditForm";
 import { ChannelItem } from "./ChannelItem";
 import { toast } from "../../utils/toast";
 import { confirm } from "../../utils/confirm";
+import * as channelsApi from "../../api/channels";
 
 export function ChannelList() {
   const [showAddForm, setShowAddForm] = useState(false);
@@ -25,7 +26,7 @@ export function ChannelList() {
   // チャンネル削除ミューテーション
   const deleteMutation = useMutation({
     mutationFn: async (channelId: number) => {
-      await invoke("remove_channel", { id: channelId });
+      await channelsApi.removeChannel(channelId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
@@ -35,7 +36,7 @@ export function ChannelList() {
   // チャンネル有効/無効切り替えミューテーション
   const toggleMutation = useMutation({
     mutationFn: async (channelId: number) => {
-      await invoke("toggle_channel", { id: channelId });
+      await channelsApi.toggleChannel(channelId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["channels"] });

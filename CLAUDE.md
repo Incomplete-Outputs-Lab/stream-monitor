@@ -148,6 +148,25 @@ const data = await statisticsApi.getRealtimeChatRate();
 - `sql.ts` - SQLクエリ（実行、テンプレート管理）
 - `statistics.ts` - 統計・分析（分析結果、チャット統計、リアルタイム統計）
 
+#### 3. ドキュメント作成ルール
+
+❌ **禁止**: 実装完了レポート等の一時的なMarkdownファイルを作成
+```
+IMPLEMENTATION_SUMMARY.md  // NG
+BUGFIX_REPORT.md          // NG
+CHANGES.md                // NG
+```
+
+✅ **推奨**: 必要な情報はCLAUDE.mdに集約
+- 新機能追加 → 該当セクションに追記
+- バグ修正 → 「よくある問題」に追記
+- 仕様変更 → 関連セクションを更新
+
+**理由**:
+- プロジェクトドキュメントの一元管理
+- 不要なファイルの乱立防止
+- 情報の検索性向上
+
 ### コーディング規約
 
 #### Rust
@@ -328,6 +347,24 @@ WHERE timestamp >= CURRENT_TIMESTAMP - INTERVAL '1 minute'
 2. `ChannelPoller`に登録
 3. エラーハンドリングで他チャンネルに影響させない
 
+### 動的再初期化（認証トークン設定後）
+**問題**: 起動時にトークンがない場合、Collectorが初期化されず、後からトークンを設定しても使用できない
+
+**解決**:
+1. **TwitchCollector**: 認証成功後、フロントエンドから`reinitialize_twitch_collector`を呼び出し
+   - `oauth.rs`の`reinitialize_twitch_collector`コマンド
+   - 設定再読み込み→新Collectorを作成→IRC初期化→ChannelPollerに登録（上書き）
+
+2. **AutoDiscoveryPoller**: 設定変更時に自動再初期化
+   - `discovery.rs`の`save_auto_discovery_settings`で最新のTwitchクライアントを取得
+   - 既存ポーラーを停止→新ポーラー作成→必要なら開始
+
+**実装例**（フロントエンド）:
+```typescript
+// TwitchAuthPanel.tsx: 認証成功イベント内
+await invoke('reinitialize_twitch_collector');
+```
+
 ## デバッグ方法
 
 ### フロントエンド
@@ -377,17 +414,20 @@ WHERE timestamp >= CURRENT_TIMESTAMP - INTERVAL '1 minute'
 | Tauriコマンド引数エラー | 構造体引数のラッピング不足 | フロントエンド: `{query: {...}}`でラップ |
 | serdeデシリアライズ失敗 | 命名規則の不一致(camelCase/snake_case) | `#[serde(rename_all = "camelCase")]`追加 |
 | タイムスタンプ比較で常に0 | `CURRENT_TIMESTAMP`(UTC)とLocal時刻の時差 | `chrono::Local::now()`で計算してパラメータ渡し |
+| トークン設定後API使用不可 | 起動時のみCollector初期化 | 認証成功後`reinitialize_twitch_collector`実行 |
+| 自動発見が無限ローディング | AutoDiscoveryPollerが古いクライアント使用 | `save_auto_discovery_settings`で再初期化 |
+| チャンネル編集が反映されない | フロントエンドがAPI層を経由しない | `src/api/channels.ts`経由で呼び出し |
 
 ## 実装状況
 
 ### ✅ 実装済み
 **バックエンド:**
-- Twitch: Device Code Flow, Helix API, レート制限管理
+- Twitch: Device Code Flow, Helix API, レート制限管理、動的Collector再初期化
 - YouTube: 基本API連携、配信/チャット取得（❌ OAuth未実装）
 - DuckDB: スキーマ、マイグレーション、バッチインサート、バックアップ
-- 収集: ChannelPoller, TwitchCollector, YouTubeCollector, AutoDiscoveryPoller
+- 収集: ChannelPoller, TwitchCollector, YouTubeCollector, AutoDiscoveryPoller（設定変更時の動的再初期化対応）
 - 統計: MW計算、配信者/ゲーム別、日次統計
-- コマンド: チャンネル管理、統計取得、エクスポート、SQL実行、自動発見
+- コマンド: チャンネル管理、統計取得、エクスポート、SQL実行、自動発見、`reinitialize_twitch_collector`
 - 設定: keyring、JSON設定
 
 **フロントエンド:**

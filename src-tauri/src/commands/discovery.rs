@@ -87,7 +87,11 @@ pub async fn save_auto_discovery_settings(
 
         eprintln!(
             "[AutoDiscovery] Reinitializing AutoDiscoveryPoller with Twitch client: {}",
-            if twitch_api_client.is_some() { "available" } else { "unavailable" }
+            if twitch_api_client.is_some() {
+                "available"
+            } else {
+                "unavailable"
+            }
         );
 
         // 新しいAutoDiscoveryPollerを作成

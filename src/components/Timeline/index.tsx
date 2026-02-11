@@ -6,6 +6,8 @@ import StreamSummary from './StreamSummary';
 import ComparisonSelector from './ComparisonSelector';
 import ComparisonChart from './ComparisonChart';
 import { StreamTimelineData, SelectedStream } from '../../types';
+import { DesktopAppNotice } from '../common/DesktopAppNotice';
+import { OAuthWarningBanner } from '../common/OAuthWarningBanner';
 
 type ViewMode = 'single' | 'comparison';
 
@@ -49,6 +51,9 @@ const Timeline: React.FC = () => {
             比較表示
           </button>
         </div>
+
+        <OAuthWarningBanner />
+        <DesktopAppNotice />
 
         {/* 単一表示モード */}
         {viewMode === 'single' && (

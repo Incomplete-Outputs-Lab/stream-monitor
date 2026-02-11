@@ -7,7 +7,7 @@ import { detectAnomalies } from '../../../api/statistics';
 import AnomalyChatModal from './AnomalyChatModal';
 
 interface AnomalyDetectionTabProps {
-  channelId: number | null;
+  channelId: number | undefined;
   startTime: string;
   endTime: string;
 }
@@ -85,7 +85,7 @@ const AnomalyDetectionTab = ({ channelId, startTime, endTime }: AnomalyDetection
     queryKey: ['anomalyDetection', channelId, startTime, endTime],
     queryFn: () => detectAnomalies({
       channelId: channelId!,
-      streamId: null,
+      streamId: undefined,
       startTime,
       endTime,
       zThreshold: 3.0, // 検出感度: 3.0 = 厳格（IQR multiplier 2.0）
@@ -94,7 +94,7 @@ const AnomalyDetectionTab = ({ channelId, startTime, endTime }: AnomalyDetection
   });
 
   // チャンネル選択チェック
-  if (channelId === null) {
+  if (channelId === undefined) {
     return (
       <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-6">
         <div className="flex items-start">

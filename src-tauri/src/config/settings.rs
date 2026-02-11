@@ -96,7 +96,9 @@ fn default_scraping_settings() -> Option<YouTubeScrapingSettings> {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            twitch: TwitchSettings { client_id: None },
+            twitch: TwitchSettings {
+                client_id: Some("rxyno75ir81wkq3xck0bfeen1a0klh".to_string()),
+            },
             youtube: YouTubeSettings {
                 client_id: None,
                 client_secret: None,

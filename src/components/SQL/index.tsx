@@ -11,6 +11,7 @@ import { toast } from "../../utils/toast";
 import { confirm } from "../../utils/confirm";
 import { TableSkeleton } from "../common/Skeleton";
 import * as sqlApi from "../../api/sql";
+import { DesktopAppNotice } from "../common/DesktopAppNotice";
 
 export function SQLViewer() {
   const [query, setQuery] = useState<string>(
@@ -171,6 +172,8 @@ export function SQLViewer() {
           </div>
         )}
       </div>
+
+      <DesktopAppNotice />
 
       <div className="grid grid-cols-12 gap-6">
         {/* サイドバー: テーブル一覧とテンプレート一覧 */}

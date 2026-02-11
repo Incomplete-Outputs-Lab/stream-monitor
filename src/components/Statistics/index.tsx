@@ -12,6 +12,7 @@ import DataScience from "./DataScience";
 import { DateRangePicker } from "./DateRangePicker";
 import { Skeleton } from "../common/Skeleton";
 import { Channel } from "../../types";
+import { OAuthWarningBanner } from "../common/OAuthWarningBanner";
 
 type TabType = "overview" | "broadcaster" | "game" | "topGames" | "gameDetail" | "topChannels" | "channelDetail" | "chatAnalytics" | "dataScience";
 
@@ -23,9 +24,18 @@ export function Statistics() {
     const end = new Date();
     const start = new Date();
     start.setDate(start.getDate() - 7);
+    
+    // ローカル日付を正しく取得（UTCではなく）
+    const formatLocalDate = (date: Date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+    
     return {
-      start: start.toISOString().split('T')[0],
-      end: end.toISOString().split('T')[0]
+      start: formatLocalDate(start),
+      end: formatLocalDate(end)
     };
   };
 
@@ -90,6 +100,8 @@ export function Statistics() {
         <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">統計閲覧</h1>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">過去の統計データを閲覧・分析</p>
       </div>
+
+      <OAuthWarningBanner />
 
       {/* フィルタエリア */}
       <div className="card p-4 space-y-4">

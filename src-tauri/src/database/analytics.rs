@@ -28,7 +28,6 @@ pub struct BroadcasterAnalytics {
 
 /// ゲームタイトル別統計
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct GameAnalytics {
     pub game_id: Option<String>, // Twitch game ID（プライマリキー）
     pub category: String,        // カテゴリ名（表示用、game_categoriesから取得）

@@ -5,7 +5,7 @@ import { StatsDashboardSkeleton } from '../../common/Skeleton';
 import { getViewerChatCorrelation } from '../../../api/statistics';
 
 interface CorrelationTabProps {
-  channelId: number | null;
+  channelId: number | undefined;
   startTime: string;
   endTime: string;
 }
@@ -15,7 +15,7 @@ const CorrelationTab = ({ channelId, startTime, endTime }: CorrelationTabProps) 
     queryKey: ['viewerChatCorrelation', channelId, startTime, endTime],
     queryFn: () => getViewerChatCorrelation({
       channelId: channelId!,
-      streamId: null,
+      streamId: undefined,
       startTime,
       endTime,
     }),

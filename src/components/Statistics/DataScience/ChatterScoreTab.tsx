@@ -4,7 +4,7 @@ import { StatsDashboardSkeleton } from '../../common/Skeleton';
 import { getChatterActivityScores } from '../../../api/statistics';
 
 interface ChatterScoreTabProps {
-  channelId: number | null;
+  channelId: number | undefined;
   startTime: string;
   endTime: string;
 }
@@ -14,7 +14,7 @@ const ChatterScoreTab = ({ channelId, startTime, endTime }: ChatterScoreTabProps
     queryKey: ['chatterActivityScores', channelId, startTime, endTime],
     queryFn: () => getChatterActivityScores({
       channelId: channelId!,
-      streamId: null,
+      streamId: undefined,
       startTime,
       endTime,
       limit: 50,

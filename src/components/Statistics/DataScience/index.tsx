@@ -16,7 +16,7 @@ const DataScience = ({ channels: _channels, parentChannelId, parentDateRange }: 
   const [selectedTab, setSelectedTab] = useState<'word' | 'correlation' | 'category' | 'score' | 'anomaly'>('word');
 
   // 親コンポーネントのフィルタを使用
-  const selectedChannelId = parentChannelId;
+  const selectedChannelId = parentChannelId === null ? undefined : parentChannelId;
   const dateRange = parentDateRange;
 
   const tabs = [

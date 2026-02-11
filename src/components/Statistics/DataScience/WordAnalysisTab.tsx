@@ -2,10 +2,10 @@ import { useQuery } from '@tanstack/react-query';
 import { BarChart } from '../../common/charts/BarChart';
 import { LineChart } from '../../common/charts/LineChart';
 import { StatsDashboardSkeleton } from '../../common/Skeleton';
-import { getWordFrequencyAnalysis, getEmoteAnalysis, getMessageLengthStats } from '../../../api/statistics';
+import { getWordFrequency, getEmoteAnalysis, getMessageLengthStats } from '../../../api/statistics';
 
 interface WordAnalysisTabProps {
-  channelId: number | null;
+  channelId: number | undefined;
   startTime: string;
   endTime: string;
 }
@@ -14,9 +14,9 @@ const WordAnalysisTab = ({ channelId, startTime, endTime }: WordAnalysisTabProps
   // Word Frequency Query
   const { data: wordData, isLoading: wordLoading } = useQuery({
     queryKey: ['wordFrequency', channelId, startTime, endTime],
-    queryFn: () => getWordFrequencyAnalysis({
+    queryFn: () => getWordFrequency({
       channelId: channelId!,
-      streamId: null,
+      streamId: undefined,
       startTime,
       endTime,
       limit: 50,
@@ -29,7 +29,7 @@ const WordAnalysisTab = ({ channelId, startTime, endTime }: WordAnalysisTabProps
     queryKey: ['emoteAnalysis', channelId, startTime, endTime],
     queryFn: () => getEmoteAnalysis({
       channelId: channelId!,
-      streamId: null,
+      streamId: undefined,
       startTime,
       endTime,
     }),
@@ -41,7 +41,7 @@ const WordAnalysisTab = ({ channelId, startTime, endTime }: WordAnalysisTabProps
     queryKey: ['messageLengthStats', channelId, startTime, endTime],
     queryFn: () => getMessageLengthStats({
       channelId: channelId!,
-      streamId: null,
+      streamId: undefined,
       startTime,
       endTime,
     }),
@@ -49,7 +49,7 @@ const WordAnalysisTab = ({ channelId, startTime, endTime }: WordAnalysisTabProps
   });
 
   // チャンネル選択チェック
-  if (channelId === null) {
+  if (channelId === undefined) {
     return (
       <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-6">
         <div className="flex items-start">

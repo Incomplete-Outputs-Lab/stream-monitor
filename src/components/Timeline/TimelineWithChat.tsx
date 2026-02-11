@@ -24,7 +24,7 @@ const TimelineWithChat: React.FC<TimelineWithChatProps> = ({
         </div>
 
         {/* Chat Panel - 30% width on large screens */}
-        <div className="lg:w-[30%] min-h-[600px]">
+        <div className="lg:w-[30%] max-h-[400px] overflow-y-auto">
           <ChatTimelinePanel streamId={streamId} channelId={channelId} />
         </div>
       </div>

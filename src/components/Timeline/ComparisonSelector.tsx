@@ -31,6 +31,64 @@ const hasTimeOverlap = (streamA: StreamInfo, streamB: StreamInfo): boolean => {
   return aStart < bEnd && bStart < aEnd;
 };
 
+// 類似度スコア計算
+interface SimilarityScore {
+  stream: StreamInfo;
+  score: number;
+  matchedCriteria: string[];
+}
+
+const calculateSimilarity = (baseStream: StreamInfo, targetStream: StreamInfo): SimilarityScore => {
+  let score = 0;
+  const matchedCriteria: string[] = [];
+
+  // カテゴリ一致 (+40点)
+  if (baseStream.category && targetStream.category && baseStream.category === targetStream.category) {
+    score += 40;
+    matchedCriteria.push('同じカテゴリ');
+  }
+
+  // 日付が同じ (±1日以内) (+30点)
+  const baseDate = new Date(baseStream.started_at);
+  const targetDate = new Date(targetStream.started_at);
+  const daysDiff = Math.abs((baseDate.getTime() - targetDate.getTime()) / (1000 * 60 * 60 * 24));
+  if (daysDiff <= 1) {
+    score += 30;
+    if (daysDiff < 0.1) {
+      matchedCriteria.push('同じ日付');
+    } else {
+      matchedCriteria.push('近い日付');
+    }
+  }
+
+  // 時間帯の重複 (+20点)
+  if (hasTimeOverlap(baseStream, targetStream)) {
+    score += 20;
+    matchedCriteria.push('時間帯重複');
+  }
+
+  // 同じプラットフォーム (+10点)
+  if (baseStream.platform === targetStream.platform) {
+    score += 10;
+    matchedCriteria.push('同じプラットフォーム');
+  }
+
+  return {
+    stream: targetStream,
+    score,
+    matchedCriteria,
+  };
+};
+
+const getSuggestedStreams = (baseStream: StreamInfo, allStreams: StreamInfo[], selectedStreamIds: number[]): SimilarityScore[] => {
+  return allStreams
+    .filter(stream => stream.id !== baseStream.id && !selectedStreamIds.includes(stream.id))
+    .map(stream => calculateSimilarity(baseStream, stream))
+    .filter(result => result.score >= 60)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10);
+};
+
 const ComparisonSelector: React.FC<ComparisonSelectorProps> = ({
   onTimelinesSelect,
   selectedStreams,
@@ -43,6 +101,7 @@ const ComparisonSelector: React.FC<ComparisonSelectorProps> = ({
   const [loadingStreams, setLoadingStreams] = useState(false);
   const [loadingTimelines, setLoadingTimelines] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [suggestedStreams, setSuggestedStreams] = useState<SimilarityScore[]>([]);
 
   // チャンネル一覧を取得
   useEffect(() => {
@@ -98,6 +157,11 @@ const ComparisonSelector: React.FC<ComparisonSelectorProps> = ({
       const newSelected = selectedStreams.filter((s) => s.streamId !== stream.id);
       onSelectedStreamsChange(newSelected);
       await loadTimelines(newSelected);
+
+      // 最初の配信を解除した場合、サジェストをクリア
+      if (selectedStreams.length === 1) {
+        setSuggestedStreams([]);
+      }
     } else {
       // 選択追加
       if (selectedStreams.length >= MAX_STREAMS) {
@@ -116,6 +180,13 @@ const ComparisonSelector: React.FC<ComparisonSelectorProps> = ({
       const newSelected = [...selectedStreams, newStream];
       onSelectedStreamsChange(newSelected);
       await loadTimelines(newSelected);
+
+      // 最初の配信を選択した場合、類似配信をサジェスト
+      if (selectedStreams.length === 0) {
+        const selectedStreamIds = newSelected.map(s => s.streamId);
+        const suggestions = getSuggestedStreams(stream, streams, selectedStreamIds);
+        setSuggestedStreams(suggestions);
+      }
     }
   };
 
@@ -262,6 +333,58 @@ const ComparisonSelector: React.FC<ComparisonSelectorProps> = ({
                   ×
                 </button>
               </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* おすすめの配信 */}
+      {suggestedStreams.length > 0 && (
+        <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+          <h3 className="text-sm font-semibold text-blue-800 dark:text-blue-300 mb-3 flex items-center">
+            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            おすすめの配信（類似度が高い順）
+          </h3>
+          <p className="text-xs text-blue-600 dark:text-blue-400 mb-3">
+            選択した配信と似た特徴を持つ配信です。クリックで追加できます。
+          </p>
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {suggestedStreams.map((suggestion) => (
+              <button
+                key={suggestion.stream.id}
+                onClick={() => handleStreamToggle(suggestion.stream)}
+                disabled={selectedStreams.length >= MAX_STREAMS}
+                className="w-full text-left p-3 bg-white dark:bg-gray-800 hover:bg-blue-100 dark:hover:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">
+                      {suggestion.stream.channel_name}
+                    </span>
+                    <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded text-xs font-semibold">
+                      {suggestion.score}点
+                    </span>
+                  </div>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    {formatDate(suggestion.stream.started_at)}
+                  </span>
+                </div>
+                <div className="text-xs text-gray-600 dark:text-gray-300 mb-2">
+                  {truncateText(suggestion.stream.title || '(タイトルなし)', 60)}
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {suggestion.matchedCriteria.map((criteria, idx) => (
+                    <span
+                      key={idx}
+                      className="inline-flex items-center px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded text-xs"
+                    >
+                      ✓ {criteria}
+                    </span>
+                  ))}
+                </div>
+              </button>
             ))}
           </div>
         </div>

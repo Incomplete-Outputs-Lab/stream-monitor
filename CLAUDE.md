@@ -178,6 +178,8 @@ CHANGES.md                // NG
   - 関数・変数: `snake_case`
   - 型・構造体: `PascalCase`
   - 定数: `SCREAMING_SNAKE_CASE`
+- **Serdeシリアライゼーション**: デフォルトのsnake_caseを使用
+  - ⚠️ `#[serde(rename_all = "camelCase")]`は使用しない（フロントエンドと不整合を起こすため）
 
 #### TypeScript/React
 - **型安全性**: 可能な限り型を明示
@@ -187,6 +189,8 @@ CHANGES.md                // NG
   - 関数・変数: `camelCase`
   - 型・インターフェース: `PascalCase`
 - **ファイル名**: コンポーネントは `PascalCase.tsx`、その他は `camelCase.ts`
+- **API型定義**: Rustバックエンドとの互換性のため、Zodスキーマは`snake_case`を使用（例：`channel_id`, `minutes_watched`）
+  - ⚠️ Rust構造体に`#[serde(rename_all = "camelCase")]`を追加しない（プロジェクト標準はsnake_case）
 
 ### データベース設計（DuckDB）
 
@@ -390,6 +394,34 @@ await invoke('reinitialize_twitch_collector');
 - TypeScript: Vitest検討中
 - E2E/統合テスト: 未実装
 
+### コミット前チェック
+**Git commit & push を実施する前に、必ず以下のチェックを行う**
+
+#### バックエンド（Rust）
+```bash
+# コードフォーマット確認
+cargo fmt --check
+
+# Clippy警告チェック
+cargo clippy -- -D warnings
+
+# コンパイルチェック
+cargo check
+```
+
+すべてのコマンドが警告なしで成功することを確認してください。
+また、各コマンドは2回掛けして確実に修正されていることを確認してください。
+
+#### フロントエンド（TypeScript/React）
+```bash
+# ビルドチェック（警告なしでコンパイルが通ることを確認）
+bun run build
+```
+
+警告やエラーが表示されないことを確認してください。
+
+**注意**: これらのチェックをスキップしてコミットすると、CI/CD環境でビルドが失敗する可能性があります。
+
 ### ビルド
 - **開発**: `bun install` → `bun run tauri dev`
 - **本番**: `bun run tauri build`
@@ -417,6 +449,8 @@ await invoke('reinitialize_twitch_collector');
 | トークン設定後API使用不可 | 起動時のみCollector初期化 | 認証成功後`reinitialize_twitch_collector`実行 |
 | 自動発見が無限ローディング | AutoDiscoveryPollerが古いクライアント使用 | `save_auto_discovery_settings`で再初期化 |
 | チャンネル編集が反映されない | フロントエンドがAPI層を経由しない | `src/api/channels.ts`経由で呼び出し |
+| 統計閲覧でデータ表示されない | `toISOString()`がUTC時刻を返し前日の日付に | ローカル日付取得関数で`getFullYear/getMonth/getDate`使用 |
+| 配信者/ゲーム分析でフィールドがundefined | バックエンド構造体のcamelCase指定とフロントエンドのsnake_case期待の不一致 | バックエンドから`#[serde(rename_all = "camelCase")]`を削除してsnake_caseに統一 |
 
 ## 実装状況
 

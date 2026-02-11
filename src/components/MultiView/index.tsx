@@ -1,3 +1,5 @@
+import { DesktopAppNotice } from "../common/DesktopAppNotice";
+
 export function MultiView() {
   return (
     <div className="space-y-6 animate-fade-in">
@@ -5,6 +7,8 @@ export function MultiView() {
         <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">マルチビュー</h1>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">複数のストリームを同時に監視・分析</p>
       </div>
+
+      <DesktopAppNotice />
 
       <div className="card p-12 text-center">
         <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-gray-100 dark:bg-slate-700 flex items-center justify-center">

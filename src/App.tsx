@@ -19,6 +19,7 @@ import { SQLViewer } from "./components/SQL";
 import Timeline from "./components/Timeline";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { NavigationProvider } from "./contexts/NavigationContext";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -201,22 +202,23 @@ function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <ToastContainer />
-        <ConfirmDialog />
-        {showDonation && <DonationModal onClose={closeDonation} />}
-        <DatabaseErrorDialog
-          isOpen={showErrorDialog}
-          errorMessage={dbErrorMessage}
-          onClose={() => {
-            // キャンセル時はアプリを終了
-            window.close();
-          }}
-          onSuccess={() => {
-            // 成功時はダイアログを閉じる（メインウィンドウは既に表示済み）
-            setShowErrorDialog(false);
-          }}
-        />
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
+        <NavigationProvider activeTab={activeTab} setActiveTab={setActiveTab}>
+          <ToastContainer />
+          <ConfirmDialog />
+          {showDonation && <DonationModal onClose={closeDonation} />}
+          <DatabaseErrorDialog
+            isOpen={showErrorDialog}
+            errorMessage={dbErrorMessage}
+            onClose={() => {
+              // キャンセル時はアプリを終了
+              window.close();
+            }}
+            onSuccess={() => {
+              // 成功時はダイアログを閉じる（メインウィンドウは既に表示済み）
+              setShowErrorDialog(false);
+            }}
+          />
+          <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
           {/* ナビゲーションバー */}
           <nav className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl shadow-sm border-b border-gray-200/50 dark:border-slate-700/50 sticky top-0 z-40">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -279,6 +281,7 @@ function App() {
             </div>
           </main>
         </div>
+        </NavigationProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   );

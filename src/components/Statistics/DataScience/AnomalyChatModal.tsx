@@ -36,7 +36,8 @@ const AnomalyChatModal: React.FC<AnomalyChatModalProps> = ({
       const data = await statisticsApi.getChatMessagesAroundTimestamp({
         streamId,
         timestamp,
-        windowMinutes,
+        beforeMinutes: windowMinutes,
+        afterMinutes: windowMinutes,
       });
       setMessages(data);
     } catch (err) {

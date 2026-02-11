@@ -233,31 +233,18 @@ pub async fn list_channels(
     app_handle: AppHandle,
     db_manager: State<'_, DatabaseManager>,
 ) -> Result<Vec<ChannelWithStats>, String> {
-    eprintln!("[list_channels] Command called");
-
     // DB接続とクエリをスコープ内で完了させる
     let channels: Vec<Channel> = {
-        eprintln!("[list_channels] Getting database connection...");
         let conn = db_manager
             .get_connection()
             .await
             .db_context("get database connection")
-            .map_err(|e| {
-                eprintln!(
-                    "[list_channels] ERROR: Failed to get database connection: {}",
-                    e
-                );
-                e.to_string()
-            })?;
+            .map_err(|e| e.to_string())?;
 
-        eprintln!("[list_channels] Preparing SQL statement...");
         let mut stmt = conn
             .prepare("SELECT id, platform, channel_id, channel_name, enabled, poll_interval, is_auto_discovered, CAST(discovered_at AS VARCHAR) as discovered_at, twitch_user_id, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels ORDER BY created_at DESC")
             .db_context("prepare statement")
-            .map_err(|e| {
-                eprintln!("[list_channels] ERROR: Failed to prepare statement: {}", e);
-                e.to_string()
-            })?;
+            .map_err(|e| e.to_string())?;
 
         let channels: Result<Vec<Channel>, _> = stmt
             .query_map([], |row| {
@@ -284,45 +271,14 @@ pub async fn list_channels(
             .map_err(|e| e.to_string())?
             .collect();
 
-        let result = channels.db_context("collect channels").map_err(|e| {
-            eprintln!("[list_channels] ERROR: Failed to collect channels: {}", e);
-            e.to_string()
-        })?;
-
-        eprintln!(
-            "[list_channels] Successfully fetched {} channels from DB",
-            result.len()
-        );
-        result
+        channels
+            .db_context("collect channels")
+            .map_err(|e| e.to_string())?
     };
 
     // Twitch API情報を取得して統合
-    eprintln!("[list_channels] Enriching channels with Twitch info...");
     let channels_with_stats = enrich_channels_with_twitch_info(channels, &app_handle).await;
 
-    eprintln!(
-        "[list_channels] Returning {} channels with stats",
-        channels_with_stats.len()
-    );
-
-    // シリアライゼーションテスト
-    match serde_json::to_string(&channels_with_stats) {
-        Ok(json) => {
-            eprintln!(
-                "[list_channels] Serialization OK (size: {} bytes)",
-                json.len()
-            );
-        }
-        Err(e) => {
-            eprintln!(
-                "[list_channels] CRITICAL ERROR: Serialization failed: {}",
-                e
-            );
-            return Err(format!("Failed to serialize channel data: {}", e));
-        }
-    }
-
-    eprintln!("[list_channels] About to return data to frontend...");
     Ok(channels_with_stats)
 }
 
@@ -340,26 +296,12 @@ async fn enrich_channels_with_twitch_info(
     // Twitch API クライアントを取得（タイムアウト付き）
     let twitch_collector = if let Some(poller) = app_handle.try_state::<Arc<Mutex<ChannelPoller>>>()
     {
-        eprintln!("[list_channels] Poller found in app state, attempting to acquire lock...");
         // 15秒のタイムアウトでロック取得を試みる（初期化完了まで待つ）
         match tokio::time::timeout(std::time::Duration::from_secs(15), poller.lock()).await {
-            Ok(poller) => {
-                eprintln!("[list_channels] Successfully acquired poller lock");
-                let collector = poller.get_twitch_collector().cloned();
-                if collector.is_some() {
-                    eprintln!("[list_channels] Twitch collector found");
-                } else {
-                    eprintln!("[list_channels] WARNING: Twitch collector is None - Twitch info will not be available");
-                }
-                collector
-            }
-            Err(_) => {
-                eprintln!("[list_channels] ERROR: Timeout waiting for poller lock, returning channels without Twitch info");
-                None
-            }
+            Ok(poller) => poller.get_twitch_collector().cloned(),
+            Err(_) => None,
         }
     } else {
-        eprintln!("[list_channels] ERROR: Poller not found in app state - Twitch info will not be available");
         None
     };
 
@@ -387,17 +329,9 @@ async fn enrich_channels_with_twitch_info(
             if !user_ids.is_empty() {
                 let user_id_refs: Vec<&str> = user_ids.iter().map(|s| s.as_str()).collect();
                 for chunk in user_id_refs.chunks(100) {
-                    match api_client.get_users_by_ids(chunk).await {
-                        Ok(users) => {
-                            for user in users {
-                                user_info_map.insert(user.id.to_string(), user);
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!(
-                                "[list_channels] Failed to fetch Twitch user info by ID: {}",
-                                e
-                            );
+                    if let Ok(users) = api_client.get_users_by_ids(chunk).await {
+                        for user in users {
+                            user_info_map.insert(user.id.to_string(), user);
                         }
                     }
                 }
@@ -412,17 +346,9 @@ async fn enrich_channels_with_twitch_info(
                 .collect();
 
             for chunk in user_logins.chunks(100) {
-                match api_client.get_users_by_logins(chunk).await {
-                    Ok(users) => {
-                        for user in users {
-                            user_info_map.insert(user.id.to_string(), user);
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "[list_channels] Failed to fetch Twitch user info by login: {}",
-                            e
-                        );
+                if let Ok(users) = api_client.get_users_by_logins(chunk).await {
+                    for user in users {
+                        user_info_map.insert(user.id.to_string(), user);
                     }
                 }
             }
@@ -430,10 +356,6 @@ async fn enrich_channels_with_twitch_info(
 
         // ストリーム情報をバッチ取得
         if !twitch_channels.is_empty() {
-            eprintln!(
-                "[list_channels] Fetching stream info for {} Twitch channels",
-                twitch_channels.len()
-            );
             // user_idのリストを作成（twitch_user_idがあればそれを使用）
             let user_ids: Vec<String> = twitch_channels
                 .iter()
@@ -447,61 +369,38 @@ async fn enrich_channels_with_twitch_info(
                 })
                 .collect();
 
-            eprintln!(
-                "[list_channels] Resolved {} user IDs for stream lookup",
-                user_ids.len()
-            );
-
             let user_id_refs: Vec<&str> = user_ids.iter().map(|s| s.as_str()).collect();
 
             if !user_id_refs.is_empty() {
                 // 100件ずつに分割してバッチリクエスト
                 for chunk in user_id_refs.chunks(100) {
-                    eprintln!(
-                        "[list_channels] Fetching streams for {} user IDs...",
-                        chunk.len()
-                    );
-                    match api_client.get_streams_by_user_ids(chunk).await {
-                        Ok(streams) => {
-                            eprintln!(
-                                "[list_channels] Successfully fetched {} live streams",
-                                streams.len()
-                            );
-                            for stream in streams {
-                                // user_idからチャンネルを逆引き
-                                if let Some(channel) = twitch_channels.iter().find(|c| {
-                                    c.twitch_user_id
-                                        .map(|id| id.to_string() == stream.user_id.to_string())
-                                        .unwrap_or_else(|| {
-                                            user_info_map
-                                                .get(&stream.user_id.to_string())
-                                                .map(|u| u.login.to_string() == c.channel_id)
-                                                .unwrap_or(false)
-                                        })
-                                }) {
-                                    let key = channel
-                                        .twitch_user_id
-                                        .map(|id| id.to_string())
-                                        .unwrap_or_else(|| channel.channel_id.clone());
-                                    stream_info_map.insert(key, stream);
-                                }
+                    if let Ok(streams) = api_client.get_streams_by_user_ids(chunk).await {
+                        for stream in streams {
+                            // user_idからチャンネルを逆引き
+                            if let Some(channel) = twitch_channels.iter().find(|c| {
+                                c.twitch_user_id
+                                    .map(|id| id.to_string() == stream.user_id.to_string())
+                                    .unwrap_or_else(|| {
+                                        user_info_map
+                                            .get(&stream.user_id.to_string())
+                                            .map(|u| u.login.to_string() == c.channel_id)
+                                            .unwrap_or(false)
+                                    })
+                            }) {
+                                let key = channel
+                                    .twitch_user_id
+                                    .map(|id| id.to_string())
+                                    .unwrap_or_else(|| channel.channel_id.clone());
+                                stream_info_map.insert(key, stream);
                             }
-                        }
-                        Err(e) => {
-                            eprintln!("[list_channels] Failed to fetch stream info batch: {}", e);
                         }
                     }
                 }
 
                 // フォロワー数をバッチ取得
-                match api_client.get_followers_batch(&user_id_refs).await {
-                    Ok(followers) => {
-                        for (user_id, count) in followers {
-                            follower_count_map.insert(user_id, count);
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("[list_channels] Failed to fetch follower counts: {}", e);
+                if let Ok(followers) = api_client.get_followers_batch(&user_id_refs).await {
+                    for (user_id, count) in followers {
+                        follower_count_map.insert(user_id, count);
                     }
                 }
             }
@@ -509,22 +408,14 @@ async fn enrich_channels_with_twitch_info(
     }
 
     // チャンネル情報を統合（DBには保存しない）
-    eprintln!(
-        "[list_channels] Starting to map {} channels",
-        channels.len()
-    );
-
-    let result: Vec<ChannelWithStats> = channels
+    channels
         .into_iter()
-        .enumerate()
-        .map(|(idx, mut channel)| {
-            eprintln!("[list_channels] Processing channel {} ({})", idx, channel.channel_name);
+        .map(|mut channel| {
             let mut is_live = false;
             let mut current_viewers = None;
             let mut current_title = None;
 
             if channel.platform == crate::constants::database::PLATFORM_TWITCH {
-                eprintln!("[list_channels] Channel {} is Twitch", channel.channel_name);
                 // ユーザー情報を統合（twitch_user_idがあればそれで検索、なければloginで検索）
                 let user_key = channel.twitch_user_id.map(|id| id.to_string()).or_else(|| {
                     user_info_map
@@ -564,20 +455,9 @@ async fn enrich_channels_with_twitch_info(
                         is_live = true;
                         current_viewers = Some(stream.viewer_count as i32);
                         current_title = Some(stream.title.to_string());
-                        eprintln!(
-                            "[list_channels] Channel '{}' is LIVE with {} viewers",
-                            channel.channel_name, stream.viewer_count
-                        );
-                    } else {
-                        eprintln!(
-                            "[list_channels] Channel '{}' (key: {}) is OFFLINE (not in stream_info_map with {} entries)",
-                            channel.channel_name, key, stream_info_map.len()
-                        );
                     }
                 }
             }
-
-            eprintln!("[list_channels] Finished processing channel {} - is_live: {}", channel.channel_name, is_live);
 
             ChannelWithStats {
                 channel,
@@ -586,13 +466,7 @@ async fn enrich_channels_with_twitch_info(
                 current_title,
             }
         })
-        .collect();
-
-    eprintln!(
-        "[list_channels] Finished mapping all channels, returning {} results",
-        result.len()
-    );
-    result
+        .collect()
 }
 
 #[tauri::command]

@@ -1,25 +1,45 @@
 import { invoke } from '@tauri-apps/api/core';
-import type {
-  BroadcasterAnalytics,
-  GameAnalytics,
-  DailyStats,
-  DataAvailability,
-  ChatEngagementStats,
-  ChatSpike,
-  UserSegmentStats,
-  TopChatter,
-  TimePatternStats,
-  ChatterBehaviorStats,
-  ChatAnalyticsQuery,
-  WordFrequencyResult,
-  EmoteAnalysisResult,
-  MessageLengthStats,
-  CorrelationResult,
-  CategoryImpactResult,
-  ChatterScoreResult,
-  AnomalyResult,
-  ChatMessage,
-} from '../types';
+import { z } from 'zod';
+import {
+  BroadcasterAnalyticsSchema,
+  GameAnalyticsSchema,
+  DailyStatsSchema,
+  DataAvailabilitySchema,
+  ChatEngagementStatsSchema,
+  ChatSpikeSchema,
+  UserSegmentStatsSchema,
+  TopChatterSchema,
+  TimePatternStatsSchema,
+  ChatterBehaviorStatsSchema,
+  ChatAnalyticsQuerySchema,
+  WordFrequencyResultSchema,
+  EmoteAnalysisResultSchema,
+  MessageLengthStatsSchema,
+  CorrelationResultSchema,
+  CategoryImpactResultSchema,
+  ChatterScoreResultSchema,
+  AnomalyResultSchema,
+  ChatMessageSchema,
+  type BroadcasterAnalytics,
+  type GameAnalytics,
+  type DailyStats,
+  type DataAvailability,
+  type ChatEngagementStats,
+  type ChatSpike,
+  type UserSegmentStats,
+  type TopChatter,
+  type TimePatternStats,
+  type ChatterBehaviorStats,
+  type ChatAnalyticsQuery,
+  type WordFrequencyResult,
+  type EmoteAnalysisResult,
+  type MessageLengthStats,
+  type CorrelationResult,
+  type CategoryImpactResult,
+  type ChatterScoreResult,
+  type AnomalyResult,
+  type ChatMessage,
+} from '../schemas';
 
 // ========== Broadcaster & Game Analytics ==========
 
@@ -28,11 +48,12 @@ export const getBroadcasterAnalytics = async (params: {
   startTime?: string;
   endTime?: string;
 }): Promise<BroadcasterAnalytics[]> => {
-  return await invoke<BroadcasterAnalytics[]>('get_broadcaster_analytics', {
+  const result = await invoke<unknown>('get_broadcaster_analytics', {
     channelId: params.channelId,
     startTime: params.startTime,
     endTime: params.endTime,
   });
+  return z.array(BroadcasterAnalyticsSchema).parse(result);
 };
 
 export const getGameAnalytics = async (params: {
@@ -40,25 +61,28 @@ export const getGameAnalytics = async (params: {
   startTime?: string;
   endTime?: string;
 }): Promise<GameAnalytics[]> => {
-  return await invoke<GameAnalytics[]>('get_game_analytics', {
+  const result = await invoke<unknown>('get_game_analytics', {
     category: params.category,
     startTime: params.startTime,
     endTime: params.endTime,
   });
+  return z.array(GameAnalyticsSchema).parse(result);
 };
 
 export const listGameCategories = async (params: {
   startTime?: string;
   endTime?: string;
 }): Promise<string[]> => {
-  return await invoke<string[]>('list_game_categories', {
+  const result = await invoke<unknown>('list_game_categories', {
     startTime: params.startTime,
     endTime: params.endTime,
   });
+  return z.array(z.string()).parse(result);
 };
 
 export const getDataAvailability = async (): Promise<DataAvailability> => {
-  return await invoke<DataAvailability>('get_data_availability');
+  const result = await invoke<unknown>('get_data_availability');
+  return DataAvailabilitySchema.parse(result);
 };
 
 export const getGameDailyStats = async (params: {
@@ -66,11 +90,12 @@ export const getGameDailyStats = async (params: {
   startTime: string;
   endTime: string;
 }): Promise<DailyStats[]> => {
-  return await invoke<DailyStats[]>('get_game_daily_stats', {
+  const result = await invoke<unknown>('get_game_daily_stats', {
     category: params.category,
     startTime: params.startTime,
     endTime: params.endTime,
   });
+  return z.array(DailyStatsSchema).parse(result);
 };
 
 export const getChannelDailyStats = async (params: {
@@ -78,11 +103,12 @@ export const getChannelDailyStats = async (params: {
   startTime: string;
   endTime: string;
 }): Promise<DailyStats[]> => {
-  return await invoke<DailyStats[]>('get_channel_daily_stats', {
-    channelId:params.channelId,
+  const result = await invoke<unknown>('get_channel_daily_stats', {
+    channelId: params.channelId,
     startTime: params.startTime,
     endTime: params.endTime,
   });
+  return z.array(DailyStatsSchema).parse(result);
 };
 
 // ========== Chat Analytics ==========
@@ -90,193 +116,192 @@ export const getChannelDailyStats = async (params: {
 export const getChatEngagementTimeline = async (
   query: ChatAnalyticsQuery
 ): Promise<ChatEngagementStats[]> => {
-  return await invoke<ChatEngagementStats[]>('get_chat_engagement_timeline', {
-    channelId: query.channelId,
-    streamId: query.streamId,
-    startTime: query.startTime,
-    endTime: query.endTime,
-    intervalMinutes: query.intervalMinutes ?? 5,
+  const validatedQuery = ChatAnalyticsQuerySchema.parse(query);
+  const result = await invoke<unknown>('get_chat_engagement_timeline', {
+    channelId: validatedQuery.channelId,
+    streamId: validatedQuery.streamId,
+    startTime: validatedQuery.startTime,
+    endTime: validatedQuery.endTime,
+    intervalMinutes: validatedQuery.intervalMinutes ?? 5,
   });
+  return z.array(ChatEngagementStatsSchema).parse(result);
 };
 
 export const detectChatSpikes = async (
   query: ChatAnalyticsQuery
 ): Promise<ChatSpike[]> => {
-  return await invoke<ChatSpike[]>('detect_chat_spikes', {
-    channelId:query.channelId,
-    streamId:query.streamId,
-    startTime:query.startTime,
-    endTime:query.endTime,
-    minSpikeRatio:query.minSpikeRatio ?? 2.0,
+  const validatedQuery = ChatAnalyticsQuerySchema.parse(query);
+  const result = await invoke<unknown>('detect_chat_spikes', {
+    channelId: validatedQuery.channelId,
+    streamId: validatedQuery.streamId,
+    startTime: validatedQuery.startTime,
+    endTime: validatedQuery.endTime,
+    minSpikeRatio: validatedQuery.minSpikeRatio ?? 2.0,
   });
+  return z.array(ChatSpikeSchema).parse(result);
 };
 
 export const getUserSegmentStats = async (
   query: ChatAnalyticsQuery
 ): Promise<UserSegmentStats[]> => {
-  return await invoke<UserSegmentStats[]>('get_user_segment_stats', {
-    channelId:query.channelId,
-    streamId:query.streamId,
-    startTime:query.startTime,
-    endTime:query.endTime,
+  const validatedQuery = ChatAnalyticsQuerySchema.parse(query);
+  const result = await invoke<unknown>('get_user_segment_stats', {
+    channelId: validatedQuery.channelId,
+    streamId: validatedQuery.streamId,
+    startTime: validatedQuery.startTime,
+    endTime: validatedQuery.endTime,
   });
+  return z.array(UserSegmentStatsSchema).parse(result);
 };
 
 export const getTopChatters = async (
   query: ChatAnalyticsQuery
 ): Promise<TopChatter[]> => {
-  return await invoke<TopChatter[]>('get_top_chatters', {
-    channelId:query.channelId,
-    streamId:query.streamId,
-    startTime:query.startTime,
-    endTime:query.endTime,
-    limit: query.limit ?? 50,
+  const validatedQuery = ChatAnalyticsQuerySchema.parse(query);
+  const result = await invoke<unknown>('get_top_chatters', {
+    channelId: validatedQuery.channelId,
+    streamId: validatedQuery.streamId,
+    startTime: validatedQuery.startTime,
+    endTime: validatedQuery.endTime,
+    limit: validatedQuery.limit ?? 50,
   });
+  return z.array(TopChatterSchema).parse(result);
 };
 
 export const getTimePatternStats = async (
   query: ChatAnalyticsQuery
 ): Promise<TimePatternStats[]> => {
-  return await invoke<TimePatternStats[]>('get_time_pattern_stats', {
-    channelId:query.channelId,
-    startTime:query.startTime,
-    endTime:query.endTime,
-    groupByDay:query.groupByDay ?? false,
+  const validatedQuery = ChatAnalyticsQuerySchema.parse(query);
+  const result = await invoke<unknown>('get_time_pattern_stats', {
+    channelId: validatedQuery.channelId,
+    startTime: validatedQuery.startTime,
+    endTime: validatedQuery.endTime,
+    groupByDay: validatedQuery.groupByDay ?? false,
   });
+  return z.array(TimePatternStatsSchema).parse(result);
 };
 
 export const getChatterBehaviorStats = async (
   query: ChatAnalyticsQuery
 ): Promise<ChatterBehaviorStats> => {
-  return await invoke<ChatterBehaviorStats>('get_chatter_behavior_stats', {
-    channelId:query.channelId,
-    startTime:query.startTime,
-    endTime:query.endTime,
+  const validatedQuery = ChatAnalyticsQuerySchema.parse(query);
+  const result = await invoke<unknown>('get_chatter_behavior_stats', {
+    channelId: validatedQuery.channelId,
+    startTime: validatedQuery.startTime,
+    endTime: validatedQuery.endTime,
   });
+  return ChatterBehaviorStatsSchema.parse(result);
 };
 
-// ========== Data Science Analytics ==========
+export const getChatMessages = async (params: {
+  streamId?: number;
+  channelId?: number;
+  startTime?: string;
+  endTime?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<ChatMessage[]> => {
+  const result = await invoke<unknown>('get_chat_messages', params);
+  return z.array(ChatMessageSchema).parse(result);
+};
 
-export const getWordFrequencyAnalysis = async (params: {
-  channelId?: number | null;
-  streamId?: number | null;
+// ========== Data Science APIs ==========
+
+export const getWordFrequency = async (params: {
+  channelId?: number;
+  streamId?: number;
   startTime?: string;
   endTime?: string;
   limit?: number;
 }): Promise<WordFrequencyResult> => {
-  return await invoke<WordFrequencyResult>('get_word_frequency_analysis', {
-    channelId: params.channelId,
-    streamId: params.streamId,
-    startTime: params.startTime,
-    endTime: params.endTime,
-    limit: params.limit,
-  });
+  const result = await invoke<unknown>('get_word_frequency', { query: params });
+  return WordFrequencyResultSchema.parse(result);
 };
 
 export const getEmoteAnalysis = async (params: {
-  channelId?: number | null;
-  streamId?: number | null;
+  channelId?: number;
+  streamId?: number;
   startTime?: string;
   endTime?: string;
+  limit?: number;
 }): Promise<EmoteAnalysisResult> => {
-  return await invoke<EmoteAnalysisResult>('get_emote_analysis', {
-    channelId:params.channelId,
-    streamId:params.streamId,
-    startTime: params.startTime,
-    endTime: params.endTime,
-  });
+  const result = await invoke<unknown>('get_emote_analysis', { query: params });
+  return EmoteAnalysisResultSchema.parse(result);
 };
 
 export const getMessageLengthStats = async (params: {
-  channelId?: number | null;
-  streamId?: number | null;
+  channelId?: number;
+  streamId?: number;
   startTime?: string;
   endTime?: string;
 }): Promise<MessageLengthStats> => {
-  return await invoke<MessageLengthStats>('get_message_length_stats', {
-    channelId:params.channelId,
-    streamId:params.streamId,
-    startTime: params.startTime,
-    endTime: params.endTime,
-  });
+  const result = await invoke<unknown>('get_message_length_stats', { query: params });
+  return MessageLengthStatsSchema.parse(result);
 };
 
 export const getViewerChatCorrelation = async (params: {
-  channelId?: number | null;
-  streamId?: number | null;
+  channelId?: number;
+  streamId?: number;
   startTime?: string;
   endTime?: string;
 }): Promise<CorrelationResult> => {
-  return await invoke<CorrelationResult>('get_viewer_chat_correlation', {
-    channelId:params.channelId,
-    streamId:params.streamId,
-    startTime: params.startTime,
-    endTime: params.endTime,
-  });
+  const result = await invoke<unknown>('get_viewer_chat_correlation', { query: params });
+  return CorrelationResultSchema.parse(result);
 };
 
-export const getCategoryChangeImpact = async (params: {
+export const getCategoryImpact = async (params: {
   channelId?: number;
+  streamId?: number;
   startTime?: string;
   endTime?: string;
 }): Promise<CategoryImpactResult> => {
-  return await invoke<CategoryImpactResult>('get_category_change_impact', {
-    channelId:params.channelId,
-    startTime: params.startTime,
-    endTime: params.endTime,
-  });
+  const result = await invoke<unknown>('get_category_impact', { query: params });
+  return CategoryImpactResultSchema.parse(result);
 };
 
 export const getChatterActivityScores = async (params: {
-  channelId?: number | null;
-  streamId?: number | null;
+  channelId?: number;
+  streamId?: number;
   startTime?: string;
   endTime?: string;
   limit?: number;
 }): Promise<ChatterScoreResult> => {
-  return await invoke<ChatterScoreResult>('get_chatter_activity_scores', {
-    channelId:params.channelId,
-    streamId:params.streamId,
-    startTime: params.startTime,
-    endTime: params.endTime,
-    limit: params.limit,
-  });
+  const result = await invoke<unknown>('get_chatter_activity_scores', { query: params });
+  return ChatterScoreResultSchema.parse(result);
 };
 
 export const detectAnomalies = async (params: {
-  channelId?: number | null;
-  streamId?: number | null;
+  channelId?: number;
+  streamId?: number;
   startTime?: string;
   endTime?: string;
   zThreshold?: number;
 }): Promise<AnomalyResult> => {
-  return await invoke<AnomalyResult>('detect_anomalies', {
-    channelId:params.channelId,
-    streamId:params.streamId,
-    startTime: params.startTime,
-    endTime: params.endTime,
-    zThreshold:params.zThreshold,
-  });
+  const result = await invoke<unknown>('detect_anomalies', { query: params });
+  return AnomalyResultSchema.parse(result);
 };
 
-// ========== Anomaly Chat Messages ==========
+// ========== Real-time Statistics ==========
+
+export const getRealtimeChatRate = async (): Promise<
+  { channel_id: number; stream_id: number; chat_rate_1min: number }[]
+> => {
+  const RealtimeChatRateItemSchema = z.object({
+    channel_id: z.number(),
+    stream_id: z.number(),
+    chat_rate_1min: z.number(),
+  });
+  const result = await invoke<unknown>('get_realtime_chat_rate');
+  return z.array(RealtimeChatRateItemSchema).parse(result);
+};
 
 export const getChatMessagesAroundTimestamp = async (params: {
   streamId: number;
   timestamp: string;
-  windowMinutes?: number;
+  beforeMinutes?: number;
+  afterMinutes?: number;
+  limit?: number;
 }): Promise<ChatMessage[]> => {
-  return await invoke<ChatMessage[]>('get_chat_messages_around_timestamp', {
-    query: {
-      streamId: params.streamId,
-      timestamp: params.timestamp,
-      windowMinutes: params.windowMinutes ?? 2,
-    }
-  });
-};
-
-// ========== Realtime Stats ==========
-
-export const getRealtimeChatRate = async (): Promise<number> => {
-  return await invoke<number>('get_realtime_chat_rate');
+  const result = await invoke<unknown>('get_chat_messages_around_timestamp', params);
+  return z.array(ChatMessageSchema).parse(result);
 };

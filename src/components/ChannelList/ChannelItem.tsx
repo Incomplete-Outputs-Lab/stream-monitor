@@ -1,18 +1,66 @@
+import { useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { ChannelWithStats } from "../../types";
 import { toast } from "../../utils/toast";
+import * as channelsApi from '../../api/channels';
 
 interface ChannelItemProps {
   channel: ChannelWithStats;
-  onEdit: (channel: ChannelWithStats) => void;
   onDelete: (channelId: number) => void;
   onToggle: (channelId: number) => void;
+  onUpdate: () => void;
 }
 
-export function ChannelItem({ channel, onEdit, onDelete, onToggle }: ChannelItemProps) {
+interface EditFormData {
+  channel_name: string;
+  poll_interval: number;
+}
+
+export function ChannelItem({ channel, onDelete, onToggle, onUpdate }: ChannelItemProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const { register, handleSubmit, formState: { errors, isSubmitting }, reset } = useForm<EditFormData>({
+    defaultValues: {
+      channel_name: channel.channel_name,
+      poll_interval: channel.poll_interval,
+    },
+  });
+
   const platformNames = {
     twitch: "Twitch",
     youtube: "YouTube",
+  };
+
+  const handleEditClick = () => {
+    setIsEditing(true);
+    reset({
+      channel_name: channel.channel_name,
+      poll_interval: channel.poll_interval,
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    reset();
+  };
+
+  const onSubmit = async (data: EditFormData) => {
+    if (!channel.id) return;
+
+    try {
+      await channelsApi.updateChannel({
+        id: channel.id,
+        channel_name: data.channel_name,
+        poll_interval: data.poll_interval,
+      });
+      
+      toast.success('チャンネル情報を更新しました');
+      setIsEditing(false);
+      onUpdate(); // 親コンポーネントのリフレッシュを呼び出す
+    } catch (error) {
+      console.error('Failed to update channel:', error);
+      toast.error('チャンネル情報の更新に失敗しました: ' + String(error));
+    }
   };
 
   // ブラウザでチャンネルを開く
@@ -32,6 +80,91 @@ export function ChannelItem({ channel, onEdit, onDelete, onToggle }: ChannelItem
   // ライブ状態と視聴者数を取得
   const isLive = channel.is_live;
   const viewerCount = channel.current_viewers;
+
+  // 編集モード時のUI
+  if (isEditing) {
+    return (
+      <div className="card p-6 border-2 border-indigo-500 dark:border-indigo-400 transition-all duration-200">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          {/* ヘッダー */}
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-indigo-600 dark:text-indigo-400">
+              編集中: {channel.channel_name}
+            </h3>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              {platformNames[channel.platform as keyof typeof platformNames]} • ID: {channel.channel_id}
+            </span>
+          </div>
+
+          {/* チャンネル名 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              チャンネル名
+            </label>
+            <input
+              type="text"
+              {...register('channel_name', {
+                required: 'チャンネル名を入力してください',
+                minLength: { value: 1, message: 'チャンネル名は1文字以上である必要があります' },
+              })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            />
+            {errors.channel_name && (
+              <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.channel_name.message}</p>
+            )}
+          </div>
+
+          {/* ポーリング間隔 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              ポーリング間隔（秒）
+            </label>
+            <input
+              type="number"
+              {...register('poll_interval', {
+                required: 'ポーリング間隔を入力してください',
+                min: { value: 30, message: 'ポーリング間隔は30秒以上である必要があります' },
+                max: { value: 3600, message: 'ポーリング間隔は3600秒以下である必要があります' },
+              })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            />
+            {errors.poll_interval && (
+              <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.poll_interval.message}</p>
+            )}
+          </div>
+
+          {/* アクションボタン */}
+          <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <button
+              type="button"
+              onClick={handleCancelEdit}
+              disabled={isSubmitting}
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
+            >
+              キャンセル
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-50 flex items-center space-x-2"
+            >
+              {isSubmitting ? (
+                <>
+                  <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span>保存中...</span>
+                </>
+              ) : (
+                <span>保存</span>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="card p-6 hover:shadow-md transition-all duration-200 group">
@@ -184,7 +317,7 @@ export function ChannelItem({ channel, onEdit, onDelete, onToggle }: ChannelItem
           {/* アクションボタン */}
           <div className="flex space-x-2">
             <button
-              onClick={() => onEdit(channel)}
+              onClick={handleEditClick}
               className="px-4 py-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-all duration-200 hover:scale-105 active:scale-95"
             >
               編集

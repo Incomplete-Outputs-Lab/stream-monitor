@@ -4,6 +4,7 @@ import { save } from '@tauri-apps/plugin-dialog';
 import { ExportForm } from './ExportForm';
 import { Skeleton } from '../common/Skeleton';
 import type { Channel, ExportQuery } from '../../types';
+import { DesktopAppNotice } from '../common/DesktopAppNotice';
 
 export function Export() {
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -203,6 +204,8 @@ export function Export() {
         <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">データエクスポート</h1>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">収集した統計データを様々な形式でエクスポート</p>
       </div>
+
+      <DesktopAppNotice />
 
       {/* Message Display */}
       {message && (

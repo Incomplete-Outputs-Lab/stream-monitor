@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { BarChart } from '../../common/charts/BarChart';
 import { StatsDashboardSkeleton } from '../../common/Skeleton';
-import { getCategoryChangeImpact } from '../../../api/statistics';
+import { getCategoryImpact } from '../../../api/statistics';
+import type { CategoryChangeCorrelation, CategoryPerformance } from '../../../types';
 
 interface CategoryImpactTabProps {
-  channelId: number | null;
+  channelId: number | undefined;
   startTime: string;
   endTime: string;
 }
@@ -13,7 +14,7 @@ const CategoryImpactTab = ({ channelId, startTime, endTime }: CategoryImpactTabP
   const { data, isLoading } = useQuery({
     queryKey: ['categoryImpact', channelId, startTime, endTime],
     queryFn: () => {
-      return getCategoryChangeImpact({
+      return getCategoryImpact({
         channelId: channelId!,
         startTime,
         endTime,
@@ -23,7 +24,7 @@ const CategoryImpactTab = ({ channelId, startTime, endTime }: CategoryImpactTabP
   });
 
   // チャンネル選択チェック
-  if (channelId === null) {
+  if (channelId === undefined) {
     return (
       <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-6">
         <div className="flex items-start">
@@ -90,7 +91,7 @@ const CategoryImpactTab = ({ channelId, startTime, endTime }: CategoryImpactTabP
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {data.changes.map((change, idx) => {
+                {data.changes.map((change: CategoryChangeCorrelation, idx: number) => {
                   const viewerDiff = change.afterViewers - change.beforeViewers;
                   const isPositive = viewerDiff > 0;
                   const changePercent = change.viewerChangePercent;
@@ -170,7 +171,7 @@ const CategoryImpactTab = ({ channelId, startTime, endTime }: CategoryImpactTabP
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {data.categoryPerformance.map((perf, idx) => (
+                {data.categoryPerformance.map((perf: CategoryPerformance, idx: number) => (
                   <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                     <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-gray-100">
                       {perf.category}

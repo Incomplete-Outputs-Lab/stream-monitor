@@ -8,6 +8,7 @@ import { ChannelItem } from "./ChannelItem";
 import { toast } from "../../utils/toast";
 import { confirm } from "../../utils/confirm";
 import * as channelsApi from "../../api/channels";
+import { DesktopAppNotice } from "../common/DesktopAppNotice";
 
 export function ChannelList() {
   const [showAddForm, setShowAddForm] = useState(false);
@@ -17,10 +18,12 @@ export function ChannelList() {
   const queryClient = useQueryClient();
 
   // チャンネル取得
-  const { data: channels = [], isLoading } = useQuery({
+  const { data: channels = [], isLoading, error } = useQuery({
     queryKey: ["channels"],
     queryFn: () => invoke<ChannelWithStats[]>("list_channels"),
     refetchInterval: 30000, // 30秒ごとに更新
+    staleTime: 25000, // 25秒間はキャッシュを使用
+    retry: 1, // リトライは1回まで
   });
 
   // チャンネル削除ミューテーション
@@ -80,11 +83,6 @@ export function ChannelList() {
     setEditingChannel(null);
   };
 
-  const handleEditChannel = (channel: ChannelWithStats) => {
-    setEditingChannel(channel);
-    setShowAddForm(false);
-  };
-
   const handleFormClose = () => {
     setShowAddForm(false);
     setEditingChannel(null);
@@ -100,6 +98,34 @@ export function ChannelList() {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">チャンネル管理</h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">ストリームチャンネルの追加・編集・削除</p>
+          </div>
+        </div>
+        <div className="card p-12 text-center">
+          <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-red-100 dark:bg-red-900/20 flex items-center justify-center">
+            <svg className="w-10 h-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <p className="text-red-600 dark:text-red-400 font-medium mb-2">チャンネルリストの読み込みに失敗しました</p>
+          <p className="text-sm text-gray-600 dark:text-gray-400">{String(error)}</p>
+          <button
+            onClick={() => queryClient.invalidateQueries({ queryKey: ["channels"] })}
+            className="mt-4 btn-primary"
+          >
+            再試行
+          </button>
+        </div>
       </div>
     );
   }
@@ -122,6 +148,8 @@ export function ChannelList() {
           <span>チャンネルを追加</span>
         </button>
       </div>
+
+      <DesktopAppNotice />
 
       {/* フィルター */}
       <div className="flex space-x-2">
@@ -199,9 +227,9 @@ export function ChannelList() {
             <div key={channel.id ?? `${channel.platform}-${channel.channel_id}-${index}`} style={{ animationDelay: `${index * 0.05}s` }} className="animate-fade-in">
               <ChannelItem
                 channel={channel}
-                onEdit={handleEditChannel}
                 onDelete={handleDelete}
                 onToggle={handleToggle}
+                onUpdate={() => queryClient.invalidateQueries({ queryKey: ["channels"] })}
               />
             </div>
           ))

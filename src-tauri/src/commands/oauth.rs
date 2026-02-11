@@ -56,7 +56,10 @@ pub async fn poll_twitch_device_token(
 pub async fn reinitialize_twitch_collector(
     app_handle: AppHandle,
     db_manager: tauri::State<'_, crate::database::DatabaseManager>,
-    poller: tauri::State<'_, std::sync::Arc<tokio::sync::Mutex<crate::collectors::poller::ChannelPoller>>>,
+    poller: tauri::State<
+        '_,
+        std::sync::Arc<tokio::sync::Mutex<crate::collectors::poller::ChannelPoller>>,
+    >,
 ) -> Result<(), String> {
     use crate::collectors::twitch::TwitchCollector;
     use crate::logger::AppLogger;

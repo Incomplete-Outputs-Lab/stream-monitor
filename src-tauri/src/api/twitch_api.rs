@@ -36,7 +36,14 @@ impl TwitchApiClient {
     /// For Device Code Flow (user authentication), client_secret can be None.
     /// For App Access Token (client credentials flow), client_secret is required.
     pub fn new(client_id: String, client_secret: Option<String>) -> Self {
-        let client = Arc::new(HelixClient::default());
+        // カスタムreqwestクライアントを作成（タイムアウト設定付き）
+        let reqwest_client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30)) // 30秒のタイムアウト
+            .connect_timeout(std::time::Duration::from_secs(10)) // 接続タイムアウト10秒
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+
+        let client = Arc::new(HelixClient::with_client(reqwest_client));
 
         Self {
             client,

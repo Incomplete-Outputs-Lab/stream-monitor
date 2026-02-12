@@ -4,7 +4,7 @@ mod collectors;
 mod commands;
 mod config;
 mod constants;
-mod database;
+pub mod database;
 mod error;
 mod logger;
 mod oauth;

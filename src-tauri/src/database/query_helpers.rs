@@ -8,6 +8,7 @@ pub mod chat_query {
     ///
     /// # Examples
     /// ```
+    /// use stream_stats_collector_lib::database::query_helpers::chat_query;
     /// let sql = format!("SELECT {}", chat_query::badges_select("cm"));
     /// // 生成されるSQL: "SELECT CAST(cm.badges AS VARCHAR) as badges"
     /// ```
@@ -19,6 +20,7 @@ pub mod chat_query {
     ///
     /// # Examples
     /// ```
+    /// use stream_stats_collector_lib::database::query_helpers::chat_query;
     /// let sql = format!("SELECT {}", chat_query::timestamp_select("cm"));
     /// // 生成されるSQL: "SELECT CAST(cm.timestamp AS VARCHAR) as timestamp"
     /// ```
@@ -33,6 +35,7 @@ pub mod chat_query {
     ///
     /// # Examples
     /// ```
+    /// use stream_stats_collector_lib::database::query_helpers::chat_query;
     /// let sql = format!("SELECT {} FROM chat_messages cm",
     ///                   chat_query::standard_columns("cm"));
     /// ```
@@ -64,6 +67,7 @@ pub mod stream_stats_query {
     ///
     /// # Examples
     /// ```
+    /// use stream_stats_collector_lib::database::query_helpers::stream_stats_query;
     /// let sql = format!("SELECT {}", stream_stats_query::collected_at_select("ss"));
     /// // 生成されるSQL: "SELECT CAST(ss.collected_at AS VARCHAR) as collected_at"
     /// ```
@@ -85,6 +89,7 @@ pub mod stream_stats_query {
     ///
     /// # Examples
     /// ```
+    /// use stream_stats_collector_lib::database::query_helpers::stream_stats_query;
     /// let sql = format!("SELECT {}",
     ///     stream_stats_query::interval_calculation("ss", "ss.stream_id"));
     /// ```

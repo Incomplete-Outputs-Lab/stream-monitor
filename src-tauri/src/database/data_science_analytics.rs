@@ -2,20 +2,6 @@ use crate::database::{query_helpers::chat_query, utils};
 use duckdb::Connection;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-// #region agent log
-#[allow(dead_code)]
-fn debug_log(data: &HashMap<&str, serde_json::Value>) {
-    let line = match serde_json::to_string(data) {
-        Ok(s) => s,
-        Err(_) => return,
-    };
-    let _ = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(r"c:\Users\Flowing\stream-monitor\.cursor\debug.log")
-        .and_then(|mut f| std::io::Write::write_all(&mut f, format!("{}\n", line).as_bytes()));
-}
-// #endregion
 
 // ============================================================================
 // Phase 1: Text Analysis
@@ -1534,41 +1520,6 @@ pub fn detect_anomalies(
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    // #region agent log
-    let mut log_data: HashMap<&str, serde_json::Value> = HashMap::new();
-    log_data.insert("hypothesisId", serde_json::json!("H1_H2"));
-    log_data.insert(
-        "location",
-        serde_json::json!("data_science_analytics::detect_anomalies"),
-    );
-    log_data.insert(
-        "message",
-        serde_json::json!("viewer_data_raw after channel filter"),
-    );
-    log_data.insert(
-        "filter_channel_name",
-        serde_json::json!(filter_channel_name.as_deref().unwrap_or("none")),
-    );
-    log_data.insert(
-        "viewer_data_raw_len",
-        serde_json::json!(viewer_data_raw.len()),
-    );
-    let sample: Vec<serde_json::Value> = viewer_data_raw
-        .iter()
-        .take(3)
-        .map(|(ts, v, sid, _)| serde_json::json!({"ts": ts, "viewer_count": v, "stream_id": sid}))
-        .collect();
-    log_data.insert("sample_rows", serde_json::json!(sample));
-    log_data.insert(
-        "timestamp",
-        serde_json::json!(std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0)),
-    );
-    debug_log(&log_data);
-    // #endregion
-
     if viewer_data_raw.len() < 10 {
         return Ok(create_empty_anomaly_result());
     }
@@ -1692,36 +1643,6 @@ pub fn detect_anomalies(
         };
 
         if modified_z.abs() >= effective_threshold {
-            let current_stream = viewer_data[i].2;
-            let previous_stream = viewer_data[i - 1].2;
-            // #region agent log
-            {
-                let mut log_data: HashMap<&str, serde_json::Value> = HashMap::new();
-                log_data.insert("hypothesisId", serde_json::json!("H1"));
-                log_data.insert(
-                    "location",
-                    serde_json::json!("detect_anomalies viewer_anomalies push"),
-                );
-                log_data.insert("message", serde_json::json!("anomaly candidate"));
-                log_data.insert("current_stream_id", serde_json::json!(current_stream));
-                log_data.insert("previous_stream_id", serde_json::json!(previous_stream));
-                log_data.insert(
-                    "cross_stream",
-                    serde_json::json!(current_stream != previous_stream),
-                );
-                log_data.insert("ts_current", serde_json::json!(viewer_data[i].0));
-                log_data.insert("ts_previous", serde_json::json!(viewer_data[i - 1].0));
-                log_data.insert(
-                    "timestamp",
-                    serde_json::json!(std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_millis())
-                        .unwrap_or(0)),
-                );
-                debug_log(&log_data);
-            }
-            // #endregion
-
             let change_amount = current - previous;
             let change_rate = if previous > 0.0 {
                 (change_amount / previous) * 100.0

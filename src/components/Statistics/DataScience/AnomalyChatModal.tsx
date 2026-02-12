@@ -32,10 +32,6 @@ const AnomalyChatModal: React.FC<AnomalyChatModalProps> = ({
   const fetchMessages = async () => {
     setLoading(true);
     setError(null);
-    // #region agent log
-    const payload = { streamId, timestamp, beforeMinutes: windowMinutes, afterMinutes: windowMinutes };
-    fetch('http://127.0.0.1:7245/ingest/0d9d8352-eae8-4480-b5a0-b0206438daef', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'AnomalyChatModal.tsx:fetchMessages', message: 'getChatMessagesAroundTimestamp params', data: payload, hypothesisId: 'H3_H5', timestamp: Date.now() }) }).catch(() => {});
-    // #endregion
     try {
       const data = await statisticsApi.getChatMessagesAroundTimestamp({
         streamId,
@@ -45,10 +41,6 @@ const AnomalyChatModal: React.FC<AnomalyChatModalProps> = ({
       });
       setMessages(data);
     } catch (err) {
-      // #region agent log
-      const errMsg = err instanceof Error ? err.message : String(err);
-      fetch('http://127.0.0.1:7245/ingest/0d9d8352-eae8-4480-b5a0-b0206438daef', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'AnomalyChatModal.tsx:fetchMessages catch', message: 'Failed to fetch chat messages', data: { error: errMsg, streamId, timestamp }, hypothesisId: 'H3_H4', timestamp: Date.now() }) }).catch(() => {});
-      // #endregion
       console.error('Failed to fetch chat messages:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch chat messages');
     } finally {

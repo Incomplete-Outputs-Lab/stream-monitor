@@ -103,34 +103,6 @@ pub async fn get_chat_messages_around_timestamp(
     db_manager: State<'_, DatabaseManager>,
     query: AnomalyChatQuery,
 ) -> Result<Vec<ChatMessage>, String> {
-    // #region agent log
-    {
-        let mut log_data = std::collections::HashMap::<&str, serde_json::Value>::new();
-        log_data.insert("hypothesisId", serde_json::json!("H3_H4_H5"));
-        log_data.insert(
-            "location",
-            serde_json::json!("chat::get_chat_messages_around_timestamp"),
-        );
-        log_data.insert("message", serde_json::json!("received query"));
-        log_data.insert("stream_id", serde_json::json!(query.stream_id));
-        log_data.insert("timestamp_raw", serde_json::json!(query.timestamp));
-        log_data.insert("window_minutes", serde_json::json!(query.window_minutes));
-        log_data.insert(
-            "timestamp",
-            serde_json::json!(std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis())
-                .unwrap_or(0)),
-        );
-        let line = serde_json::to_string(&log_data).unwrap_or_default();
-        let _ = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(r"c:\Users\Flowing\stream-monitor\.cursor\debug.log")
-            .and_then(|mut f| std::io::Write::write_all(&mut f, format!("{}\n", line).as_bytes()));
-    }
-    // #endregion
-
     let conn = db_manager
         .get_connection()
         .await
@@ -138,26 +110,8 @@ pub async fn get_chat_messages_around_timestamp(
         .map_err(|e| e.to_string())?;
 
     // Parse the timestamp as local time (no timezone info)
-    let naive_time =
-        NaiveDateTime::parse_from_str(&query.timestamp, "%Y-%m-%dT%H:%M:%S").map_err(|e| {
-            // #region agent log
-            let mut log_data = std::collections::HashMap::<&str, serde_json::Value>::new();
-            log_data.insert("hypothesisId", serde_json::json!("H3"));
-            log_data.insert("location", serde_json::json!("chat::parse timestamp"));
-            log_data.insert("message", serde_json::json!("parse error"));
-            log_data.insert("timestamp_raw", serde_json::json!(query.timestamp));
-            log_data.insert("error", serde_json::json!(e.to_string()));
-            let line = serde_json::to_string(&log_data).unwrap_or_default();
-            let _ = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(r"c:\Users\Flowing\stream-monitor\.cursor\debug.log")
-                .and_then(|mut f| {
-                    std::io::Write::write_all(&mut f, format!("{}\n", line).as_bytes())
-                });
-            // #endregion
-            format!("Invalid timestamp format: {}", e)
-        })?;
+    let naive_time = NaiveDateTime::parse_from_str(&query.timestamp, "%Y-%m-%dT%H:%M:%S")
+        .map_err(|e| format!("Invalid timestamp format: {}", e))?;
 
     // Convert to local timezone
     let anomaly_time = Local

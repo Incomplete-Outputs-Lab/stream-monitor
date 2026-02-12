@@ -1578,14 +1578,17 @@ pub fn detect_anomalies(
 
                 if current_ts > 0 && start_ts > 0 {
                     let minutes_from_start = (current_ts - start_ts) / 60;
-                    let position_ratio = stream_info.get(stream_id).and_then(|(stream_start, stream_end)| {
-                        let total = stream_end - stream_start;
-                        if total > 0 {
-                            Some((current_ts - stream_start) as f64 / total as f64)
-                        } else {
-                            None
-                        }
-                    });
+                    let position_ratio =
+                        stream_info
+                            .get(stream_id)
+                            .and_then(|(stream_start, stream_end)| {
+                                let total = stream_end - stream_start;
+                                if total > 0 {
+                                    Some((current_ts - stream_start) as f64 / total as f64)
+                                } else {
+                                    None
+                                }
+                            });
                     // When we have valid timestamps, we always have at least minutes_from_start.
                     // If duration is 0 (single point) or stream not in stream_info, treat as early (ratio 0).
                     return Some((minutes_from_start, position_ratio.unwrap_or(0.0)));

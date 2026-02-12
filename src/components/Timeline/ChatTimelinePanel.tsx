@@ -19,19 +19,12 @@ const ChatTimelinePanel: React.FC<ChatTimelinePanelProps> = ({
   const { data: messages, isLoading } = useQuery({
     queryKey: ['timelineChatMessages', streamId, channelId, currentPage],
     queryFn: async () => {
-      console.log('[ChatTimelinePanel] Fetching messages with params:', {
-        streamId,
-        channelId,
-        limit: messagesPerPage,
-        offset: (currentPage - 1) * messagesPerPage,
-      });
       const result = await statisticsApi.getChatMessages({
         streamId,
         channelId,
         limit: messagesPerPage,
         offset: (currentPage - 1) * messagesPerPage,
       });
-      console.log('[ChatTimelinePanel] Received messages:', result.length);
       return result;
     },
   });

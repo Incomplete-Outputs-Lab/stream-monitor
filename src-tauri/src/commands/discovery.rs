@@ -397,83 +397,125 @@ pub async fn get_games_by_ids(
     Ok(games)
 }
 
-/// 自動発見チャンネルを手動登録に昇格
+/// 自動発見チャンネルを手動登録に昇格（複数対応）
 #[tauri::command]
-pub async fn promote_discovered_channel(
+pub async fn promote_discovered_channels(
     db_manager: State<'_, DatabaseManager>,
     app_handle: AppHandle,
-    channel_id: String, // Twitch user_id
-) -> Result<(), String> {
+    channel_ids: Vec<String>, // Twitch user_id のリスト
+) -> Result<Vec<String>, String> {
     use crate::commands::channels::{add_channel, AddChannelRequest};
 
-    // メモリキャッシュから該当するストリーム情報を取得
     let cache: tauri::State<'_, Arc<crate::DiscoveredStreamsCache>> = app_handle.state();
-    let streams_lock = cache.streams.lock().await;
-    let stream_info = streams_lock
-        .iter()
-        .find(|s| s.twitch_user_id.to_string() == channel_id)
-        .cloned();
-    drop(streams_lock);
+    let mut promoted = Vec::new();
+    let mut errors = Vec::new();
 
-    let stream_info =
-        stream_info.ok_or_else(|| format!("Channel {} not found in cache", channel_id))?;
+    for channel_id in channel_ids {
+        // メモリキャッシュから該当するストリーム情報を取得
+        let stream_info = {
+            let streams_lock = cache.streams.lock().await;
+            let info = streams_lock
+                .iter()
+                .find(|s| s.twitch_user_id.to_string() == channel_id)
+                .cloned();
+            drop(streams_lock);
+            info
+        };
 
-    let login_name = stream_info.channel_id.clone();
+        let stream_info = match stream_info {
+            Some(s) => s,
+            None => {
+                errors.push(format!("Channel {} not found in cache", channel_id));
+                continue;
+            }
+        };
 
-    // 重複チェック: 既に登録されているか確認
-    let already_exists = db_manager
-        .with_connection(|conn| {
-            ChannelRepository::exists(conn, "twitch", &login_name)
-                .db_context("check channel exists")
-                .map_err(|e| e.to_string())
-        })
-        .await
-        .db_context("get connection")
-        .map_err(|e| e.to_string())?;
+        let login_name = stream_info.channel_id.clone();
 
-    if already_exists {
-        // 既に登録されている場合はis_auto_discoveredフラグを更新
-        db_manager
+        // 重複チェック: 既に登録されているか確認
+        let already_exists = db_manager
             .with_connection(|conn| {
-                ChannelRepository::update_auto_discovered(
-                    conn,
-                    "twitch",
-                    &login_name,
-                    false,
-                    Some(stream_info.twitch_user_id),
-                )
-                .db_context("update channel")
-                .map_err(|e| e.to_string())
+                ChannelRepository::exists(conn, "twitch", &login_name)
+                    .db_context("check channel exists")
+                    .map_err(|e| e.to_string())
             })
             .await
             .db_context("get connection")
             .map_err(|e| e.to_string())?;
 
-        eprintln!(
-            "[Discovery] Updated existing channel {} (user_id: {}) to manual registration",
-            login_name, channel_id
-        );
-    } else {
-        // 新規登録: add_channel コマンドを使用して統一
-        let request = AddChannelRequest {
-            platform: db_constants::PLATFORM_TWITCH.to_string(),
-            channel_id: stream_info.channel_id.clone(),
-            channel_name: stream_info
-                .display_name
-                .clone()
-                .unwrap_or(stream_info.channel_name.clone()),
-            poll_interval: Some(60),
-            twitch_user_id: Some(stream_info.twitch_user_id),
-        };
+        if already_exists {
+            // 既に登録されている場合はis_auto_discoveredフラグを更新
+            if let Err(e) = db_manager
+                .with_connection(|conn| {
+                    ChannelRepository::update_auto_discovered(
+                        conn,
+                        "twitch",
+                        &login_name,
+                        false,
+                        Some(stream_info.twitch_user_id),
+                    )
+                    .db_context("update channel")
+                    .map_err(|e| e.to_string())
+                })
+                .await
+                .db_context("get connection")
+            {
+                errors.push(format!("{}: {}", login_name, e));
+                continue;
+            }
+            eprintln!(
+                "[Discovery] Updated existing channel {} (user_id: {}) to manual registration",
+                login_name, channel_id
+            );
+        } else {
+            // 新規登録
+            let request = AddChannelRequest {
+                platform: db_constants::PLATFORM_TWITCH.to_string(),
+                channel_id: stream_info.channel_id.clone(),
+                channel_name: stream_info
+                    .display_name
+                    .clone()
+                    .unwrap_or(stream_info.channel_name.clone()),
+                poll_interval: Some(60),
+                twitch_user_id: Some(stream_info.twitch_user_id),
+            };
 
-        add_channel(app_handle.clone(), db_manager.clone(), request).await?;
+            if let Err(e) = add_channel(app_handle.clone(), db_manager.clone(), request).await {
+                errors.push(format!("{}: {}", login_name, e));
+                continue;
+            }
+            eprintln!(
+                "[Discovery] Promoted channel {} (user_id: {}) to manual registration",
+                login_name, channel_id
+            );
+        }
 
-        eprintln!(
-            "[Discovery] Promoted channel {} (user_id: {}) to manual registration using add_channel",
-            login_name, channel_id
-        );
+        promoted.push(channel_id.clone());
+
+        // 楽観的更新の一貫性のため、キャッシュから昇格済みチャンネルを削除
+        let mut streams_lock = cache.streams.lock().await;
+        streams_lock.retain(|s| s.twitch_user_id.to_string() != channel_id);
+        drop(streams_lock);
     }
 
+    if !errors.is_empty() && promoted.is_empty() {
+        return Err(errors.join("; "));
+    }
+
+    Ok(promoted)
+}
+
+/// 自動発見チャンネルを手動登録に昇格（単一・後方互換）
+#[tauri::command]
+pub async fn promote_discovered_channel(
+    db_manager: State<'_, DatabaseManager>,
+    app_handle: AppHandle,
+    channel_id: String,
+) -> Result<(), String> {
+    let result = promote_discovered_channels(db_manager, app_handle, vec![channel_id]).await?;
+    if result.is_empty() {
+        return Err("Channel promotion failed".to_string());
+    }
     Ok(())
 }
 

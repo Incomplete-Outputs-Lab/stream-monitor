@@ -101,15 +101,28 @@ pub async fn get_chat_messages_around_timestamp(
     db_manager: State<'_, DatabaseManager>,
     query: AnomalyChatQuery,
 ) -> Result<Vec<ChatMessage>, String> {
-    // Parse the timestamp as local time (no timezone info)
-    let naive_time = NaiveDateTime::parse_from_str(&query.timestamp, "%Y-%m-%dT%H:%M:%S")
-        .map_err(|e| format!("Invalid timestamp format: {}", e))?;
+    // タイムスタンプ文字列をローカル時刻として解釈する
+    //
+    // 想定される入力パターン:
+    // - RFC3339形式（例: "2024-01-01T12:34:56+09:00"）
+    // - タイムゾーンなしのローカル時刻（例: "2024-01-01T12:34:56"）
+    //
+    // 既存のデータサイエンス系クエリ（detect_anomalies など）は
+    // "YYYY-MM-DDTHH:MM:SS" 形式でタイムスタンプを返すため、
+    // どちらの形式にも対応できるようにしています。
+    let anomaly_time = if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&query.timestamp) {
+        // タイムゾーン付きの場合はローカルタイムゾーンに変換
+        dt.with_timezone(&Local)
+    } else {
+        // タイムゾーンなしのローカル時刻として扱う
+        let naive_time = NaiveDateTime::parse_from_str(&query.timestamp, "%Y-%m-%dT%H:%M:%S")
+            .map_err(|e| format!("Invalid timestamp format: {}", e))?;
 
-    // Convert to local timezone
-    let anomaly_time = Local
-        .from_local_datetime(&naive_time)
-        .single()
-        .ok_or_else(|| "Ambiguous local time".to_string())?;
+        Local
+            .from_local_datetime(&naive_time)
+            .single()
+            .ok_or_else(|| "Ambiguous local time".to_string())?
+    };
 
     let window_minutes = query.window_minutes.unwrap_or(2);
     let window_duration = Duration::minutes(window_minutes as i64);

@@ -82,7 +82,21 @@ where
 /// RowからChatMessageを作成するヘルパー関数
 pub fn row_to_chat_message(row: &Row) -> DuckResult<ChatMessage> {
     // badges を文字列として取得し、配列にパース
-    let badges: Option<Vec<String>> = match row.get::<_, Option<String>>(9)? {
+    //
+    // SELECT句のカラム順（commands::chatなど）:
+    // 0: id
+    // 1: channel_id
+    // 2: stream_id
+    // 3: timestamp (CAST(... AS VARCHAR))
+    // 4: platform
+    // 5: user_id
+    // 6: user_name
+    // 7: display_name
+    // 8: message
+    // 9: message_type
+    // 10: badges (CAST(... AS VARCHAR))
+    // 11: badge_info
+    let badges: Option<Vec<String>> = match row.get::<_, Option<String>>(10)? {
         None => None,
         Some(badges_str) if badges_str.is_empty() => None,
         Some(badges_str) => {

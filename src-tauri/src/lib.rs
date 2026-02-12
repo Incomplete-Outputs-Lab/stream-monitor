@@ -44,8 +44,8 @@ use commands::{
     database::get_database_info,
     discovery::{
         get_auto_discovery_settings, get_discovered_streams, get_games_by_ids,
-        promote_discovered_channel, save_auto_discovery_settings, search_twitch_games,
-        toggle_auto_discovery, DiscoveredStreamInfo,
+        promote_discovered_channel, promote_discovered_channels, save_auto_discovery_settings,
+        search_twitch_games, toggle_auto_discovery, DiscoveredStreamInfo,
     },
     export::{export_to_delimited, preview_export_data},
     game_categories::{
@@ -548,6 +548,7 @@ pub fn run() {
             search_twitch_games,
             get_games_by_ids,
             promote_discovered_channel,
+            promote_discovered_channels,
             // Game Category commands
             get_game_categories,
             get_game_category,

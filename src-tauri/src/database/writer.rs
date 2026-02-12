@@ -69,7 +69,7 @@ impl DatabaseWriter {
         stats: &StreamStats,
     ) -> Result<(), duckdb::Error> {
         conn.execute(
-            "INSERT INTO stream_stats (stream_id, collected_at, viewer_count, chat_rate_1min, category, title, follower_count, twitch_user_id, channel_name)
+            "INSERT INTO stream_stats (stream_id, collected_at, viewer_count, category, title, follower_count, twitch_user_id, channel_name, game_id)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 &stats.stream_id.to_string(),
@@ -78,7 +78,6 @@ impl DatabaseWriter {
                     .viewer_count
                     .map(|v| v.to_string())
                     .unwrap_or_default(),
-                &stats.chat_rate_1min.to_string(),
                 stats.category.as_deref().unwrap_or(""),
                 stats.title.as_deref().unwrap_or(""),
                 &stats
@@ -87,6 +86,7 @@ impl DatabaseWriter {
                     .unwrap_or_default(),
                 stats.twitch_user_id.as_deref().unwrap_or(""),
                 stats.channel_name.as_deref().unwrap_or(""),
+                stats.game_id.as_deref().unwrap_or(""),
             ],
         )?;
         Ok(())
@@ -124,12 +124,12 @@ impl DatabaseWriter {
                             format!("ARRAY[{}]", escaped_badges.join(", "))
                         }
                     };
-                    format!("(?, ?, ?, ?, ?, ?, ?, ?, {}, ?)", badges_literal)
+                    format!("(?, ?, ?, ?, ?, ?, ?, ?, ?, {}, ?)", badges_literal)
                 })
                 .collect();
 
             let sql = format!(
-                "INSERT INTO chat_messages (channel_id, stream_id, timestamp, platform, user_id, user_name, message, message_type, badges, badge_info) VALUES {}",
+                "INSERT INTO chat_messages (channel_id, stream_id, timestamp, platform, user_id, user_name, display_name, message, message_type, badges, badge_info) VALUES {}",
                 values_placeholders.join(", ")
             );
 
@@ -142,6 +142,7 @@ impl DatabaseWriter {
                 params.push(Box::new(message.platform.clone()));
                 params.push(Box::new(message.user_id.clone()));
                 params.push(Box::new(message.user_name.clone()));
+                params.push(Box::new(message.display_name.clone()));
                 params.push(Box::new(message.message.clone()));
                 params.push(Box::new(message.message_type.clone()));
                 // badges はリテラルで埋め込み済みのためスキップ

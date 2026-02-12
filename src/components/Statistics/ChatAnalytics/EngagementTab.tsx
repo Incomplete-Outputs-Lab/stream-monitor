@@ -1,8 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
-import type { ChatEngagementStats, ChatSpike } from '../../../types';
 import { LineChart } from '../../common/charts';
-import { LoadingSpinner } from '../../common/LoadingSpinner';
+import { StatsDashboardSkeleton, TableSkeleton } from '../../common/Skeleton';
+import { getChatEngagementTimeline, detectChatSpikes } from '../../../api/statistics';
 
 interface EngagementTabProps {
   channelId: number | null;
@@ -14,43 +13,60 @@ const EngagementTab = ({ channelId, startTime, endTime }: EngagementTabProps) =>
   // エンゲージメントタイムライン取得
   const { data: timelineData, isLoading: timelineLoading } = useQuery({
     queryKey: ['chatEngagementTimeline', channelId, startTime, endTime],
-    queryFn: async () => {
-      const result = await invoke<ChatEngagementStats[]>('get_chat_engagement_timeline', {
-        channelId,
-        streamId: null,
-        startTime,
-        endTime,
-        intervalMinutes: 5,
-      });
-      return result;
-    },
+    queryFn: () => getChatEngagementTimeline({
+      channelId: channelId ?? undefined,
+      startTime,
+      endTime,
+      intervalMinutes: 5,
+    }),
+    enabled: !!channelId,
   });
 
   // チャットスパイク検出
   const { data: spikesData, isLoading: spikesLoading } = useQuery({
     queryKey: ['chatSpikes', channelId, startTime, endTime],
-    queryFn: async () => {
-      const result = await invoke<ChatSpike[]>('detect_chat_spikes', {
-        channelId,
-        streamId: null,
-        startTime,
-        endTime,
-        minSpikeRatio: 2.0,
-      });
-      return result;
-    },
+    queryFn: () => detectChatSpikes({
+      channelId: channelId ?? undefined,
+      startTime,
+      endTime,
+      minSpikeRatio: 2.0,
+    }),
+    enabled: !!channelId,
   });
 
+  // チャンネル選択チェック
+  if (channelId === null) {
+    return (
+      <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-6">
+        <div className="flex items-start">
+          <div className="flex-shrink-0">
+            <svg className="h-6 w-6 text-yellow-600 dark:text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <div className="ml-3">
+            <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+              チャンネルを選択してください
+            </h3>
+            <p className="mt-2 text-sm text-yellow-700 dark:text-yellow-300">
+              エンゲージメント分析には特定のチャンネルを選択する必要があります。上部のチャンネル選択ドロップダウンから分析対象のチャンネルを選んでください。
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (timelineLoading) {
-    return <LoadingSpinner />;
+    return <StatsDashboardSkeleton cardCount={3} chartCount={2} />;
   }
 
   // Summary Cards
-  const totalChats = timelineData?.reduce((sum, d) => sum + d.chatCount, 0) || 0;
+  const totalChats = timelineData?.reduce((sum, d) => sum + (d.chatCount || 0), 0) || 0;
   const avgEngagement = timelineData?.length
-    ? timelineData.reduce((sum, d) => sum + d.engagementRate, 0) / timelineData.length
+    ? timelineData.reduce((sum, d) => sum + (d.engagementRate || 0), 0) / timelineData.length
     : 0;
-  const peakChatters = Math.max(...(timelineData?.map((d) => d.uniqueChatters) || [0]));
+  const peakChatters = Math.max(...(timelineData?.map((d) => d.uniqueChatters || 0) || [0]));
 
   return (
     <div className="space-y-6">
@@ -68,7 +84,7 @@ const EngagementTab = ({ channelId, startTime, endTime }: EngagementTabProps) =>
             平均エンゲージメント率
           </h3>
           <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">
-            {avgEngagement.toFixed(2)}%
+            {(avgEngagement || 0).toFixed(2)}%
           </p>
         </div>
 
@@ -119,7 +135,7 @@ const EngagementTab = ({ channelId, startTime, endTime }: EngagementTabProps) =>
           チャットスパイク検出（2倍以上の急増）
         </h3>
         {spikesLoading ? (
-          <LoadingSpinner />
+          <TableSkeleton rows={5} columns={4} />
         ) : spikesData && spikesData.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -152,7 +168,7 @@ const EngagementTab = ({ channelId, startTime, endTime }: EngagementTabProps) =>
                       {spike.prevCount.toLocaleString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-red-600 dark:text-red-400">
-                      {spike.spikeRatio.toFixed(2)}x
+                      {(spike.spikeRatio || 0).toFixed(2)}x
                     </td>
                   </tr>
                 ))}

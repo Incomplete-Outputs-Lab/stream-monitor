@@ -2,10 +2,13 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { ExportForm } from './ExportForm';
+import { Skeleton } from '../common/Skeleton';
 import type { Channel, ExportQuery } from '../../types';
+import { DesktopAppNotice } from '../common/DesktopAppNotice';
 
 export function Export() {
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [isLoadingChannels, setIsLoadingChannels] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [previewData, setPreviewData] = useState<string>('');
@@ -24,11 +27,14 @@ export function Export() {
   useEffect(() => {
     const fetchChannels = async () => {
       try {
+        setIsLoadingChannels(true);
         const result = await invoke<Channel[]>('list_channels');
         setChannels(result);
       } catch (error) {
         console.error('Failed to fetch channels:', error);
         setMessage({ type: 'error', text: 'チャンネルの取得に失敗しました' });
+      } finally {
+        setIsLoadingChannels(false);
       }
     };
 
@@ -199,6 +205,8 @@ export function Export() {
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">収集した統計データを様々な形式でエクスポート</p>
       </div>
 
+      <DesktopAppNotice />
+
       {/* Message Display */}
       {message && (
         <div className={`card p-4 ${
@@ -222,6 +230,7 @@ export function Export() {
           config={config}
           onConfigChange={setConfig}
           channels={channels}
+          isLoadingChannels={isLoadingChannels}
         />
 
         {/* Preview Section */}
@@ -232,7 +241,9 @@ export function Export() {
                 データプレビュー（最初の10行）
               </h3>
               {isLoadingPreview && (
-                <span className="text-xs text-gray-500 dark:text-gray-400">読み込み中...</span>
+                <div className="ml-2">
+                  <Skeleton variant="circular" width={20} height={20} />
+                </div>
               )}
             </div>
             

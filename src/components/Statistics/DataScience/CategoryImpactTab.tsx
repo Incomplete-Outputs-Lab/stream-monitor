@@ -1,11 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
-import type { CategoryImpactResult } from '../../../types';
 import { BarChart } from '../../common/charts/BarChart';
-import { LoadingSpinner } from '../../common/LoadingSpinner';
+import { StatsDashboardSkeleton } from '../../common/Skeleton';
+import { getCategoryImpact } from '../../../api/statistics';
+import type { CategoryChangeCorrelation, CategoryPerformance } from '../../../types';
 
 interface CategoryImpactTabProps {
-  channelId: number | null;
+  channelId: number | undefined;
   startTime: string;
   endTime: string;
 }
@@ -13,10 +13,9 @@ interface CategoryImpactTabProps {
 const CategoryImpactTab = ({ channelId, startTime, endTime }: CategoryImpactTabProps) => {
   const { data, isLoading } = useQuery({
     queryKey: ['categoryImpact', channelId, startTime, endTime],
-    queryFn: async () => {
-      if (!channelId) return null;
-      return await invoke<CategoryImpactResult>('get_category_change_impact', {
-        channelId,
+    queryFn: () => {
+      return getCategoryImpact({
+        channelId: channelId!,
         startTime,
         endTime,
       });
@@ -24,18 +23,31 @@ const CategoryImpactTab = ({ channelId, startTime, endTime }: CategoryImpactTabP
     enabled: !!channelId,
   });
 
-  if (!channelId) {
+  // チャンネル選択チェック
+  if (channelId === undefined) {
     return (
-      <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
-        <p className="text-yellow-800 dark:text-yellow-200">
-          カテゴリ影響分析には単一のチャンネルを選択してください。
-        </p>
+      <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-6">
+        <div className="flex items-start">
+          <div className="flex-shrink-0">
+            <svg className="h-6 w-6 text-yellow-600 dark:text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <div className="ml-3">
+            <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+              チャンネルを選択してください
+            </h3>
+            <p className="mt-2 text-sm text-yellow-700 dark:text-yellow-300">
+              カテゴリ影響分析には特定のチャンネルを選択する必要があります。上部のチャンネル選択ドロップダウンから分析対象のチャンネルを選んでください。
+            </p>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (isLoading) {
-    return <LoadingSpinner />;
+    return <StatsDashboardSkeleton cardCount={2} chartCount={2} />;
   }
 
   if (!data || (data.changes.length === 0 && data.categoryPerformance.length === 0)) {
@@ -79,7 +91,7 @@ const CategoryImpactTab = ({ channelId, startTime, endTime }: CategoryImpactTabP
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {data.changes.map((change, idx) => {
+                {data.changes.map((change: CategoryChangeCorrelation, idx: number) => {
                   const viewerDiff = change.afterViewers - change.beforeViewers;
                   const isPositive = viewerDiff > 0;
                   const changePercent = change.viewerChangePercent;
@@ -159,7 +171,7 @@ const CategoryImpactTab = ({ channelId, startTime, endTime }: CategoryImpactTabP
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {data.categoryPerformance.map((perf, idx) => (
+                {data.categoryPerformance.map((perf: CategoryPerformance, idx: number) => (
                   <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                     <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-gray-100">
                       {perf.category}

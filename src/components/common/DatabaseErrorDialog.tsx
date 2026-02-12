@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { toast } from "../../utils/toast";
+import * as systemApi from "../../api/system";
 
 interface DatabaseErrorDialogProps {
   isOpen: boolean;
@@ -22,7 +22,7 @@ export function DatabaseErrorDialog({
   const handleRecreateDatabase = async () => {
     setIsProcessing(true);
     try {
-      const result = await invoke("recreate_database") as any;
+      const result = await systemApi.recreateDatabase();
       console.log("Database recreation result:", result);
 
       if (result.success) {

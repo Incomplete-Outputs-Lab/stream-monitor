@@ -260,25 +260,25 @@ fn parse_duckdb_list_to_json(s: &str) -> serde_json::Value {
 pub struct SqlQueryResult {
     pub columns: Vec<String>,
     pub rows: Vec<Vec<serde_json::Value>>,
-    pub affected_rows: Option<usize>,
+    pub affected_rows: usize,
     pub execution_time_ms: u128,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SqlTemplate {
-    pub id: Option<i64>,
+    pub id: i64,
     pub name: String,
-    pub description: Option<String>,
+    pub description: String,
     pub query: String,
-    pub created_at: Option<String>,
-    pub updated_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SaveTemplateRequest {
-    pub id: Option<i64>,
+    pub id: i64, // 0 = 新規作成
     pub name: String,
-    pub description: Option<String>,
+    pub description: String,
     pub query: String,
 }
 
@@ -292,6 +292,7 @@ pub async fn execute_sql(
 
     let conn = db_manager
         .get_connection()
+        .await
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 
@@ -618,7 +619,7 @@ pub async fn execute_sql(
         SqlQueryResult {
             columns,
             rows: row_data,
-            affected_rows: None,
+            affected_rows: 0,
             execution_time_ms: execution_time,
         }
     } else {
@@ -636,7 +637,7 @@ pub async fn execute_sql(
         SqlQueryResult {
             columns: vec![],
             rows: vec![],
-            affected_rows: Some(affected),
+            affected_rows: affected,
             execution_time_ms: execution_time,
         }
     };
@@ -651,6 +652,7 @@ pub async fn list_sql_templates(
 ) -> Result<Vec<SqlTemplate>, String> {
     let conn = db_manager
         .get_connection()
+        .await
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 
@@ -668,12 +670,12 @@ pub async fn list_sql_templates(
     let templates = stmt
         .query_map([], |row| {
             Ok(SqlTemplate {
-                id: Some(row.get(0)?),
+                id: row.get(0)?,
                 name: row.get(1)?,
-                description: row.get(2)?,
+                description: row.get(2).unwrap_or_else(|_| String::new()),
                 query: row.get(3)?,
-                created_at: Some(row.get(4)?),
-                updated_at: Some(row.get(5)?),
+                created_at: row.get(4).unwrap_or_else(|_| String::new()),
+                updated_at: row.get(5).unwrap_or_else(|_| String::new()),
             })
         })
         .db_context("query templates")
@@ -693,21 +695,27 @@ pub async fn save_sql_template(
 ) -> Result<SqlTemplate, String> {
     let conn = db_manager
         .get_connection()
+        .await
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 
-    let id = if let Some(id) = request.id {
+    let id = if request.id > 0 {
         // 更新
         conn.execute(
             "UPDATE sql_templates 
              SET name = ?, description = ?, query = ?, updated_at = CURRENT_TIMESTAMP 
              WHERE id = ?",
-            params![&request.name, &request.description, &request.query, id],
+            params![
+                &request.name,
+                &request.description,
+                &request.query,
+                request.id
+            ],
         )
         .db_context("update template")
         .map_err(|e| e.to_string())?;
 
-        id
+        request.id
     } else {
         // 新規作成
         conn.execute(
@@ -744,12 +752,12 @@ pub async fn save_sql_template(
     let template = stmt
         .query_row(params![id], |row| {
             Ok(SqlTemplate {
-                id: Some(row.get(0)?),
+                id: row.get(0)?,
                 name: row.get(1)?,
-                description: row.get(2)?,
+                description: row.get(2).unwrap_or_else(|_| String::new()),
                 query: row.get(3)?,
-                created_at: Some(row.get(4)?),
-                updated_at: Some(row.get(5)?),
+                created_at: row.get(4).unwrap_or_else(|_| String::new()),
+                updated_at: row.get(5).unwrap_or_else(|_| String::new()),
             })
         })
         .map_err(|e| format!("Failed to retrieve saved template: {}", e))?;
@@ -765,6 +773,7 @@ pub async fn delete_sql_template(
 ) -> Result<(), String> {
     let conn = db_manager
         .get_connection()
+        .await
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 
@@ -793,6 +802,7 @@ pub async fn list_database_tables(
 ) -> Result<Vec<TableInfo>, String> {
     let conn = db_manager
         .get_connection()
+        .await
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 

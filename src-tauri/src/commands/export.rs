@@ -1,4 +1,6 @@
-use crate::database::{models::StreamStats, utils, DatabaseManager};
+use crate::database::{
+    models::StreamStats, repositories::ChannelRepository, utils, DatabaseManager,
+};
 use crate::error::ResultExt;
 use duckdb::Connection;
 use serde::{Deserialize, Serialize};
@@ -18,7 +20,15 @@ fn get_stream_stats_internal(
     query: &ExportQuery,
 ) -> Result<Vec<StreamStats>, duckdb::Error> {
     let mut sql = String::from(
-        "SELECT ss.id, ss.stream_id, CAST(ss.collected_at AS VARCHAR) as collected_at, ss.viewer_count, ss.chat_rate_1min, ss.category, ss.title, ss.follower_count, ss.twitch_user_id, ss.channel_name 
+        "SELECT ss.id, ss.stream_id, CAST(ss.collected_at AS VARCHAR) as collected_at, ss.viewer_count,
+         COALESCE((
+             SELECT COUNT(*)
+             FROM chat_messages cm
+             WHERE cm.stream_id = ss.stream_id
+               AND cm.timestamp >= ss.collected_at - INTERVAL '1 minute'
+               AND cm.timestamp < ss.collected_at
+         ), 0) AS chat_rate_1min,
+         ss.category, ss.title, ss.follower_count, ss.twitch_user_id, ss.channel_name
          FROM stream_stats ss
          INNER JOIN streams s ON ss.stream_id = s.id
          WHERE 1=1",
@@ -27,6 +37,22 @@ fn get_stream_stats_internal(
     let mut params: Vec<String> = Vec::new();
 
     if let Some(channel_id) = query.channel_id {
+        eprintln!("[Export Debug] Filtering by channel_id: {}", channel_id);
+
+        // Debug: Check if channel exists and has streams
+        let channel_check = ChannelRepository::get_channel_info(conn, channel_id);
+        match channel_check {
+            Ok((ch_id, stream_count)) => {
+                eprintln!(
+                    "[Export Debug] Channel found: platform_id={}, streams={}",
+                    ch_id, stream_count
+                );
+            }
+            Err(e) => {
+                eprintln!("[Export Debug] Channel not found or error: {:?}", e);
+            }
+        }
+
         sql.push_str(" AND s.channel_id = ?");
         params.push(channel_id.to_string());
     }
@@ -43,6 +69,9 @@ fn get_stream_stats_internal(
 
     sql.push_str(" ORDER BY ss.collected_at ASC");
 
+    eprintln!("[Export Debug] SQL: {}", sql);
+    eprintln!("[Export Debug] Params: {:?}", params);
+
     let mut stmt = conn.prepare(&sql)?;
 
     let stats: Result<Vec<StreamStats>, _> =
@@ -52,8 +81,9 @@ fn get_stream_stats_internal(
                 stream_id: row.get(1)?,
                 collected_at: row.get(2)?,
                 viewer_count: row.get(3)?,
-                chat_rate_1min: row.get(4)?,
+                chat_rate_1min: Some(row.get(4)?), // Now properly mapped from query
                 category: row.get(5)?,
+                game_id: None,
                 title: row.get(6)?,
                 follower_count: row.get(7)?,
                 twitch_user_id: row.get(8)?,
@@ -61,6 +91,11 @@ fn get_stream_stats_internal(
             })
         })?
         .collect();
+
+    match &stats {
+        Ok(data) => eprintln!("[Export Debug] Query returned {} records", data.len()),
+        Err(e) => eprintln!("[Export Debug] Query error: {:?}", e),
+    }
 
     stats
 }
@@ -90,6 +125,7 @@ pub async fn export_to_delimited(
 ) -> Result<String, String> {
     let conn = db_manager
         .get_connection()
+        .await
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 
@@ -123,7 +159,10 @@ pub async fn export_to_delimited(
         let viewer_count = stat.viewer_count.unwrap_or(0).to_string();
         let category = stat.category.as_deref().unwrap_or("");
         let title = stat.title.as_deref().unwrap_or("");
-        let chat_rate = stat.chat_rate_1min.to_string();
+        let chat_rate = stat
+            .chat_rate_1min
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "0".to_string());
 
         output.push_str(&format!(
             "{}{}{}{}{}{}{}{}{}{}{}\n",
@@ -161,6 +200,7 @@ pub async fn preview_export_data(
 ) -> Result<String, String> {
     let conn = db_manager
         .get_connection()
+        .await
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 
@@ -191,7 +231,10 @@ pub async fn preview_export_data(
         let viewer_count = stat.viewer_count.unwrap_or(0).to_string();
         let category = stat.category.as_deref().unwrap_or("");
         let title = stat.title.as_deref().unwrap_or("");
-        let chat_rate = stat.chat_rate_1min.to_string();
+        let chat_rate = stat
+            .chat_rate_1min
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "0".to_string());
 
         output.push_str(&format!(
             "{}{}{}{}{}{}{}{}{}{}{}\n",

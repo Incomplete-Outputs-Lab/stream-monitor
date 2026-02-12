@@ -1,20 +1,17 @@
+import { useEffect } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useEffect, useState } from "react";
 import { ChannelWithStats, TwitchRateLimitStatus, DiscoveredStreamInfo } from "../../types";
 import { Tooltip as CustomTooltip } from "../common/Tooltip";
 import { toast } from "../../utils/toast";
 import { confirm } from "../../utils/confirm";
-
-interface StreamStats {
-  id?: number;
-  stream_id: number;
-  collected_at: string;
-  viewer_count?: number;
-  chat_rate_1min: number;
-}
+import * as discoveryApi from "../../api/discovery";
+import * as statisticsApi from "../../api/statistics";
+import { DesktopAppNotice } from "../common/DesktopAppNotice";
+import { OAuthWarningBanner } from "../common/OAuthWarningBanner";
+import { useAppStateStore } from "../../stores/appStateStore";
 
 interface LiveChannelCardProps {
   channel: ChannelWithStats;
@@ -24,25 +21,25 @@ function LiveChannelCard({ channel }: LiveChannelCardProps) {
   const isAutoDiscovered = channel.is_auto_discovered;
 
   return (
-    <div className="card p-6 hover:shadow-md transition-all duration-200 animate-fade-in">
+    <div className="card p-4 hover:shadow-md transition-all duration-200 animate-fade-in">
       <div className="flex items-center justify-between">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center space-x-2 mb-1">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">
+          <div className="flex items-center space-x-2 mb-0.5">
+            <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 truncate">
               {channel.channel_name}
             </h3>
             {isAutoDiscovered && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300">
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300">
                 自動発見
               </span>
             )}
           </div>
-          <p className="text-sm text-gray-500 dark:text-gray-400 capitalize">
+          <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">
             {channel.platform === 'twitch' ? '🎮 Twitch' : '▶️ YouTube'}
           </p>
         </div>
-        <div className="text-right ml-4">
-          <div className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+        <div className="text-right ml-3">
+          <div className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
             {channel.current_viewers?.toLocaleString() || 0}
           </div>
           <div className="text-xs text-gray-500 dark:text-gray-400 font-medium">視聴者</div>
@@ -50,14 +47,14 @@ function LiveChannelCard({ channel }: LiveChannelCardProps) {
       </div>
 
       {channel.current_title && (
-        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-slate-700">
-          <p className="text-sm text-gray-700 dark:text-gray-300 truncate" title={channel.current_title}>
+        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-slate-700">
+          <p className="text-xs text-gray-700 dark:text-gray-300 truncate" title={channel.current_title}>
             {channel.current_title}
           </p>
         </div>
       )}
 
-      <div className="mt-4 flex items-center justify-between">
+      <div className="mt-3 flex items-center justify-between">
         <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gradient-to-r from-green-400 to-emerald-500 text-white shadow-sm">
           <span className="w-2 h-2 bg-white rounded-full mr-2 animate-pulse"></span>
           ライブ中
@@ -79,9 +76,9 @@ function LiveChannelCard({ channel }: LiveChannelCardProps) {
                     toast.error('このチャンネルにはTwitch User IDが設定されていません。');
                     return;
                   }
-                  await invoke('promote_discovered_channel', { 
-                    channelId: channel.twitch_user_id.toString()
-                  });
+                  await discoveryApi.promoteDiscoveredChannel(
+                    channel.twitch_user_id.toString()
+                  );
                   window.location.reload();
                 } catch (err) {
                   toast.error(`エラー: ${err}`);
@@ -209,33 +206,51 @@ function DiscoveredStreamCard({ stream, onPromote, isAlreadyRegistered = false }
 }
 
 export function Dashboard() {
-  const [statsData, setStatsData] = useState<StreamStats[]>([]);
-  const [localExpiresIn, setLocalExpiresIn] = useState<number | null>(null);
   const queryClient = useQueryClient();
+  const backendReady = useAppStateStore((state) => state.backendReady);
 
   // チャンネル情報を取得し、ライブチャンネルのみをフィルタリング
-  const { data: allChannels, isLoading: channelsLoading } = useQuery({
-    queryKey: ["channels-with-twitch-info"],
+  const { 
+    data: allChannels, 
+    isLoading: channelsLoading, 
+    error: channelsError
+  } = useQuery({
+    queryKey: ["channels"],
     queryFn: async () => {
-      return await invoke<ChannelWithStats[]>("list_channels");
+      console.log('[Dashboard] Fetching channels...');
+      const result = await invoke<ChannelWithStats[]>("list_channels");
+      console.log('[Dashboard] Fetched channels:', result?.length, 'channels');
+      return result;
     },
+    enabled: backendReady, // バックエンド初期化完了まで実行しない
     refetchInterval: 30000, // 30秒ごとに更新
-    staleTime: 10000, // 10秒間はキャッシュを使用
+    staleTime: 25000, // 25秒間はキャッシュを使用（refetchIntervalより短く）
     gcTime: 60000, // 1分間キャッシュを保持
+    retry: 1, // リトライは1回まで
   });
-
   const liveChannels = allChannels?.filter(c => c.is_live) ?? [];
 
-  // 最新の統計データを取得
-  const { data: recentStats } = useQuery({
-    queryKey: ["recent-stats"],
-    queryFn: async () => {
-      return await invoke<StreamStats[]>("get_stream_stats", {
-        query: {
-          start_time: new Date(Date.now() - 3600000).toISOString(), // 1時間前から
-        },
-      });
-    },
+  // 自動発見イベントリスナー：バックエンドからのリアルタイム更新を受信
+  useEffect(() => {
+    console.log('[Dashboard] Setting up discovered-streams-updated event listener');
+    
+    const unlistenPromise = listen('discovered-streams-updated', () => {
+      console.log('[Dashboard] ✅ discovered-streams-updated event received');
+      // 自動発見された配信のクエリを無効化して再取得
+      queryClient.invalidateQueries({ queryKey: ["discovered-streams"] });
+      console.log('[Dashboard] discovered-streams query invalidated');
+    });
+
+    return () => {
+      console.log('[Dashboard] Cleaning up event listeners');
+      unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, [queryClient]);
+
+  // リアルタイムのチャットレートを取得
+  const { data: realtimeChatRate } = useQuery({
+    queryKey: ["realtime-chat-rate"],
+    queryFn: () => statisticsApi.getRealtimeChatRate(),
     refetchInterval: 10000, // 10秒ごとに更新
   });
 
@@ -246,52 +261,35 @@ export function Dashboard() {
     refetchInterval: 5000, // 5秒ごとに更新
   });
 
-  // rateLimitStatusが更新されたらlocalExpiresInを更新
-  useEffect(() => {
-    if (rateLimitStatus?.oldest_entry_expires_in_seconds != null) {
-      setLocalExpiresIn(rateLimitStatus.oldest_entry_expires_in_seconds);
-    }
-  }, [rateLimitStatus?.oldest_entry_expires_in_seconds]);
-
-  // localExpiresInを1秒ごとにデクリメント
-  useEffect(() => {
-    if (localExpiresIn === null || localExpiresIn <= 0) return;
-    const timer = setInterval(() => {
-      setLocalExpiresIn(prev => prev !== null && prev > 0 ? prev - 1 : null);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [localExpiresIn]);
-
   // 自動発見された配信を取得
-  const { data: discoveredStreams } = useQuery({
+  const { data: discoveredStreams, isLoading: isLoadingDiscovered } = useQuery({
     queryKey: ["discovered-streams"],
-    queryFn: () => invoke<DiscoveredStreamInfo[]>("get_discovered_streams"),
-    refetchInterval: 30000, // 30秒ごとに更新
+    queryFn: async () => {
+      console.log('[Dashboard] Fetching discovered streams...');
+      const result = await discoveryApi.getDiscoveredStreams();
+      console.log('[Dashboard] Fetched discovered streams:', result?.length, 'streams');
+      return result;
+    },
+    // enabled条件を削除：バックエンドが初期化されていなければ空配列が返る
+    refetchInterval: 10000, // 10秒ごとに更新（より頻繁に）
+    staleTime: 5000, // キャッシュ有効期間を短縮
+    retry: 1, // リトライは1回まで
   });
 
-  // 自動発見イベントをリッスンしてキャッシュ無効化
-  useEffect(() => {
-    const unlisten = listen("discovered-streams-updated", () => {
-      queryClient.invalidateQueries({ queryKey: ["discovered-streams"] });
-    });
-    return () => {
-      unlisten.then(fn => fn());
-    };
-  }, [queryClient]);
 
   // 楽観的更新を使用したチャンネル昇格mutation
   const promoteMutation = useMutation({
     mutationFn: async (channelId: string) => {
-      await invoke('promote_discovered_channel', { channelId });
+      await discoveryApi.promoteDiscoveredChannel(channelId);
     },
     onMutate: async (channelId: string) => {
       // 既存のクエリをキャンセル
       await queryClient.cancelQueries({ queryKey: ["discovered-streams"] });
-      await queryClient.cancelQueries({ queryKey: ["channels-with-twitch-info"] });
+      await queryClient.cancelQueries({ queryKey: ["channels"] });
 
       // 現在のキャッシュを保存（ロールバック用）
       const previousDiscovered = queryClient.getQueryData<DiscoveredStreamInfo[]>(["discovered-streams"]);
-      const previousChannels = queryClient.getQueryData<ChannelWithStats[]>(["channels-with-twitch-info"]);
+      const previousChannels = queryClient.getQueryData<ChannelWithStats[]>(["channels"]);
 
       // 昇格するストリーム情報を取得
       const promotingStream = previousDiscovered?.find(
@@ -308,22 +306,30 @@ export function Dashboard() {
 
       // 楽観的更新: ライブチャンネルリストに追加
       if (previousChannels && promotingStream) {
+        const now = new Date().toISOString();
         const newChannel: ChannelWithStats = {
           id: -1, // 仮のID（サーバーからの応答で更新される）
           platform: "twitch",
           channel_id: promotingStream.channel_name,
           channel_name: promotingStream.display_name || promotingStream.channel_name,
+          display_name: promotingStream.display_name || promotingStream.channel_name,
+          profile_image_url: promotingStream.profile_image_url || "",
           enabled: true,
+          created_at: now,
+          updated_at: now,
           poll_interval: 60,
+          follower_count: promotingStream.follower_count,
+          broadcaster_type: promotingStream.broadcaster_type || "",
+          view_count: 0,
           is_auto_discovered: false,
+          discovered_at: "",
+          twitch_user_id: promotingStream.twitch_user_id,
           is_live: true,
           current_viewers: promotingStream.viewer_count ?? 0,
-          current_title: promotingStream.title ?? undefined,
-          twitch_user_id: promotingStream.twitch_user_id,
-          profile_image_url: promotingStream.profile_image_url ?? undefined,
+          current_title: promotingStream.title || undefined,
         };
         queryClient.setQueryData<ChannelWithStats[]>(
-          ["channels-with-twitch-info"],
+          ["channels"],
           [...previousChannels, newChannel]
         );
       }
@@ -336,14 +342,14 @@ export function Dashboard() {
         queryClient.setQueryData(["discovered-streams"], context.previousDiscovered);
       }
       if (context?.previousChannels) {
-        queryClient.setQueryData(["channels-with-twitch-info"], context.previousChannels);
+        queryClient.setQueryData(["channels"], context.previousChannels);
       }
       toast.error(`エラー: ${_err}`);
     },
     onSettled: () => {
       // 完了後にクエリを再検証して最新データを取得
       queryClient.invalidateQueries({ queryKey: ["discovered-streams"] });
-      queryClient.invalidateQueries({ queryKey: ["channels-with-twitch-info"] });
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
     },
   });
 
@@ -359,12 +365,6 @@ export function Dashboard() {
       promoteMutation.mutate(channelId);
     }
   };
-
-  useEffect(() => {
-    if (recentStats) {
-      setStatsData(recentStats);
-    }
-  }, [recentStats]);
 
   // チャンネルごとの統計データを整形
   // 重複を削除: channel_id + platform の組み合わせで一意にする
@@ -411,9 +411,6 @@ export function Dashboard() {
                 <div>使用: {rateLimitStatus.points_used} / {rateLimitStatus.bucket_capacity} ポイント</div>
                 <div>残り: {rateLimitStatus.points_remaining} ポイント</div>
                 <div>リクエスト数: {rateLimitStatus.request_count}回</div>
-                {localExpiresIn !== null && localExpiresIn > 0 && (
-                  <div>回復まで: {localExpiresIn}秒</div>
-                )}
               </div>
             }>
               <div className="flex items-center space-x-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors cursor-help">
@@ -436,6 +433,9 @@ export function Dashboard() {
           </div>
         </div>
       </div>
+
+      <OAuthWarningBanner />
+      <DesktopAppNotice />
 
       {/* 概要統計 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -482,7 +482,7 @@ export function Dashboard() {
             </div>
             <div className="ml-4">
               <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                {statsData.length > 0 ? statsData[statsData.length - 1]?.chat_rate_1min || 0 : 0}
+                {(realtimeChatRate ?? 0).toLocaleString()}
               </h3>
               <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">1分間チャット数</p>
             </div>
@@ -500,56 +500,79 @@ export function Dashboard() {
               </span>
             )}
           </div>
-          <div className="space-y-4 max-h-96 overflow-y-auto">
-            {channelsLoading ? (
-              <div className="text-center py-12">
-                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600 mx-auto"></div>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-3 font-medium">読み込み中...</p>
+          {channelsError ? (
+            <div className="text-center py-12">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-1.964-1.333-2.732 0L3.732 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
               </div>
-            ) : uniqueLiveChannels.length > 0 ? (
-              uniqueLiveChannels.map((channel) => (
+              <p className="text-red-600 dark:text-red-400 font-medium mb-2">チャンネル情報の取得に失敗しました</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{String(channelsError)}</p>
+            </div>
+          ) : channelsLoading ? (
+            <div className="text-center py-12">
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600 mx-auto"></div>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-3 font-medium">読み込み中...</p>
+            </div>
+          ) : uniqueLiveChannels.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {uniqueLiveChannels.map((channel) => (
                 <LiveChannelCard key={channel.id ?? `${channel.platform}-${channel.channel_id}`} channel={channel} />
-              ))
-            ) : (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 dark:bg-slate-700 flex items-center justify-center">
-                  <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                  </svg>
-                </div>
-                <p className="text-gray-500 dark:text-gray-400 font-medium">現在ライブ中のチャンネルはありません</p>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 dark:bg-slate-700 flex items-center justify-center">
+                <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
               </div>
-            )}
-          </div>
+              <p className="text-gray-500 dark:text-gray-400 font-medium mb-1">現在ライブ中のチャンネルはありません</p>
+              {allChannels && allChannels.length > 0 && (
+                <p className="text-xs text-gray-400 dark:text-gray-500">
+                  {allChannels.length}件のチャンネルを監視中
+                </p>
+              )}
+            </div>
+          )}
       </div>
 
       {/* 自動発見された配信 */}
-      {discoveredStreams && discoveredStreams.length > 0 && (
-        <div className="card p-6 animate-fade-in mt-6">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                自動発見された配信
-              </h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                条件に合致する上位配信を自動的に監視しています
-              </p>
-            </div>
+      <div className="card p-6 animate-fade-in mt-6">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              自動発見された配信
+            </h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              条件に合致する上位配信を自動的に監視しています
+            </p>
+          </div>
+          {discoveredStreams && discoveredStreams.length > 0 && (
             <span className="text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-3 py-1 rounded-full">
               {discoveredStreams.length}件
             </span>
+          )}
+        </div>
+        
+        {isLoadingDiscovered ? (
+          <div className="text-center py-12">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-amber-500 mx-auto"></div>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-3 font-medium">自動発見チャンネルを取得中...</p>
           </div>
+        ) : discoveredStreams && discoveredStreams.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {(() => {
               // 登録済みチャンネルのchannel_nameセットを作成
               const registeredChannelNames = new Set(
                 (allChannels || []).map(ch => ch.channel_name.toLowerCase())
               );
-              
+
               return discoveredStreams.map((stream) => {
                 // channel_nameが登録済みかチェック
                 const isAlreadyRegistered = registeredChannelNames.has(stream.channel_name.toLowerCase());
-                
+
                 return (
                   <DiscoveredStreamCard
                     key={`discovered-${stream.twitch_user_id}-${stream.channel_id}`}
@@ -561,8 +584,20 @@ export function Dashboard() {
               });
             })()}
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="text-center py-12">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+              <svg className="w-8 h-8 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+            <p className="text-gray-600 dark:text-gray-400 font-medium mb-1">自動発見された配信はありません</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500">
+              設定から自動発見機能を有効にしてください
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

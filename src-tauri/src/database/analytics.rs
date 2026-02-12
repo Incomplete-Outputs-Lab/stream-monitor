@@ -1,4 +1,7 @@
-use crate::database::utils;
+use crate::database::{
+    repositories::{AggregationRepository, StreamStatsRepository},
+    utils,
+};
 use duckdb::Connection;
 use serde::{Deserialize, Serialize};
 
@@ -7,11 +10,12 @@ use serde::{Deserialize, Serialize};
 pub struct BroadcasterAnalytics {
     pub channel_id: i64,
     pub channel_name: String,
+    pub login_name: String, // Twitch login name (小文字、URL用)
     pub minutes_watched: i64,
     pub hours_broadcasted: f64,
     pub average_ccu: f64,
-    pub main_played_title: Option<String>,
-    pub main_title_mw_percent: Option<f64>,
+    pub main_played_title: String,
+    pub main_title_mw_percent: f64,
     // 新規追加
     pub peak_ccu: i32,
     pub stream_count: i32,
@@ -25,12 +29,17 @@ pub struct BroadcasterAnalytics {
 /// ゲームタイトル別統計
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameAnalytics {
-    pub category: String,
+    pub game_id: String,  // Twitch game ID（プライマリキー）
+    pub category: String, // カテゴリ名（表示用、game_categoriesから取得）
     pub minutes_watched: i64,
     pub hours_broadcasted: f64,
     pub average_ccu: f64,
     pub unique_broadcasters: i32,
-    pub top_channel: Option<String>,
+    pub top_channel: String,
+    pub top_channel_login: String, // Twitch login name of top channel (URL用)
+    pub total_chat_messages: i64,
+    pub avg_chat_rate: f64,
+    pub engagement_rate: f64,
 }
 
 /// データ可用性情報
@@ -53,7 +62,20 @@ pub struct DailyStats {
 }
 
 /// 配信者別統計を取得
+///
+/// AggregationRepositoryを使用して統計を計算します。
 pub fn get_broadcaster_analytics(
+    conn: &Connection,
+    channel_id: Option<i64>,
+    start_time: Option<&str>,
+    end_time: Option<&str>,
+) -> Result<Vec<BroadcasterAnalytics>, duckdb::Error> {
+    AggregationRepository::calculate_broadcaster_analytics(conn, channel_id, start_time, end_time)
+}
+
+/// 配信者別統計を取得（旧実装 - 使用しない）
+#[allow(dead_code)]
+fn get_broadcaster_analytics_old(
     conn: &Connection,
     channel_id: Option<i64>,
     start_time: Option<&str>,
@@ -68,7 +90,13 @@ pub fn get_broadcaster_analytics(
                 ss.stream_id,
                 ss.viewer_count,
                 ss.category,
-                ss.chat_rate_1min,
+                COALESCE((
+                    SELECT COUNT(*)
+                    FROM chat_messages cm
+                    WHERE cm.stream_id = ss.stream_id
+                      AND cm.timestamp >= ss.collected_at - INTERVAL '1 minute'
+                      AND cm.timestamp < ss.collected_at
+                ), 0) AS chat_rate_1min,
                 ss.collected_at,
                 ss.twitch_user_id,
                 EXTRACT(EPOCH FROM (
@@ -88,7 +116,7 @@ pub fn get_broadcaster_analytics(
     // channel_id が指定されている場合、channel_name を取得してフィルター
     let filter_channel_name = if let Some(ch_id) = channel_id {
         conn.query_row(
-            "SELECT channel_id FROM channels WHERE id = ? AND platform = 'twitch'",
+            "SELECT channel_name FROM channels WHERE id = ? AND platform = 'twitch'",
             [ch_id.to_string()],
             |row| row.get::<_, String>(0),
         )
@@ -193,9 +221,9 @@ pub fn get_broadcaster_analytics(
     // ユニークチャッター数を取得
     let mut chatters_sql = String::from(
         r#"
-        SELECT 
+        SELECT
             c.id AS channel_id,
-            COUNT(DISTINCT cm.user_name) AS unique_chatters
+            COUNT(DISTINCT cm.user_id) AS unique_chatters
         FROM channels c
         LEFT JOIN streams s ON c.id = s.channel_id
         LEFT JOIN chat_messages cm ON s.id = cm.stream_id
@@ -206,8 +234,7 @@ pub fn get_broadcaster_analytics(
     let mut chatters_params: Vec<String> = Vec::new();
 
     if let Some(ch_id) = channel_id {
-        chatters_sql.push_str(" AND c.id = ?");
-        chatters_params.push(ch_id.to_string());
+        chatters_sql.push_str(&format!(" AND c.id = {}", ch_id));
     }
 
     if let Some(start) = start_time {
@@ -268,12 +295,13 @@ pub fn get_broadcaster_analytics(
 
         results.push(BroadcasterAnalytics {
             channel_id: ch_id,
-            channel_name: ch_name,
+            channel_name: ch_name.clone(),
+            login_name: ch_name,
             minutes_watched: mw,
             hours_broadcasted: hours,
             average_ccu: avg_ccu,
-            main_played_title: main_title,
-            main_title_mw_percent: main_mw_percent,
+            main_played_title: main_title.unwrap_or_default(),
+            main_title_mw_percent: main_mw_percent.unwrap_or_default(),
             peak_ccu,
             stream_count,
             total_chat_messages: total_chat,
@@ -287,8 +315,21 @@ pub fn get_broadcaster_analytics(
     Ok(results)
 }
 
-/// ゲームタイトル別統計を取得
+/// ゲームタイトル別統計を取得（game_idベース）
+///
+/// AggregationRepositoryを使用して統計を計算します。
 pub fn get_game_analytics(
+    conn: &Connection,
+    game_id: Option<&str>,
+    start_time: Option<&str>,
+    end_time: Option<&str>,
+) -> Result<Vec<GameAnalytics>, duckdb::Error> {
+    AggregationRepository::calculate_game_analytics(conn, game_id, start_time, end_time)
+}
+
+/// ゲームタイトル別統計を取得（旧実装 - 使用しない）
+#[allow(dead_code)]
+fn get_game_analytics_old(
     conn: &Connection,
     category: Option<&str>,
     start_time: Option<&str>,
@@ -305,6 +346,13 @@ pub fn get_game_analytics(
                 ss.collected_at,
                 ss.stream_id,
                 ss.twitch_user_id,
+                COALESCE((
+                    SELECT COUNT(*)
+                    FROM chat_messages cm
+                    WHERE cm.stream_id = ss.stream_id
+                      AND cm.timestamp >= ss.collected_at - INTERVAL '1 minute'
+                      AND cm.timestamp < ss.collected_at
+                ), 0) AS chat_rate_1min,
                 EXTRACT(EPOCH FROM (
                     LEAD(ss.collected_at) OVER (PARTITION BY COALESCE(CAST(ss.stream_id AS VARCHAR), ss.channel_name || '_' || CAST(DATE(ss.collected_at) AS VARCHAR)) ORDER BY ss.collected_at) 
                     - ss.collected_at
@@ -343,7 +391,9 @@ pub fn get_game_analytics(
                 COALESCE(SUM(viewer_count * COALESCE(interval_minutes, 1)), 0)::BIGINT AS minutes_watched,
                 COALESCE(SUM(COALESCE(interval_minutes, 1)) / 60.0, 0) AS hours_broadcasted,
                 COALESCE(AVG(viewer_count), 0) AS average_ccu,
-                COUNT(DISTINCT channel_name) AS unique_broadcasters
+                COUNT(DISTINCT channel_name) AS unique_broadcasters,
+                COALESCE(SUM(chat_rate_1min * COALESCE(interval_minutes, 1)), 0)::BIGINT AS total_chat_messages,
+                COALESCE(AVG(chat_rate_1min), 0) AS avg_chat_rate
             FROM stats_with_interval
             WHERE viewer_count IS NOT NULL
                 AND channel_name IS NOT NULL
@@ -373,7 +423,14 @@ pub fn get_game_analytics(
             gs.hours_broadcasted,
             gs.average_ccu,
             gs.unique_broadcasters,
-            tc.top_channel
+            tc.top_channel,
+            gs.total_chat_messages,
+            gs.avg_chat_rate,
+            CASE 
+                WHEN gs.minutes_watched > 0 
+                THEN (gs.total_chat_messages::DOUBLE / gs.minutes_watched::DOUBLE) * 1000.0
+                ELSE 0.0
+            END as engagement_rate
         FROM game_stats gs
         LEFT JOIN top_channels tc ON gs.category = tc.category
         ORDER BY gs.minutes_watched DESC
@@ -382,13 +439,19 @@ pub fn get_game_analytics(
 
     let mut stmt = conn.prepare(&sql)?;
     let results: Vec<GameAnalytics> = utils::query_map_with_params(&mut stmt, &params, |row| {
+        let top_channel_login = row.get::<_, String>(5).unwrap_or_default();
         Ok(GameAnalytics {
+            game_id: String::new(), // Old implementation doesn't have game_id
             category: row.get::<_, String>(0)?,
             minutes_watched: row.get::<_, i64>(1)?,
             hours_broadcasted: row.get::<_, f64>(2)?,
             average_ccu: row.get::<_, f64>(3)?,
             unique_broadcasters: row.get::<_, i32>(4)?,
-            top_channel: row.get::<_, Option<String>>(5)?,
+            top_channel: top_channel_login.clone(),
+            top_channel_login,
+            total_chat_messages: row.get::<_, i64>(6)?,
+            avg_chat_rate: row.get::<_, f64>(7)?,
+            engagement_rate: row.get::<_, f64>(8)?,
         })
     })?
     .collect::<Result<Vec<_>, _>>()?;
@@ -397,7 +460,19 @@ pub fn get_game_analytics(
 }
 
 /// カテゴリ一覧を取得（MinutesWatched降順）
+///
+/// AggregationRepositoryを使用してカテゴリを取得します。
 pub fn list_categories(
+    conn: &Connection,
+    start_time: Option<&str>,
+    end_time: Option<&str>,
+) -> Result<Vec<String>, duckdb::Error> {
+    AggregationRepository::list_categories(conn, start_time, end_time)
+}
+
+/// カテゴリ一覧を取得（旧実装 - 使用しない）
+#[allow(dead_code)]
+fn list_categories_old(
     conn: &Connection,
     start_time: Option<&str>,
     end_time: Option<&str>,
@@ -454,40 +529,11 @@ pub fn list_categories(
 }
 
 /// データ可用性情報を取得
+///
+/// StreamStatsRepositoryを使用してデータ可用性を取得します。
 pub fn get_data_availability(conn: &Connection) -> Result<DataAvailability, duckdb::Error> {
-    // パフォーマンス最適化: 別々のクエリに分割してインデックスを使用
-
-    // MIN(collected_at) - インデックスを使用
-    let first_record: String = conn
-        .query_row(
-            "SELECT MIN(collected_at)::VARCHAR FROM stream_stats WHERE collected_at IS NOT NULL",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or_else(|_| String::new());
-
-    // MAX(collected_at) - インデックスを使用
-    let last_record: String = conn
-        .query_row(
-            "SELECT MAX(collected_at)::VARCHAR FROM stream_stats WHERE collected_at IS NOT NULL",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or_else(|_| String::new());
-
-    // COUNT DISTINCT DATE - 集計が必要
-    let total_days_with_data: i64 = conn
-        .query_row(
-            "SELECT COUNT(DISTINCT DATE(collected_at)) FROM stream_stats WHERE collected_at IS NOT NULL",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(0);
-
-    // COUNT(*) - 全件カウント（これは避けられない）
-    let total_records: i64 = conn
-        .query_row("SELECT COUNT(*) FROM stream_stats", [], |row| row.get(0))
-        .unwrap_or(0);
+    let (first_record, last_record, total_days_with_data, total_records) =
+        StreamStatsRepository::get_data_availability(conn)?;
 
     Ok(DataAvailability {
         first_record,
@@ -497,8 +543,21 @@ pub fn get_data_availability(conn: &Connection) -> Result<DataAvailability, duck
     })
 }
 
-/// ゲーム別日次統計を取得
+/// ゲーム別日次統計を取得（game_idベース）
+///
+/// StreamStatsRepositoryを使用して日次統計を取得します。
 pub fn get_game_daily_stats(
+    conn: &Connection,
+    game_id: &str,
+    start_time: &str,
+    end_time: &str,
+) -> Result<Vec<DailyStats>, duckdb::Error> {
+    StreamStatsRepository::get_game_daily_stats(conn, game_id, start_time, end_time)
+}
+
+/// ゲーム別日次統計を取得（旧実装 - 使用しない）
+#[allow(dead_code)]
+fn get_game_daily_stats_old(
     conn: &Connection,
     category: &str,
     start_time: &str,
@@ -573,7 +632,20 @@ pub fn get_game_daily_stats(
 }
 
 /// チャンネル別日次統計を取得
+///
+/// StreamStatsRepositoryを使用して日次統計を取得します。
 pub fn get_channel_daily_stats(
+    conn: &Connection,
+    channel_id: i64,
+    start_time: &str,
+    end_time: &str,
+) -> Result<Vec<DailyStats>, duckdb::Error> {
+    StreamStatsRepository::get_channel_daily_stats(conn, channel_id, start_time, end_time)
+}
+
+/// チャンネル別日次統計を取得（旧実装 - 使用しない）
+#[allow(dead_code)]
+fn get_channel_daily_stats_old(
     conn: &Connection,
     channel_id: i64,
     start_time: &str,
@@ -581,7 +653,7 @@ pub fn get_channel_daily_stats(
 ) -> Result<Vec<DailyStats>, duckdb::Error> {
     let sql = r#"
         WITH channel_lookup AS (
-            SELECT channel_id FROM channels WHERE id = ? AND platform = 'twitch'
+            SELECT channel_name FROM channels WHERE id = ? AND platform = 'twitch'
         ),
         stats_with_interval AS (
             SELECT 

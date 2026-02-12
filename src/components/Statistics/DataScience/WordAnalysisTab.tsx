@@ -1,12 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
-import type { WordFrequencyResult, EmoteAnalysisResult, MessageLengthStats } from '../../../types';
 import { BarChart } from '../../common/charts/BarChart';
 import { LineChart } from '../../common/charts/LineChart';
-import { LoadingSpinner } from '../../common/LoadingSpinner';
+import { StatsDashboardSkeleton } from '../../common/Skeleton';
+import { getWordFrequency, getEmoteAnalysis, getMessageLengthStats } from '../../../api/statistics';
 
 interface WordAnalysisTabProps {
-  channelId: number | null;
+  channelId: number | undefined;
   startTime: string;
   endTime: string;
 }
@@ -15,45 +14,65 @@ const WordAnalysisTab = ({ channelId, startTime, endTime }: WordAnalysisTabProps
   // Word Frequency Query
   const { data: wordData, isLoading: wordLoading } = useQuery({
     queryKey: ['wordFrequency', channelId, startTime, endTime],
-    queryFn: async () => {
-      return await invoke<WordFrequencyResult>('get_word_frequency_analysis', {
-        channelId,
-        streamId: null,
-        startTime,
-        endTime,
-        limit: 50,
-      });
-    },
+    queryFn: () => getWordFrequency({
+      channelId: channelId!,
+      streamId: undefined,
+      startTime,
+      endTime,
+      limit: 50,
+    }),
+    enabled: !!channelId,
   });
 
   // Emote Analysis Query
   const { data: emoteData, isLoading: emoteLoading } = useQuery({
     queryKey: ['emoteAnalysis', channelId, startTime, endTime],
-    queryFn: async () => {
-      return await invoke<EmoteAnalysisResult>('get_emote_analysis', {
-        channelId,
-        streamId: null,
-        startTime,
-        endTime,
-      });
-    },
+    queryFn: () => getEmoteAnalysis({
+      channelId: channelId!,
+      streamId: undefined,
+      startTime,
+      endTime,
+    }),
+    enabled: !!channelId,
   });
 
   // Message Length Stats Query
   const { data: lengthData, isLoading: lengthLoading } = useQuery({
     queryKey: ['messageLengthStats', channelId, startTime, endTime],
-    queryFn: async () => {
-      return await invoke<MessageLengthStats>('get_message_length_stats', {
-        channelId,
-        streamId: null,
-        startTime,
-        endTime,
-      });
-    },
+    queryFn: () => getMessageLengthStats({
+      channelId: channelId!,
+      streamId: undefined,
+      startTime,
+      endTime,
+    }),
+    enabled: !!channelId,
   });
 
+  // チャンネル選択チェック
+  if (channelId === undefined) {
+    return (
+      <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-6">
+        <div className="flex items-start">
+          <div className="flex-shrink-0">
+            <svg className="h-6 w-6 text-yellow-600 dark:text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <div className="ml-3">
+            <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+              チャンネルを選択してください
+            </h3>
+            <p className="mt-2 text-sm text-yellow-700 dark:text-yellow-300">
+              ワード分析には特定のチャンネルを選択する必要があります。上部のチャンネル選択ドロップダウンから分析対象のチャンネルを選んでください。
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (wordLoading || emoteLoading || lengthLoading) {
-    return <LoadingSpinner />;
+    return <StatsDashboardSkeleton cardCount={4} chartCount={3} />;
   }
 
   return (
@@ -80,7 +99,7 @@ const WordAnalysisTab = ({ channelId, startTime, endTime }: WordAnalysisTabProps
             <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4">
               <p className="text-sm text-purple-600 dark:text-purple-400">平均単語/メッセージ</p>
               <p className="text-2xl font-bold text-purple-900 dark:text-purple-100">
-                {wordData.avgWordsPerMessage.toFixed(2)}
+                {(wordData.avgWordsPerMessage || 0).toFixed(2)}
               </p>
             </div>
             <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4">
@@ -141,7 +160,7 @@ const WordAnalysisTab = ({ channelId, startTime, endTime }: WordAnalysisTabProps
                       {word.count.toLocaleString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                      {word.percentage.toFixed(2)}%
+                      {(word.percentage || 0).toFixed(2)}%
                     </td>
                   </tr>
                 ))}
@@ -167,7 +186,7 @@ const WordAnalysisTab = ({ channelId, startTime, endTime }: WordAnalysisTabProps
             <div className="bg-pink-50 dark:bg-pink-900/20 rounded-lg p-4">
               <p className="text-sm text-pink-600 dark:text-pink-400">エモート/メッセージ</p>
               <p className="text-2xl font-bold text-pink-900 dark:text-pink-100">
-                {emoteData.emotePerMessageRate.toFixed(2)}
+                {(emoteData.emotePerMessageRate || 0).toFixed(2)}
               </p>
             </div>
           </div>
@@ -220,19 +239,19 @@ const WordAnalysisTab = ({ channelId, startTime, endTime }: WordAnalysisTabProps
             <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
               <p className="text-sm text-gray-600 dark:text-gray-400">平均</p>
               <p className="text-xl font-bold text-gray-900 dark:text-gray-100">
-                {lengthData.avgLength.toFixed(1)}
+                {(lengthData.avgLength || 0).toFixed(1)}
               </p>
             </div>
             <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
               <p className="text-sm text-gray-600 dark:text-gray-400">中央値</p>
               <p className="text-xl font-bold text-gray-900 dark:text-gray-100">
-                {lengthData.medianLength.toFixed(1)}
+                {(lengthData.medianLength || 0).toFixed(1)}
               </p>
             </div>
             <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
               <p className="text-sm text-gray-600 dark:text-gray-400">標準偏差</p>
               <p className="text-xl font-bold text-gray-900 dark:text-gray-100">
-                {lengthData.stdDev.toFixed(1)}
+                {(lengthData.stdDev || 0).toFixed(1)}
               </p>
             </div>
             <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">

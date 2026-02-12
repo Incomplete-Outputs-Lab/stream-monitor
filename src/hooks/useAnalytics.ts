@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
+import * as statisticsApi from '../api/statistics';
 
 interface BroadcasterAnalyticsFilters {
   channelId?: number;
@@ -21,7 +21,7 @@ export function useBroadcasterAnalytics(
   return useQuery({
     queryKey: ['broadcasterAnalytics', startDate, endDate, filters],
     queryFn: () =>
-      invoke('get_broadcaster_analytics', {
+      statisticsApi.getBroadcasterAnalytics({
         channelId: filters?.channelId,
         startTime: startDate,
         endTime: endDate,
@@ -40,7 +40,7 @@ export function useGameAnalytics(
   return useQuery({
     queryKey: ['gameAnalytics', startDate, endDate, filters],
     queryFn: () =>
-      invoke('get_game_analytics', {
+      statisticsApi.getGameAnalytics({
         category: filters?.category,
         startTime: startDate,
         endTime: endDate,
@@ -59,7 +59,7 @@ export function useGameDailyStats(
   return useQuery({
     queryKey: ['gameDailyStats', category, startDate, endDate],
     queryFn: () =>
-      invoke('get_game_daily_stats', {
+      statisticsApi.getGameDailyStats({
         category,
         startTime: startDate,
         endTime: endDate,
@@ -78,7 +78,7 @@ export function useChannelDailyStats(
   return useQuery({
     queryKey: ['channelDailyStats', channelId, startDate, endDate],
     queryFn: () =>
-      invoke('get_channel_daily_stats', {
+      statisticsApi.getChannelDailyStats({
         channelId,
         startTime: startDate,
         endTime: endDate,
@@ -92,6 +92,6 @@ export function useChannelDailyStats(
 export function useDataAvailability() {
   return useQuery({
     queryKey: ['dataAvailability'],
-    queryFn: () => invoke('get_data_availability'),
+    queryFn: () => statisticsApi.getDataAvailability(),
   });
 }

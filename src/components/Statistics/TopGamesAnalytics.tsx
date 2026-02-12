@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
-import { GameAnalytics, DataAvailability } from '../../types';
 import { HorizontalBarChart, PieChart, BubbleChart } from '../common/charts';
 import { DataAvailabilityBanner } from './DataAvailabilityBanner';
+import { StatCardSkeleton, ChartSkeleton, TableSkeleton } from '../common/Skeleton';
+import { useSortableData } from '../../hooks/useSortableData';
+import { getGameAnalytics, getDataAvailability } from '../../api/statistics';
 
 interface TopGamesAnalyticsProps {
   startTime?: string;
@@ -18,28 +19,41 @@ export default function TopGamesAnalytics({
   // データ可用性情報を取得
   const { data: availability } = useQuery({
     queryKey: ['data-availability'],
-    queryFn: async () => {
-      return await invoke<DataAvailability>('get_data_availability');
-    },
+    queryFn: getDataAvailability,
   });
 
   // トップゲーム統計を取得（全ゲーム）
   const { data: gameAnalytics, isLoading, error } = useQuery({
     queryKey: ['top-games-analytics', startTime, endTime],
-    queryFn: async () => {
-      const result = await invoke<GameAnalytics[]>('get_game_analytics', {
-        category: undefined,
-        startTime,
-        endTime,
-      });
-      return result;
-    },
+    queryFn: () => getGameAnalytics({
+      category: undefined,
+      startTime,
+      endTime,
+    }),
+  });
+
+  // ソート機能を追加（hooksは常に同じ順序で呼ぶ必要がある）
+  const { sortedItems, sortConfig, requestSort } = useSortableData(gameAnalytics || [], {
+    key: 'minutes_watched',
+    direction: 'desc',
   });
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center p-8">
-        <div className="text-gray-400">Loading top games analytics...</div>
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <StatCardSkeleton key={i} />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <ChartSkeleton height={800} />
+          <div className="space-y-6">
+            <ChartSkeleton height={300} />
+            <ChartSkeleton height={400} />
+          </div>
+        </div>
+        <TableSkeleton rows={30} columns={9} />
       </div>
     );
   }
@@ -66,13 +80,17 @@ export default function TopGamesAnalytics({
   };
 
   const formatHours = (hours: number): string => {
-    return hours.toFixed(1);
+    return (hours || 0).toFixed(1);
+  };
+
+  const formatDecimal = (num: number): string => {
+    return (num || 0).toFixed(2);
   };
 
   // Top 30 for ranking
-  const top30Games = gameAnalytics.slice(0, 30);
+  const top30Games = sortedItems.slice(0, 30);
 
-  // Top 10 for pie chart
+  // Top 10 for pie chart (元のソート順を使用)
   const top10Games = gameAnalytics.slice(0, 10);
   const totalMW = gameAnalytics.reduce((sum, game) => sum + game.minutes_watched, 0);
 
@@ -87,6 +105,12 @@ export default function TopGamesAnalytics({
     name: game.category,
     value: game.minutes_watched,
   }));
+
+  // ソート表示用のヘルパー
+  const getSortIndicator = (key: string) => {
+    if (sortConfig.key !== key) return null;
+    return sortConfig.direction === 'asc' ? ' ↑' : ' ↓';
+  };
 
   // バブルチャート用データ
   const bubbleData = top30Games.map(game => ({
@@ -129,6 +153,12 @@ export default function TopGamesAnalytics({
           <p className="text-sm text-gray-500 dark:text-gray-400">Avg CCU</p>
           <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
             {formatNumber(gameAnalytics.reduce((sum, g) => sum + g.average_ccu, 0) / gameAnalytics.length)}
+          </p>
+        </div>
+        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+          <p className="text-sm text-gray-500 dark:text-gray-400">Avg Chat Rate</p>
+          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+            {formatDecimal(gameAnalytics.reduce((sum, g) => sum + g.avg_chat_rate, 0) / gameAnalytics.length)}
           </p>
         </div>
       </div>
@@ -189,23 +219,47 @@ export default function TopGamesAnalytics({
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Rank
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Game Title
+                <th
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-300"
+                  onClick={() => requestSort('category')}
+                >
+                  Game Title{getSortIndicator('category')}
                 </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Minutes Watched
+                <th
+                  className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-300"
+                  onClick={() => requestSort('minutes_watched')}
+                >
+                  Minutes Watched{getSortIndicator('minutes_watched')}
                 </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Hours Broadcasted
+                <th
+                  className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-300"
+                  onClick={() => requestSort('hours_broadcasted')}
+                >
+                  Hours Broadcasted{getSortIndicator('hours_broadcasted')}
                 </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Avg CCU
+                <th
+                  className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-300"
+                  onClick={() => requestSort('average_ccu')}
+                >
+                  Avg CCU{getSortIndicator('average_ccu')}
                 </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Unique Broadcasters
+                <th
+                  className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-300"
+                  onClick={() => requestSort('avg_chat_rate')}
+                >
+                  Avg Chat Rate{getSortIndicator('avg_chat_rate')}
                 </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Exp Ad Value
+                <th
+                  className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-300"
+                  onClick={() => requestSort('unique_broadcasters')}
+                >
+                  Unique Broadcasters{getSortIndicator('unique_broadcasters')}
+                </th>
+                <th
+                  className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-300"
+                  onClick={() => requestSort('expected_ad_value')}
+                >
+                  Exp Ad Value{getSortIndicator('expected_ad_value')}
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Top Channel
@@ -213,7 +267,7 @@ export default function TopGamesAnalytics({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {gameAnalytics.map((game, index) => (
+              {sortedItems.map((game, index) => (
                 <tr
                   key={game.category}
                   className="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
@@ -233,6 +287,9 @@ export default function TopGamesAnalytics({
                   </td>
                   <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-gray-100">
                     {formatNumber(game.average_ccu)}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-gray-100">
+                    {formatDecimal(game.avg_chat_rate)}
                   </td>
                   <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-gray-100">
                     {game.unique_broadcasters}

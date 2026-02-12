@@ -1,8 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
-import type { TopChatter, ChatterBehaviorStats } from '../../../types';
 import { BarChart } from '../../common/charts';
-import { LoadingSpinner } from '../../common/LoadingSpinner';
+import { StatsDashboardSkeleton } from '../../common/Skeleton';
+import { getTopChatters, getChatterBehaviorStats } from '../../../api/statistics';
 
 interface ChatterBehaviorTabProps {
   channelId: number | null;
@@ -14,33 +13,51 @@ const ChatterBehaviorTab = ({ channelId, startTime, endTime }: ChatterBehaviorTa
   // Top Chatters
   const { data: topChatters, isLoading: chattersLoading } = useQuery({
     queryKey: ['topChatters', channelId, startTime, endTime],
-    queryFn: async () => {
-      const result = await invoke<TopChatter[]>('get_top_chatters', {
-        channelId,
-        streamId: null,
-        startTime,
-        endTime,
-        limit: 50,
-      });
-      return result;
-    },
+    queryFn: () => getTopChatters({
+      channelId: channelId ?? undefined,
+      startTime,
+      endTime,
+      limit: 50,
+    }),
+    enabled: !!channelId,
   });
 
   // Behavior Stats
   const { data: behaviorStats, isLoading: behaviorLoading } = useQuery({
     queryKey: ['chatterBehaviorStats', channelId, startTime, endTime],
-    queryFn: async () => {
-      const result = await invoke<ChatterBehaviorStats>('get_chatter_behavior_stats', {
-        channelId,
-        startTime,
-        endTime,
-      });
-      return result;
-    },
+    queryFn: () => getChatterBehaviorStats({
+      channelId: channelId ?? undefined,
+      startTime,
+      endTime,
+    }),
+    enabled: !!channelId,
   });
 
+  // チャンネル選択チェック
+  if (channelId === null) {
+    return (
+      <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-6">
+        <div className="flex items-start">
+          <div className="flex-shrink-0">
+            <svg className="h-6 w-6 text-yellow-600 dark:text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <div className="ml-3">
+            <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+              チャンネルを選択してください
+            </h3>
+            <p className="mt-2 text-sm text-yellow-700 dark:text-yellow-300">
+              チャット者行動分析には特定のチャンネルを選択する必要があります。上部のチャンネル選択ドロップダウンから分析対象のチャンネルを選んでください。
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (chattersLoading || behaviorLoading) {
-    return <LoadingSpinner />;
+    return <StatsDashboardSkeleton cardCount={4} chartCount={2} />;
   }
 
   return (
@@ -70,7 +87,7 @@ const ChatterBehaviorTab = ({ channelId, startTime, endTime }: ChatterBehaviorTa
             リピーター率
           </h3>
           <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">
-            {behaviorStats?.repeaterPercentage.toFixed(1) || 0}%
+            {(behaviorStats?.repeaterPercentage || 0).toFixed(1)}%
           </p>
         </div>
 
@@ -92,7 +109,7 @@ const ChatterBehaviorTab = ({ channelId, startTime, endTime }: ChatterBehaviorTa
         {topChatters && topChatters.length > 0 ? (
           <BarChart
             data={topChatters.slice(0, 20).map((c) => ({
-              user: c.userName,
+              user: c.displayName || c.userName,
               発言数: c.messageCount,
             }))}
             xKey="user"
@@ -138,12 +155,12 @@ const ChatterBehaviorTab = ({ channelId, startTime, endTime }: ChatterBehaviorTa
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                 {topChatters.map((chatter, index) => (
-                  <tr key={chatter.userName}>
+                  <tr key={chatter.userId || chatter.userName}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                       {index + 1}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
-                      {chatter.userName}
+                      {chatter.displayName || chatter.userName}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                       {chatter.messageCount.toLocaleString()}

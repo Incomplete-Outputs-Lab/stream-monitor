@@ -268,7 +268,7 @@ pub async fn recreate_database(app_handle: AppHandle) -> Result<DatabaseInitResu
     };
 
     // 新しいデータベース接続を取得（これで新しいDBが作成される）
-    match get_connection(&app_handle) {
+    match get_connection(&app_handle).await {
         Ok(conn) => {
             // 明示的にスキーマ初期化を実行
             match crate::database::schema::init_database(&conn) {
@@ -313,7 +313,7 @@ pub async fn get_database_init_status(
     db_manager: State<'_, DatabaseManager>,
 ) -> Result<DbInitStatus, String> {
     // データベース接続を試行して初期化状態を確認
-    match db_manager.get_connection() {
+    match db_manager.get_connection().await {
         Ok(_) => {
             // 接続成功 = 初期化済み
             Ok(DbInitStatus {

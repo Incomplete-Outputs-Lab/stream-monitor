@@ -1,11 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
-import type { ChatterScoreResult } from '../../../types';
 import { BarChart } from '../../common/charts/BarChart';
-import { LoadingSpinner } from '../../common/LoadingSpinner';
+import { StatsDashboardSkeleton } from '../../common/Skeleton';
+import { getChatterActivityScores } from '../../../api/statistics';
 
 interface ChatterScoreTabProps {
-  channelId: number | null;
+  channelId: number | undefined;
   startTime: string;
   endTime: string;
 }
@@ -13,19 +12,41 @@ interface ChatterScoreTabProps {
 const ChatterScoreTab = ({ channelId, startTime, endTime }: ChatterScoreTabProps) => {
   const { data, isLoading } = useQuery({
     queryKey: ['chatterActivityScores', channelId, startTime, endTime],
-    queryFn: async () => {
-      return await invoke<ChatterScoreResult>('get_chatter_activity_scores', {
-        channelId,
-        streamId: null,
-        startTime,
-        endTime,
-        limit: 50,
-      });
-    },
+    queryFn: () => getChatterActivityScores({
+      channelId: channelId!,
+      streamId: undefined,
+      startTime,
+      endTime,
+      limit: 50,
+    }),
+    enabled: !!channelId,
   });
 
+  // チャンネル選択チェック
+  if (channelId === null) {
+    return (
+      <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-6">
+        <div className="flex items-start">
+          <div className="flex-shrink-0">
+            <svg className="h-6 w-6 text-yellow-600 dark:text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <div className="ml-3">
+            <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+              チャンネルを選択してください
+            </h3>
+            <p className="mt-2 text-sm text-yellow-700 dark:text-yellow-300">
+              チャッタースコア分析には特定のチャンネルを選択する必要があります。上部のチャンネル選択ドロップダウンから分析対象のチャンネルを選んでください。
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (isLoading) {
-    return <LoadingSpinner />;
+    return <StatsDashboardSkeleton cardCount={2} chartCount={1} />;
   }
 
   if (!data || data.scores.length === 0) {
@@ -140,7 +161,7 @@ const ChatterScoreTab = ({ channelId, startTime, endTime }: ChatterScoreTabProps
                     </div>
                   </td>
                   <td className={`px-4 py-3 whitespace-nowrap text-sm font-bold ${getScoreColor(chatter.score)}`}>
-                    {chatter.score.toFixed(1)}
+                    {(chatter.score || 0).toFixed(1)}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                     {chatter.messageCount.toLocaleString()}

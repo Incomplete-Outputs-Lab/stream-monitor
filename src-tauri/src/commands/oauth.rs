@@ -1,7 +1,7 @@
 use crate::config::settings::SettingsManager;
 use crate::error::ResultExt;
 use crate::oauth::twitch::{DeviceAuthStatus, TwitchOAuth};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 /// Twitch Device Code Grant Flow を開始
 #[tauri::command]
@@ -49,4 +49,66 @@ pub async fn poll_twitch_device_token(
         .poll_for_device_token(&device_code, interval, Some(app_handle))
         .await
         .map_err(|e| format!("Token polling failed: {}", e))
+}
+
+/// Twitch Collector を再初期化（トークン設定後に呼び出す）
+#[tauri::command]
+pub async fn reinitialize_twitch_collector(
+    app_handle: AppHandle,
+    db_manager: tauri::State<'_, crate::database::DatabaseManager>,
+    poller: tauri::State<
+        '_,
+        std::sync::Arc<tokio::sync::Mutex<crate::collectors::poller::ChannelPoller>>,
+    >,
+) -> Result<(), String> {
+    use crate::collectors::twitch::TwitchCollector;
+    use crate::logger::AppLogger;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    eprintln!("[Reinit] Reinitializing Twitch collector after authentication");
+
+    // 設定を再読み込み
+    let settings = SettingsManager::load_settings(&app_handle)
+        .config_context("load settings")
+        .map_err(|e| e.to_string())?;
+
+    let client_id = settings
+        .twitch
+        .client_id
+        .ok_or_else(|| "Twitch Client ID not configured".to_string())?;
+
+    eprintln!("[Reinit] Client ID loaded: {}", client_id);
+
+    // 新しいTwitchCollectorを作成
+    let db_conn = db_manager
+        .get_connection()
+        .await
+        .db_context("get database connection")
+        .map_err(|e| e.to_string())?;
+    let db_conn = Arc::new(Mutex::new(db_conn));
+
+    let logger = app_handle.state::<AppLogger>();
+    let collector = Arc::new(TwitchCollector::new_with_app(
+        client_id.clone(),
+        None,
+        app_handle.clone(),
+        db_conn,
+        Arc::new(logger.inner().clone()),
+    ));
+
+    eprintln!("[Reinit] TwitchCollector created, initializing IRC...");
+
+    // IRC初期化
+    collector.initialize_irc().await;
+
+    eprintln!("[Reinit] IRC initialized, registering collector...");
+
+    // ChannelPollerに登録（既存を上書き）
+    let mut poller_guard = poller.lock().await;
+    poller_guard.register_twitch_collector(collector);
+
+    eprintln!("[Reinit] Twitch collector reinitialized successfully");
+
+    Ok(())
 }

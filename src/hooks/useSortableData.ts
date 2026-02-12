@@ -54,11 +54,16 @@ export function useSortableData<T>(
       if (aValue == null) return 1;
       if (bValue == null) return -1;
 
-      // 数値比較
-      if (typeof aValue === 'number' && typeof bValue === 'number') {
-        return sortConfig.direction === 'asc' 
-          ? aValue - bValue 
-          : bValue - aValue;
+      // 文字列を数値に変換して比較を試みる（BIGINT対応）
+      const aNum = typeof aValue === 'string' ? parseFloat(aValue) : aValue;
+      const bNum = typeof bValue === 'string' ? parseFloat(bValue) : bValue;
+
+      // 数値として比較可能な場合
+      if (typeof aNum === 'number' && !isNaN(aNum) &&
+          typeof bNum === 'number' && !isNaN(bNum)) {
+        return sortConfig.direction === 'asc'
+          ? aNum - bNum
+          : bNum - aNum;
       }
 
       // 文字列比較（大文字小文字を区別しない）

@@ -1,10 +1,11 @@
 use crate::collectors::auto_discovery::AutoDiscoveryPoller;
 use crate::config::settings::{AutoDiscoverySettings, SettingsManager};
 use crate::constants::database as db_constants;
-use crate::database::DatabaseManager;
+use crate::database::{repositories::ChannelRepository, DatabaseManager};
 use crate::error::ResultExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 use tokio::sync::Mutex;
@@ -27,9 +28,21 @@ pub async fn save_auto_discovery_settings(
     app_handle: AppHandle,
     mut settings: AutoDiscoverySettings,
     auto_discovery_poller: State<'_, Arc<Mutex<Option<AutoDiscoveryPoller>>>>,
+    channel_poller: State<'_, Arc<Mutex<crate::collectors::poller::ChannelPoller>>>,
+    db_manager: State<'_, DatabaseManager>,
 ) -> Result<(), String> {
     // max_streamsのバリデーション（1-500の範囲に制限）
     settings.max_streams = settings.max_streams.clamp(1, 500);
+
+    // game_idsのバリデーション（最大100件に制限）
+    if settings.filters.game_ids.len() > 100 {
+        return Err("ゲームIDは最大100件までです".to_string());
+    }
+
+    // languagesのバリデーション（最大10件に制限）
+    if settings.filters.languages.len() > 10 {
+        return Err("言語は最大10件までです".to_string());
+    }
 
     // 設定をロード
     let mut app_settings = SettingsManager::load_settings(&app_handle)
@@ -37,11 +50,6 @@ pub async fn save_auto_discovery_settings(
         .map_err(|e| e.to_string())?;
 
     // 自動発見設定を更新
-    let was_enabled = app_settings
-        .auto_discovery
-        .as_ref()
-        .map(|s| s.enabled)
-        .unwrap_or(false);
     let is_enabled = settings.enabled;
 
     app_settings.auto_discovery = Some(settings);
@@ -60,26 +68,50 @@ pub async fn save_auto_discovery_settings(
         eprintln!("[AutoDiscovery] Cache cleared due to settings change");
     }
 
-    // ポーラーの状態を更新
-    let poller_guard = auto_discovery_poller.lock().await;
-    if let Some(poller) = poller_guard.as_ref() {
-        if is_enabled && !was_enabled {
-            // 有効化された場合は開始
-            poller
+    // ポーラーを停止（存在する場合）
+    {
+        let mut poller_guard = auto_discovery_poller.lock().await;
+        if let Some(ref poller) = *poller_guard {
+            poller.stop().await;
+        }
+
+        // 新しいTwitchクライアントを取得（最新のトークンを使用）
+        let twitch_api_client = if app_settings.twitch.client_id.is_some() {
+            let channel_poller_guard = channel_poller.lock().await;
+            channel_poller_guard
+                .get_twitch_collector()
+                .map(|tc| Arc::clone(tc.get_api_client()))
+        } else {
+            None
+        };
+
+        eprintln!(
+            "[AutoDiscovery] Reinitializing AutoDiscoveryPoller with Twitch client: {}",
+            if twitch_api_client.is_some() {
+                "available"
+            } else {
+                "unavailable"
+            }
+        );
+
+        // 新しいAutoDiscoveryPollerを作成
+        let new_discovery_poller = AutoDiscoveryPoller::new(
+            twitch_api_client,
+            Arc::new(db_manager.inner().clone()),
+            app_handle.clone(),
+        );
+
+        // 設定が有効ならstart
+        if is_enabled {
+            new_discovery_poller
                 .start()
                 .await
                 .map_err(|e| format!("Auto-discovery start failed: {}", e))?;
-        } else if !is_enabled && was_enabled {
-            // 無効化された場合は停止
-            poller.stop().await;
-        } else if is_enabled {
-            // 設定が変更された場合は再起動
-            poller.stop().await;
-            poller
-                .start()
-                .await
-                .map_err(|e| format!("Auto-discovery restart failed: {}", e))?;
+            eprintln!("[AutoDiscovery] Started successfully");
         }
+
+        // 状態を更新
+        *poller_guard = Some(new_discovery_poller);
     }
 
     Ok(())
@@ -90,6 +122,8 @@ pub async fn save_auto_discovery_settings(
 pub async fn toggle_auto_discovery(
     app_handle: AppHandle,
     auto_discovery_poller: State<'_, Arc<Mutex<Option<AutoDiscoveryPoller>>>>,
+    channel_poller: State<'_, Arc<Mutex<crate::collectors::poller::ChannelPoller>>>,
+    db_manager: State<'_, DatabaseManager>,
 ) -> Result<bool, String> {
     // 設定をロード
     let mut settings = SettingsManager::load_settings(&app_handle)
@@ -120,17 +154,66 @@ pub async fn toggle_auto_discovery(
         .config_context("save settings")
         .map_err(|e| e.to_string())?;
 
-    // ポーラーの状態を更新
-    let poller_guard = auto_discovery_poller.lock().await;
-    if let Some(poller) = poller_guard.as_ref() {
+    eprintln!(
+        "[AutoDiscovery] Toggle: {} -> {}",
+        current_enabled, new_enabled
+    );
+
+    // 設定変更時はキャッシュをクリア
+    if new_enabled {
+        let cache: tauri::State<'_, Arc<crate::DiscoveredStreamsCache>> = app_handle.state();
+        let mut streams_lock = cache.streams.lock().await;
+        streams_lock.clear();
+        drop(streams_lock);
+        eprintln!("[AutoDiscovery] Cache cleared due to toggle");
+    }
+
+    // ポーラーを停止（存在する場合）してから再初期化
+    {
+        let mut poller_guard = auto_discovery_poller.lock().await;
+
+        // 既存のポーラーを停止
+        if let Some(ref poller) = *poller_guard {
+            poller.stop().await;
+        }
+
+        // 新しいTwitchクライアントを取得（最新のトークンを使用）
+        let twitch_api_client = if settings.twitch.client_id.is_some() {
+            let channel_poller_guard = channel_poller.lock().await;
+            channel_poller_guard
+                .get_twitch_collector()
+                .map(|tc| Arc::clone(tc.get_api_client()))
+        } else {
+            None
+        };
+
+        eprintln!(
+            "[AutoDiscovery] Reinitializing AutoDiscoveryPoller with Twitch client: {}",
+            if twitch_api_client.is_some() {
+                "available"
+            } else {
+                "unavailable"
+            }
+        );
+
+        // 新しいAutoDiscoveryPollerを作成
+        let new_discovery_poller = AutoDiscoveryPoller::new(
+            twitch_api_client,
+            Arc::new(db_manager.inner().clone()),
+            app_handle.clone(),
+        );
+
+        // 設定が有効ならstart
         if new_enabled {
-            poller
+            new_discovery_poller
                 .start()
                 .await
                 .map_err(|e| format!("Auto-discovery start failed: {}", e))?;
-        } else {
-            poller.stop().await;
+            eprintln!("[AutoDiscovery] Started successfully");
         }
+
+        // 状態を更新
+        *poller_guard = Some(new_discovery_poller);
     }
 
     Ok(new_enabled)
@@ -143,35 +226,65 @@ pub async fn get_discovered_streams(
     app_handle: AppHandle,
     db_manager: State<'_, DatabaseManager>,
 ) -> Result<Vec<DiscoveredStreamInfo>, String> {
+    eprintln!("[Discovery] === get_discovered_streams called ===");
+
+    // 自動発見が有効かチェック
+    let settings = SettingsManager::load_settings(&app_handle)
+        .config_context("load settings")
+        .map_err(|e| e.to_string())?;
+
+    let auto_discovery_enabled = settings
+        .auto_discovery
+        .as_ref()
+        .map(|s| s.enabled)
+        .unwrap_or(false);
+
+    eprintln!(
+        "[Discovery] Auto-discovery enabled: {}",
+        auto_discovery_enabled
+    );
+
+    // 自動発見が無効の場合は即座に空配列を返す
+    if !auto_discovery_enabled {
+        eprintln!("[Discovery] Auto-discovery is disabled, returning empty list");
+        return Ok(Vec::new());
+    }
+
+    // 初期化待機（最大2秒 - デッドロック防止のため短く設定）
+    let cache: tauri::State<'_, Arc<crate::DiscoveredStreamsCache>> = app_handle.state();
+    let is_initialized = cache.initialized.load(Ordering::SeqCst);
+
+    eprintln!("[Discovery] Cache initialized: {}", is_initialized);
+
+    if !is_initialized {
+        // 初期化未完了の場合は即座に空配列を返す
+        // （discovered-streams-updatedイベントでフロントエンドが自動更新される）
+        eprintln!("[Discovery] Auto-discovery not yet initialized, returning empty list");
+        return Ok(Vec::new());
+    }
+
     // 1. 既に登録されているチャンネルのtwitch_user_idを取得
     let registered_user_ids: HashSet<i64> = {
         let conn = db_manager
             .get_connection()
+            .await
             .db_context("get connection")
             .map_err(|e| e.to_string())?;
 
-        let mut stmt = conn
-            .prepare(
-                "SELECT twitch_user_id FROM channels WHERE platform = 'twitch' AND twitch_user_id IS NOT NULL",
-            )
-            .db_context("prepare query")
-            .map_err(|e| e.to_string())?;
-
-        let ids: Vec<i64> = stmt
-            .query_map([], |row| row.get(0))
-            .db_context("query")
+        ChannelRepository::get_all_twitch_user_ids(&conn)
+            .db_context("get twitch user ids")
             .map_err(|e| e.to_string())?
-            .filter_map(|r| r.ok())
-            .collect();
-
-        ids.into_iter().collect()
+            .into_iter()
+            .collect()
     };
 
-    // 2. メモリキャッシュから配信を取得
-    let cache: tauri::State<'_, Arc<crate::DiscoveredStreamsCache>> = app_handle.state();
-    let streams_lock = cache.streams.lock().await;
-    let streams = streams_lock.clone();
-    drop(streams_lock);
+    // 2. メモリキャッシュから配信を取得（既に取得済みのcache変数を再利用）
+    let streams = {
+        let streams_lock = cache.streams.lock().await;
+        let streams = streams_lock.clone();
+        drop(streams_lock);
+        streams
+    };
 
     // 3. 既に登録されているチャンネルを除外
     let filtered_streams: Vec<DiscoveredStreamInfo> = streams
@@ -314,31 +427,29 @@ pub async fn promote_discovered_channel(
     let already_exists = {
         let conn = db_manager
             .get_connection()
+            .await
             .db_context("get connection")
             .map_err(|e| e.to_string())?;
 
-        let mut stmt = conn
-            .prepare("SELECT COUNT(*) FROM channels WHERE platform = 'twitch' AND channel_id = ?")
-            .db_context("prepare query")
-            .map_err(|e| e.to_string())?;
-        let count: i64 = stmt
-            .query_row([&login_name], |row| row.get(0))
-            .db_context("query")
-            .map_err(|e| e.to_string())?;
-
-        count > 0
+        ChannelRepository::exists(&conn, "twitch", &login_name)
+            .db_context("check channel exists")
+            .map_err(|e| e.to_string())?
     }; // conn と stmt はここでスコープを抜けてdropされる
 
     if already_exists {
         // 既に登録されている場合はis_auto_discoveredフラグを更新
         let conn = db_manager
             .get_connection()
+            .await
             .db_context("get connection")
             .map_err(|e| e.to_string())?;
 
-        conn.execute(
-            "UPDATE channels SET is_auto_discovered = false, discovered_at = NULL, twitch_user_id = ? WHERE platform = 'twitch' AND channel_id = ?",
-            duckdb::params![stream_info.twitch_user_id, &login_name],
+        ChannelRepository::update_auto_discovered(
+            &conn,
+            "twitch",
+            &login_name,
+            false,
+            Some(stream_info.twitch_user_id),
         )
         .db_context("update channel")
         .map_err(|e| e.to_string())?;
@@ -374,16 +485,23 @@ pub async fn promote_discovered_channel(
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscoveredStreamInfo {
     pub id: i64,
-    pub twitch_user_id: i64, // 不変なTwitch user ID（内部識別子）
+    pub twitch_user_id: i64, // 不変なTwitch user ID（内部識別者）
     pub channel_id: String,  // login（表示用）
     pub channel_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub profile_image_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub discovered_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub viewer_count: Option<i32>,
-    pub follower_count: Option<i32>,
+    pub follower_count: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub broadcaster_type: Option<String>,
 }
 

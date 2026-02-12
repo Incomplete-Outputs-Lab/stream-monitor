@@ -57,6 +57,13 @@ pub struct AutoDiscoverySettings {
     pub filters: AutoDiscoveryFilters,
 }
 
+fn deserialize_min_viewers<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<u32>::deserialize(deserializer).map(|opt| opt.unwrap_or(0))
+}
+
 /// 自動発見フィルター設定
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AutoDiscoveryFilters {
@@ -66,8 +73,9 @@ pub struct AutoDiscoveryFilters {
     /// フィルターする言語コード（例: ja, en）（最大100件）
     #[serde(default)]
     pub languages: Vec<String>,
-    /// 最小視聴者数
-    pub min_viewers: Option<u32>,
+    /// 最小視聴者数（0の場合はフィルターなし）
+    #[serde(default, deserialize_with = "deserialize_min_viewers")]
+    pub min_viewers: u32,
 }
 
 impl Default for AutoDiscoverySettings {
@@ -96,7 +104,9 @@ fn default_scraping_settings() -> Option<YouTubeScrapingSettings> {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            twitch: TwitchSettings { client_id: None },
+            twitch: TwitchSettings {
+                client_id: Some("rxyno75ir81wkq3xck0bfeen1a0klh".to_string()),
+            },
             youtube: YouTubeSettings {
                 client_id: None,
                 client_secret: None,

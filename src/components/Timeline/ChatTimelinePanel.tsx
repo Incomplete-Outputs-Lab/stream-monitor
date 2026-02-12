@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import type { ChatMessage } from '../../types';
-import { LoadingSpinner } from '../common/LoadingSpinner';
+import { ChatMessagesSkeleton } from '../common/Skeleton';
 
 interface ChatTimelinePanelProps {
   streamId: number;
@@ -20,12 +20,21 @@ const ChatTimelinePanel: React.FC<ChatTimelinePanelProps> = ({
   const { data: messages, isLoading } = useQuery({
     queryKey: ['timelineChatMessages', streamId, channelId, currentPage],
     queryFn: async () => {
-      const result = await invoke<ChatMessage[]>('get_chat_messages', {
+      console.log('[ChatTimelinePanel] Fetching messages with params:', {
         streamId,
         channelId,
         limit: messagesPerPage,
         offset: (currentPage - 1) * messagesPerPage,
       });
+      const result = await invoke<ChatMessage[]>('get_chat_messages', {
+        query: {
+          streamId,
+          channelId,
+          limit: messagesPerPage,
+          offset: (currentPage - 1) * messagesPerPage,
+        }
+      });
+      console.log('[ChatTimelinePanel] Received messages:', result.length);
       return result;
     },
   });
@@ -65,9 +74,7 @@ const ChatTimelinePanel: React.FC<ChatTimelinePanelProps> = ({
       {/* Chat messages */}
       <div className="flex-1 overflow-y-auto p-4">
         {isLoading ? (
-          <div className="flex items-center justify-center h-full">
-            <LoadingSpinner />
-          </div>
+          <ChatMessagesSkeleton count={10} />
         ) : messages && messages.length > 0 ? (
           <div className="space-y-3">
             {messages.map((message, index) => (
@@ -79,7 +86,7 @@ const ChatTimelinePanel: React.FC<ChatTimelinePanelProps> = ({
                 <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                   <span className="font-mono">{formatTime(message.timestamp)}</span>
                   <span className="font-medium text-gray-900 dark:text-white">
-                    {message.user_name}
+                    {message.display_name || message.user_name}
                   </span>
                   {/* Badges */}
                   {message.badges && message.badges.length > 0 && (

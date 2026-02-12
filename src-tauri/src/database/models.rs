@@ -6,15 +6,15 @@ pub struct Channel {
     pub platform: String,
     pub channel_id: String, // Twitch: login (変更可能), YouTube: channel_id
     pub channel_name: String,
-    pub display_name: Option<String>,
-    pub profile_image_url: Option<String>,
+    pub display_name: String,
+    pub profile_image_url: String,
     pub enabled: bool,
     pub poll_interval: i32,
-    pub follower_count: Option<i32>,
-    pub broadcaster_type: Option<String>,
-    pub view_count: Option<i32>,
-    pub is_auto_discovered: Option<bool>,
-    pub discovered_at: Option<String>,
+    pub follower_count: i32,
+    pub broadcaster_type: String,
+    pub view_count: i32,
+    pub is_auto_discovered: bool,
+    pub discovered_at: String,
     pub twitch_user_id: Option<i64>, // Twitchの不変なuser ID（内部識別子）
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
@@ -38,8 +38,9 @@ pub struct StreamStats {
     pub stream_id: i64,
     pub collected_at: String,
     pub viewer_count: Option<i32>,
-    pub chat_rate_1min: i32,
+    pub chat_rate_1min: Option<i64>, // Chat messages in the last 1 minute
     pub category: Option<String>,
+    pub game_id: Option<String>,
     pub title: Option<String>,
     pub follower_count: Option<i32>,
     pub twitch_user_id: Option<String>,
@@ -52,10 +53,10 @@ pub struct StreamData {
     pub stream_id: String, // Platform-specific stream ID
     pub title: Option<String>,
     pub category: Option<String>,
+    pub game_id: Option<String>, // Platform-specific game/category ID
     pub thumbnail_url: Option<String>,
     pub started_at: String,
     pub viewer_count: Option<i32>,
-    pub chat_rate_1min: i32,
     pub follower_count: Option<i32>,
 }
 
@@ -86,10 +87,21 @@ pub struct ChatMessage {
     pub platform: String,
     pub user_id: Option<String>,
     pub user_name: String,
+    pub display_name: Option<String>, // Twitch表示名（ユーザーが設定した名前）
     pub message: String,
     pub message_type: String,
     pub badges: Option<Vec<String>>,
     pub badge_info: Option<String>, // サブスク月数等の詳細情報 (例: "subscriber:24")
+}
+
+/// ゲームカテゴリ（Twitch game/category）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameCategory {
+    pub game_id: String,              // Twitch game ID（プライマリキー）
+    pub game_name: String,            // カテゴリ名（表示用、言語ごとに異なる可能性あり）
+    pub box_art_url: Option<String>,  // ボックスアート画像URL
+    pub last_updated: Option<String>, // 最終更新日時
 }
 
 #[cfg(test)]
@@ -103,13 +115,13 @@ mod tests {
             platform: crate::constants::database::PLATFORM_TWITCH.to_string(),
             channel_id: "test_channel".to_string(),
             channel_name: "Test Channel".to_string(),
-            display_name: None,
-            profile_image_url: None,
-            follower_count: None,
-            broadcaster_type: None,
-            view_count: None,
-            is_auto_discovered: None,
-            discovered_at: None,
+            display_name: "Test Channel".to_string(),
+            profile_image_url: "".to_string(),
+            follower_count: 0,
+            broadcaster_type: "".to_string(),
+            view_count: 0,
+            is_auto_discovered: false,
+            discovered_at: "".to_string(),
             twitch_user_id: Some(123456789),
             enabled: true,
             poll_interval: 60,
@@ -134,8 +146,9 @@ mod tests {
             stream_id: 1,
             collected_at: "2024-01-01T00:00:00Z".to_string(),
             viewer_count: Some(100),
-            chat_rate_1min: 10,
+            chat_rate_1min: Some(5),
             category: Some("Just Chatting".to_string()),
+            game_id: Some("509658".to_string()),
             title: Some("Test Stream Title".to_string()),
             follower_count: Some(5000),
             twitch_user_id: Some("123456789".to_string()),
@@ -146,7 +159,6 @@ mod tests {
         let deserialized: StreamStats = serde_json::from_str(&json).unwrap();
 
         assert_eq!(stats.viewer_count, deserialized.viewer_count);
-        assert_eq!(stats.chat_rate_1min, deserialized.chat_rate_1min);
         assert_eq!(stats.category, deserialized.category);
         assert_eq!(stats.title, deserialized.title);
         assert_eq!(stats.follower_count, deserialized.follower_count);

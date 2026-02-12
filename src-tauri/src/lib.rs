@@ -4,12 +4,13 @@ mod collectors;
 mod commands;
 mod config;
 mod constants;
-mod database;
+pub mod database;
 mod error;
 mod logger;
 mod oauth;
 mod websocket;
 
+use std::sync::atomic::AtomicBool;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -29,7 +30,7 @@ use commands::{
         get_user_segment_stats, list_game_categories,
     },
     channels::{add_channel, list_channels, remove_channel, toggle_channel, update_channel},
-    chat::get_chat_messages,
+    chat::{get_chat_messages, get_chat_messages_around_timestamp},
     config::{
         delete_oauth_config, delete_token, get_build_info, get_database_init_status,
         get_oauth_config, has_oauth_config, recreate_database, save_oauth_config, save_token,
@@ -47,14 +48,22 @@ use commands::{
         toggle_auto_discovery, DiscoveredStreamInfo,
     },
     export::{export_to_delimited, preview_export_data},
+    game_categories::{
+        delete_game_category, get_game_categories, get_game_category, search_game_categories,
+        upsert_game_category,
+    },
     logs::get_logs,
-    oauth::{poll_twitch_device_token, start_twitch_device_auth},
+    oauth::{poll_twitch_device_token, reinitialize_twitch_collector, start_twitch_device_auth},
     sql::{
         delete_sql_template, execute_sql, list_database_tables, list_sql_templates,
         save_sql_template,
     },
-    stats::get_stream_stats,
-    timeline::{get_channel_streams, get_stream_timeline},
+    stats::{get_realtime_chat_rate, get_stream_stats},
+    system::is_backend_ready,
+    timeline::{
+        get_channel_streams, get_stream_timeline, get_streams_by_date_range,
+        get_suggested_streams_for_comparison,
+    },
     twitch::{get_twitch_rate_limit_status, validate_twitch_channel},
     window::show_main_window,
 };
@@ -66,6 +75,7 @@ use std::sync::Arc;
 /// メモリキャッシュ: 自動発見された配信の最新結果
 pub struct DiscoveredStreamsCache {
     pub streams: Mutex<Vec<DiscoveredStreamInfo>>,
+    pub initialized: AtomicBool,
 }
 
 /// アップデート確認関数
@@ -123,12 +133,13 @@ async fn check_for_updates(app: tauri::AppHandle) {
 }
 
 /// Helper function to start polling for existing enabled channels
-fn start_existing_channels_polling(
+async fn start_existing_channels_polling(
     db_manager: &tauri::State<'_, DatabaseManager>,
     poller: &mut ChannelPoller,
     app_handle: &tauri::AppHandle,
 ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
-    let conn = db_manager.get_connection()?;
+    // get_connection is now async
+    let conn = db_manager.get_connection().await?;
 
     // Get all enabled channels
     let mut stmt = conn.prepare(
@@ -144,15 +155,15 @@ fn start_existing_channels_polling(
                 platform: row.get(1)?,
                 channel_id: row.get(2)?,
                 channel_name: row.get(3)?,
-                display_name: None,
-                profile_image_url: None,
+                display_name: row.get::<_, String>(3)?, // channel_nameと同じ値
+                profile_image_url: "".to_string(),
                 enabled: row.get(4)?,
                 poll_interval: row.get(5)?,
-                follower_count: None,
-                broadcaster_type: None,
-                view_count: None,
-                is_auto_discovered: row.get(6).ok(),
-                discovered_at: row.get(7).ok(),
+                follower_count: 0,
+                broadcaster_type: "".to_string(),
+                view_count: 0,
+                is_auto_discovered: row.get::<_, Option<bool>>(6)?.unwrap_or(false),
+                discovered_at: row.get::<_, Option<String>>(7)?.unwrap_or_default(),
                 twitch_user_id: row.get(8).ok(),
                 created_at: Some(row.get(9)?),
                 updated_at: Some(row.get(10)?),
@@ -227,7 +238,9 @@ pub fn run() {
                 if let Err(e) = ctrlc::set_handler(move || {
                     eprintln!("[Signal] Received termination signal, performing cleanup...");
                     logger_for_signal.info("Received termination signal, performing cleanup...");
-                    if let Err(e) = db_manager_for_signal.shutdown() {
+                    if let Err(e) = tauri::async_runtime::block_on(async {
+                        db_manager_for_signal.shutdown().await
+                    }) {
                         eprintln!("[Signal] Cleanup failed: {}", e);
                         logger_for_signal.error(&format!("Cleanup failed: {}", e));
                     }
@@ -250,6 +263,7 @@ pub fn run() {
             // Initialize DiscoveredStreamsCache
             let discovered_streams_cache = Arc::new(DiscoveredStreamsCache {
                 streams: Mutex::new(Vec::new()),
+                initialized: AtomicBool::new(false),
             });
             app.manage(discovered_streams_cache);
 
@@ -259,13 +273,16 @@ pub fn run() {
             let logger_for_init = logger.clone();
             let app_handle_for_init = app_handle.clone();
             std::thread::Builder::new()
-                .stack_size(512 * 1024 * 1024) // 512MB stack for DuckDB initialization
+                .stack_size(2 * 1024 * 1024 * 1024) // 2GB stack for DuckDB initialization
                 .spawn(move || {
                     // DatabaseManagerを取得
                     let db_manager: tauri::State<'_, DatabaseManager> = app_handle_for_init.state();
 
                     // まずデータベース接続を取得
-                    let conn = match db_manager.get_connection() {
+                    // get_connection is now async, so we need to block_on it using Tauri's async runtime
+                    let conn = match tauri::async_runtime::block_on(async {
+                        db_manager.get_connection().await
+                    }) {
                         Ok(conn) => conn,
                         Err(e) => {
                             logger_for_init.error(&format!("Database connection failed: {}", e));
@@ -304,13 +321,11 @@ pub fn run() {
                             }
                         };
 
-                        let mut poller = poller_for_init.lock().await;
-
                         // Initialize Twitch collector if credentials are available
                         // Device Code Flow uses only client_id (no client_secret required)
                         if let Some(client_id) = &settings.twitch.client_id {
                             // Twitch Collector 用の DB 接続を取得
-                            match db_manager.get_connection() {
+                            match db_manager.get_connection().await {
                                 Ok(twitch_conn) => {
                                     let db_conn = Arc::new(Mutex::new(twitch_conn));
                                     let collector = Arc::new(TwitchCollector::new_with_app(
@@ -322,7 +337,12 @@ pub fn run() {
                                     ));
                                     // IRC DB ハンドラーを初期化
                                     collector.initialize_irc().await;
-                                    poller.register_twitch_collector(collector);
+
+                                    // Register collector - lock only for registration
+                                    {
+                                        let mut poller = poller_for_init.lock().await;
+                                        poller.register_twitch_collector(collector);
+                                    }
                                     logger_for_init.info("Twitch collector initialized successfully with IRC support");
                                 }
                                 Err(e) => {
@@ -336,12 +356,16 @@ pub fn run() {
                         // Initialize YouTube collector if credentials are available
                         if let (Some(client_id), Some(client_secret)) = (&settings.youtube.client_id, &settings.youtube.client_secret) {
                             // YouTubeCollector用に新しい接続を作成
-                            match db_manager.get_connection() {
+                            match db_manager.get_connection().await {
                                 Ok(yt_conn) => {
                                     let db_conn = Arc::new(Mutex::new(yt_conn));
                                     match YouTubeCollector::new(client_id.clone(), client_secret.clone(), "http://localhost:8081/callback".to_string(), Arc::clone(&db_conn)).await {
                                         Ok(collector) => {
-                                            poller.register_collector(crate::constants::database::PLATFORM_YOUTUBE.to_string(), Arc::new(collector));
+                                            // Register collector - lock only for registration
+                                            {
+                                                let mut poller = poller_for_init.lock().await;
+                                                poller.register_collector(crate::constants::database::PLATFORM_YOUTUBE.to_string(), Arc::new(collector));
+                                            }
                                             logger_for_init.info("YouTube collector initialized successfully");
                                         }
                                         Err(e) => {
@@ -359,17 +383,17 @@ pub fn run() {
 
                         // Start polling for existing enabled channels
                         logger_for_init.info("Starting polling for existing enabled channels...");
-                        match start_existing_channels_polling(&db_manager, &mut poller, &app_handle_for_init) {
-                            Ok(count) => {
-                                logger_for_init.info(&format!("Started polling for {} existing enabled channel(s)", count));
+                        {
+                            let mut poller = poller_for_init.lock().await;
+                            match start_existing_channels_polling(&db_manager, &mut poller, &app_handle_for_init).await {
+                                Ok(count) => {
+                                    logger_for_init.info(&format!("Started polling for {} existing enabled channel(s)", count));
+                                }
+                                Err(e) => {
+                                    logger_for_init.error(&format!("Failed to start polling for existing channels: {}", e));
+                                }
                             }
-                            Err(e) => {
-                                logger_for_init.error(&format!("Failed to start polling for existing channels: {}", e));
-                            }
-                        }
-
-                        // Unlock poller before initializing AutoDiscoveryPoller
-                        drop(poller);
+                        } // ロックを解放
 
                         // Initialize AutoDiscoveryPoller
                         logger_for_init.info("Initializing AutoDiscoveryPoller...");
@@ -392,7 +416,16 @@ pub fn run() {
 
                         // Start AutoDiscoveryPoller if enabled
                         if let Some(auto_discovery_settings) = &settings.auto_discovery {
+                            logger_for_init.info(&format!(
+                                "AutoDiscovery settings found - enabled: {}, poll_interval: {}s, max_streams: {}, game_ids: {:?}",
+                                auto_discovery_settings.enabled,
+                                auto_discovery_settings.poll_interval,
+                                auto_discovery_settings.max_streams,
+                                auto_discovery_settings.filters.game_ids
+                            ));
+
                             if auto_discovery_settings.enabled {
+                                logger_for_init.info("Starting AutoDiscoveryPoller...");
                                 match discovery_poller.start().await {
                                     Ok(_) => {
                                         logger_for_init.info("AutoDiscoveryPoller started successfully");
@@ -405,10 +438,10 @@ pub fn run() {
                                     }
                                 }
                             } else {
-                                logger_for_init.info("AutoDiscovery is disabled in settings");
+                                logger_for_init.info("AutoDiscovery is disabled in settings - enable it in Settings > Twitch自動発見");
                             }
                         } else {
-                            logger_for_init.info("AutoDiscovery settings not configured");
+                            logger_for_init.info("AutoDiscovery settings not configured - configure it in Settings > Twitch自動発見");
                         }
 
                         // Store the AutoDiscoveryPoller in app state
@@ -416,6 +449,10 @@ pub fn run() {
                             app_handle_for_init.state();
                         let mut state = auto_discovery_state.lock().await;
                         *state = Some(discovery_poller);
+
+                        // Emit backend-ready event to notify frontend that all collectors and pollers are initialized
+                        let _ = app_handle_for_init.emit("backend-ready", ());
+                        logger_for_init.info("Backend fully initialized, frontend queries are now safe");
                     });
 
                     logger_for_init.info("Application daemon initialization completed");
@@ -453,7 +490,9 @@ pub fn run() {
                             // グレースフルシャットダウン
                             if let Some(db_manager) = _app.try_state::<DatabaseManager>() {
                                 eprintln!("[App Exit] Performing graceful shutdown...");
-                                let _ = db_manager.shutdown();
+                                let _ = tauri::async_runtime::block_on(async {
+                                    db_manager.shutdown().await
+                                });
                             }
                             _app.exit(0);
                         }
@@ -517,8 +556,11 @@ pub fn run() {
             update_channel,
             list_channels,
             toggle_channel,
+            // System commands
+            is_backend_ready,
             // Chat commands
             get_chat_messages,
+            get_chat_messages_around_timestamp,
             // Config commands
             save_token,
             delete_token,
@@ -540,6 +582,12 @@ pub fn run() {
             search_twitch_games,
             get_games_by_ids,
             promote_discovered_channel,
+            // Game Category commands
+            get_game_categories,
+            get_game_category,
+            upsert_game_category,
+            delete_game_category,
+            search_game_categories,
             // SQL commands
             execute_sql,
             list_sql_templates,
@@ -549,11 +597,15 @@ pub fn run() {
             // OAuth commands
             start_twitch_device_auth,
             poll_twitch_device_token,
+            reinitialize_twitch_collector,
             // Stats commands
             get_stream_stats,
+            get_realtime_chat_rate,
             // Timeline commands
             get_channel_streams,
             get_stream_timeline,
+            get_streams_by_date_range,
+            get_suggested_streams_for_comparison,
             // Export commands
             export_to_delimited,
             preview_export_data,

@@ -1,10 +1,10 @@
 use crate::collectors::poller::ChannelPoller;
 use crate::database::{
     models::{Channel, ChannelWithStats},
+    repositories::{channel_repository::CreateChannelParams, ChannelRepository},
     utils, DatabaseManager,
 };
 use crate::error::{OptionExt, ResultExt};
-use duckdb::Connection;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
@@ -15,7 +15,9 @@ pub struct AddChannelRequest {
     pub platform: String,
     pub channel_id: String,
     pub channel_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub poll_interval: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub twitch_user_id: Option<i64>, // Twitchの不変なuser ID
 }
 
@@ -27,29 +29,29 @@ pub async fn add_channel(
 ) -> Result<Channel, String> {
     let conn = db_manager
         .get_connection()
+        .await
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 
     let poll_interval = request.poll_interval.unwrap_or(60);
 
-    // DuckDBではRETURNING句を使用してINSERTと同時にIDを取得
-    let channel_id: i64 = conn
-        .query_row(
-            "INSERT INTO channels (platform, channel_id, channel_name, poll_interval, twitch_user_id) 
-             VALUES (?, ?, ?, ?, ?) RETURNING id",
-            duckdb::params![
-                &request.platform,
-                &request.channel_id,
-                &request.channel_name,
-                poll_interval,
-                request.twitch_user_id,
-            ],
-            |row| row.get(0),
-        )
-        .db_context("insert channel")
-        .map_err(|e| e.to_string())?;
+    // チャンネルを作成
+    let channel_id = ChannelRepository::create(
+        &conn,
+        CreateChannelParams {
+            platform: request.platform,
+            channel_id: request.channel_id,
+            channel_name: request.channel_name,
+            poll_interval,
+            twitch_user_id: request.twitch_user_id,
+        },
+    )
+    .db_context("create channel")
+    .map_err(|e| e.to_string())?;
 
-    let channel = get_channel_by_id(&conn, channel_id)
+    let channel = ChannelRepository::get_by_id(&conn, channel_id)
+        .db_context("get created channel")
+        .map_err(|e| e.to_string())?
         .ok_or_not_found("Failed to retrieve created channel")
         .map_err(|e| e.to_string())?;
 
@@ -84,15 +86,69 @@ pub async fn remove_channel(
 
     let conn = db_manager
         .get_connection()
+        .await
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 
     let id_str = id.to_string();
-    conn.execute("DELETE FROM channels WHERE id = ?", [id_str.as_str()])
-        .db_context("delete channel")
+
+    // トランザクション開始
+    conn.execute("BEGIN TRANSACTION", [])
+        .db_context("begin transaction")
         .map_err(|e| e.to_string())?;
 
-    Ok(())
+    let result: Result<(), String> = (|| {
+        // 1. chat_messagesを削除（stream_idを経由して削除）
+        conn.execute(
+            "DELETE FROM chat_messages WHERE stream_id IN (SELECT id FROM streams WHERE channel_id = ?)",
+            [id_str.as_str()],
+        )
+        .db_context("delete chat messages")
+        .map_err(|e| e.to_string())?;
+
+        // 2. stream_statsを削除
+        conn.execute(
+            "DELETE FROM stream_stats WHERE stream_id IN (SELECT id FROM streams WHERE channel_id = ?)",
+            [id_str.as_str()],
+        )
+        .db_context("delete stream stats")
+        .map_err(|e| e.to_string())?;
+
+        // 3. streamsを削除
+        conn.execute(
+            "DELETE FROM streams WHERE channel_id = ?",
+            [id_str.as_str()],
+        )
+        .db_context("delete streams")
+        .map_err(|e| e.to_string())?;
+
+        // 4. 最後にchannelを削除
+        ChannelRepository::delete(&conn, id)
+            .db_context("delete channel")
+            .map_err(|e| e.to_string())?;
+
+        Ok(())
+    })();
+
+    match result {
+        Ok(_) => {
+            // コミット
+            conn.execute("COMMIT", [])
+                .db_context("commit transaction")
+                .map_err(|e| e.to_string())?;
+            eprintln!(
+                "[remove_channel] Successfully deleted channel {} and related data",
+                id
+            );
+            Ok(())
+        }
+        Err(e) => {
+            // ロールバック
+            let _ = conn.execute("ROLLBACK", []);
+            eprintln!("[remove_channel] Failed to delete channel {}: {}", id, e);
+            Err(e)
+        }
+    }
 }
 
 #[tauri::command]
@@ -106,11 +162,14 @@ pub async fn update_channel(
 ) -> Result<Channel, String> {
     let conn = db_manager
         .get_connection()
+        .await
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 
     // 更新前の状態を取得（有効状態の変更を検知するため）
-    let old_channel = get_channel_by_id(&conn, id)
+    let old_channel = ChannelRepository::get_by_id(&conn, id)
+        .db_context("get channel")
+        .map_err(|e| e.to_string())?
         .ok_or_not_found("Channel not found")
         .map_err(|e| e.to_string())?;
 
@@ -133,7 +192,9 @@ pub async fn update_channel(
     }
 
     if updates.is_empty() {
-        return get_channel_by_id(&conn, id)
+        return ChannelRepository::get_by_id(&conn, id)
+            .db_context("get channel")
+            .map_err(|e| e.to_string())?
             .ok_or_not_found("Channel not found")
             .map_err(|e| e.to_string());
     }
@@ -147,7 +208,9 @@ pub async fn update_channel(
         .db_context("update channel")
         .map_err(|e| e.to_string())?;
 
-    let updated_channel = get_channel_by_id(&conn, id)
+    let updated_channel = ChannelRepository::get_by_id(&conn, id)
+        .db_context("get updated channel")
+        .map_err(|e| e.to_string())?
         .ok_or_not_found("Channel not found")
         .map_err(|e| e.to_string())?;
 
@@ -181,41 +244,12 @@ pub async fn list_channels(
     let channels: Vec<Channel> = {
         let conn = db_manager
             .get_connection()
+            .await
             .db_context("get database connection")
             .map_err(|e| e.to_string())?;
 
-        let mut stmt = conn
-            .prepare("SELECT id, platform, channel_id, channel_name, enabled, poll_interval, is_auto_discovered, CAST(discovered_at AS VARCHAR) as discovered_at, twitch_user_id, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels ORDER BY created_at DESC")
-            .db_context("prepare statement")
-            .map_err(|e| e.to_string())?;
-
-        let channels: Result<Vec<Channel>, _> = stmt
-            .query_map([], |row| {
-                Ok(Channel {
-                    id: Some(row.get(0)?),
-                    platform: row.get(1)?,
-                    channel_id: row.get(2)?,
-                    channel_name: row.get(3)?,
-                    display_name: None,
-                    profile_image_url: None,
-                    enabled: row.get(4)?,
-                    poll_interval: row.get(5)?,
-                    follower_count: None,
-                    broadcaster_type: None,
-                    view_count: None,
-                    is_auto_discovered: row.get(6)?,
-                    discovered_at: row.get(7)?,
-                    twitch_user_id: row.get(8)?,
-                    created_at: Some(row.get(9)?),
-                    updated_at: Some(row.get(10)?),
-                })
-            })
-            .db_context("query channels")
-            .map_err(|e| e.to_string())?
-            .collect();
-
-        channels
-            .db_context("collect channels")
+        ChannelRepository::list_all(&conn)
+            .db_context("list all channels")
             .map_err(|e| e.to_string())?
     };
 
@@ -236,11 +270,14 @@ async fn enrich_channels_with_twitch_info(
         .filter(|c| c.platform == crate::constants::database::PLATFORM_TWITCH)
         .collect();
 
-    // Twitch API クライアントを取得
+    // Twitch API クライアントを取得（タイムアウト付き）
     let twitch_collector = if let Some(poller) = app_handle.try_state::<Arc<Mutex<ChannelPoller>>>()
     {
-        let poller = poller.lock().await;
-        poller.get_twitch_collector().cloned()
+        // 15秒のタイムアウトでロック取得を試みる（初期化完了まで待つ）
+        match tokio::time::timeout(std::time::Duration::from_secs(15), poller.lock()).await {
+            Ok(poller) => poller.get_twitch_collector().cloned(),
+            Err(_) => None,
+        }
     } else {
         None
     };
@@ -269,17 +306,9 @@ async fn enrich_channels_with_twitch_info(
             if !user_ids.is_empty() {
                 let user_id_refs: Vec<&str> = user_ids.iter().map(|s| s.as_str()).collect();
                 for chunk in user_id_refs.chunks(100) {
-                    match api_client.get_users_by_ids(chunk).await {
-                        Ok(users) => {
-                            for user in users {
-                                user_info_map.insert(user.id.to_string(), user);
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!(
-                                "[list_channels] Failed to fetch Twitch user info by ID: {}",
-                                e
-                            );
+                    if let Ok(users) = api_client.get_users_by_ids(chunk).await {
+                        for user in users {
+                            user_info_map.insert(user.id.to_string(), user);
                         }
                     }
                 }
@@ -294,17 +323,9 @@ async fn enrich_channels_with_twitch_info(
                 .collect();
 
             for chunk in user_logins.chunks(100) {
-                match api_client.get_users_by_logins(chunk).await {
-                    Ok(users) => {
-                        for user in users {
-                            user_info_map.insert(user.id.to_string(), user);
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "[list_channels] Failed to fetch Twitch user info by login: {}",
-                            e
-                        );
+                if let Ok(users) = api_client.get_users_by_logins(chunk).await {
+                    for user in users {
+                        user_info_map.insert(user.id.to_string(), user);
                     }
                 }
             }
@@ -330,43 +351,33 @@ async fn enrich_channels_with_twitch_info(
             if !user_id_refs.is_empty() {
                 // 100件ずつに分割してバッチリクエスト
                 for chunk in user_id_refs.chunks(100) {
-                    match api_client.get_streams_by_user_ids(chunk).await {
-                        Ok(streams) => {
-                            for stream in streams {
-                                // user_idからチャンネルを逆引き
-                                if let Some(channel) = twitch_channels.iter().find(|c| {
-                                    c.twitch_user_id
-                                        .map(|id| id.to_string() == stream.user_id.to_string())
-                                        .unwrap_or_else(|| {
-                                            user_info_map
-                                                .get(&stream.user_id.to_string())
-                                                .map(|u| u.login.to_string() == c.channel_id)
-                                                .unwrap_or(false)
-                                        })
-                                }) {
-                                    let key = channel
-                                        .twitch_user_id
-                                        .map(|id| id.to_string())
-                                        .unwrap_or_else(|| channel.channel_id.clone());
-                                    stream_info_map.insert(key, stream);
-                                }
+                    if let Ok(streams) = api_client.get_streams_by_user_ids(chunk).await {
+                        for stream in streams {
+                            // user_idからチャンネルを逆引き
+                            if let Some(channel) = twitch_channels.iter().find(|c| {
+                                c.twitch_user_id
+                                    .map(|id| id.to_string() == stream.user_id.to_string())
+                                    .unwrap_or_else(|| {
+                                        user_info_map
+                                            .get(&stream.user_id.to_string())
+                                            .map(|u| u.login.to_string() == c.channel_id)
+                                            .unwrap_or(false)
+                                    })
+                            }) {
+                                let key = channel
+                                    .twitch_user_id
+                                    .map(|id| id.to_string())
+                                    .unwrap_or_else(|| channel.channel_id.clone());
+                                stream_info_map.insert(key, stream);
                             }
-                        }
-                        Err(e) => {
-                            eprintln!("[list_channels] Failed to fetch stream info batch: {}", e);
                         }
                     }
                 }
 
                 // フォロワー数をバッチ取得
-                match api_client.get_followers_batch(&user_id_refs).await {
-                    Ok(followers) => {
-                        for (user_id, count) in followers {
-                            follower_count_map.insert(user_id, count);
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("[list_channels] Failed to fetch follower counts: {}", e);
+                if let Ok(followers) = api_client.get_followers_batch(&user_id_refs).await {
+                    for (user_id, count) in followers {
+                        follower_count_map.insert(user_id, count);
                     }
                 }
             }
@@ -392,11 +403,13 @@ async fn enrich_channels_with_twitch_info(
 
                 if let Some(key) = user_key.as_ref() {
                     if let Some(user) = user_info_map.get(key) {
-                        channel.display_name = Some(user.display_name.to_string());
+                        channel.display_name = user.display_name.to_string();
                         channel.profile_image_url =
-                            user.profile_image_url.as_deref().map(|s| s.to_string());
-                        channel.broadcaster_type =
-                            user.broadcaster_type.as_ref().map(|bt| match bt {
+                            user.profile_image_url.as_deref().unwrap_or("").to_string();
+                        channel.broadcaster_type = user
+                            .broadcaster_type
+                            .as_ref()
+                            .map(|bt| match bt {
                                 twitch_api::types::BroadcasterType::Partner => {
                                     "partner".to_string()
                                 }
@@ -404,13 +417,17 @@ async fn enrich_channels_with_twitch_info(
                                     "affiliate".to_string()
                                 }
                                 _ => "".to_string(),
-                            });
+                            })
+                            .unwrap_or_else(|| "".to_string());
 
                         // フォロワー数を設定
-                        channel.follower_count = follower_count_map.get(user.id.as_str()).copied();
+                        channel.follower_count = follower_count_map
+                            .get(user.id.as_str())
+                            .copied()
+                            .unwrap_or(0);
 
                         // view_count は Twitch API で非推奨となり取得不可
-                        channel.view_count = None;
+                        channel.view_count = 0;
                     }
                 }
 
@@ -443,26 +460,26 @@ pub async fn toggle_channel(
 ) -> Result<Channel, String> {
     let conn = db_manager
         .get_connection()
+        .await
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 
     // 現在の状態を取得
-    let current = get_channel_by_id(&conn, id)
+    let current = ChannelRepository::get_by_id(&conn, id)
+        .db_context("get channel")
+        .map_err(|e| e.to_string())?
         .ok_or_not_found("Channel not found")
         .map_err(|e| e.to_string())?;
 
     let new_enabled = !current.enabled;
 
-    let enabled_str = new_enabled.to_string();
-    let id_str = id.to_string();
-    conn.execute(
-        "UPDATE channels SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        [enabled_str.as_str(), id_str.as_str()],
-    )
-    .db_context("update channel")
-    .map_err(|e| e.to_string())?;
+    ChannelRepository::update_enabled(&conn, id, new_enabled)
+        .db_context("update channel")
+        .map_err(|e| e.to_string())?;
 
-    let updated_channel = get_channel_by_id(&conn, id)
+    let updated_channel = ChannelRepository::get_by_id(&conn, id)
+        .db_context("get updated channel")
+        .map_err(|e| e.to_string())?
         .ok_or_not_found("Channel not found")
         .map_err(|e| e.to_string())?;
 
@@ -483,36 +500,4 @@ pub async fn toggle_channel(
     }
 
     Ok(updated_channel)
-}
-
-fn get_channel_by_id(conn: &Connection, id: i64) -> Option<Channel> {
-    let mut stmt = conn
-        .prepare("SELECT id, platform, channel_id, channel_name, enabled, poll_interval, twitch_user_id, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at FROM channels WHERE id = ?")
-        .ok()?;
-
-    let id_str = id.to_string();
-    let mut rows = stmt
-        .query_map([id_str.as_str()], |row| {
-            Ok(Channel {
-                id: Some(row.get(0)?),
-                platform: row.get(1)?,
-                channel_id: row.get(2)?,
-                channel_name: row.get(3)?,
-                display_name: None,
-                profile_image_url: None,
-                enabled: row.get(4)?,
-                poll_interval: row.get(5)?,
-                follower_count: None,
-                broadcaster_type: None,
-                view_count: None,
-                is_auto_discovered: None,
-                discovered_at: None,
-                twitch_user_id: row.get(6)?,
-                created_at: Some(row.get(7)?),
-                updated_at: Some(row.get(8)?),
-            })
-        })
-        .ok()?;
-
-    rows.next()?.ok()
 }

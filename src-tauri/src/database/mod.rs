@@ -3,6 +3,8 @@ pub mod analytics;
 pub mod chat_analytics;
 pub mod data_science_analytics;
 pub mod models;
+pub mod query_helpers;
+pub mod repositories;
 pub mod schema;
 pub mod utils;
 pub mod writer;
@@ -10,8 +12,9 @@ pub mod writer;
 use crate::error::ResultExt;
 use duckdb::Connection;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tauri::{AppHandle, Manager};
+use tokio::sync::Mutex;
 
 /// 起動前のリカバリ処理（一時ファイルのクリーンアップ）
 fn cleanup_stale_files(db_path: &Path) {
@@ -39,6 +42,29 @@ fn cleanup_stale_files(db_path: &Path) {
     }
 }
 
+/// WALファイルが破損している場合のリカバリ処理
+fn recover_from_corrupted_wal(db_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    use chrono::Local;
+
+    let wal_path = db_path.with_extension("wal");
+
+    if wal_path.exists() {
+        // WALファイルをバックアップとしてリネーム
+        let timestamp = Local::now().format("%Y%m%d_%H%M%S");
+        let backup_wal_path = db_path.with_extension(format!("wal.backup.{}", timestamp));
+
+        eprintln!(
+            "[DB Recovery] Moving corrupted WAL file to backup: {}",
+            backup_wal_path.display()
+        );
+
+        std::fs::rename(&wal_path, &backup_wal_path)?;
+        eprintln!("[DB Recovery] WAL file backed up successfully");
+    }
+
+    Ok(())
+}
+
 /// データベース接続を共有するための管理構造体
 #[derive(Clone)]
 pub struct DatabaseManager {
@@ -64,9 +90,31 @@ impl DatabaseManager {
 
         // 開発環境と本番環境で統一してファイルベースDBを使用
         eprintln!("Opening DuckDB at: {}", db_path.display());
-        let conn = Connection::open(&db_path)
-            .db_context("open database")
-            .map_err(|e| e.to_string())?;
+        let conn = match Connection::open(&db_path) {
+            Ok(conn) => conn,
+            Err(e) => {
+                let error_msg = format!("{:?}", e);
+
+                // WAL再生エラーの場合は自動リカバリを試みる
+                if error_msg.contains("WAL file") || error_msg.contains("replaying WAL") {
+                    eprintln!("[DB Recovery] WAL replay error detected, attempting recovery...");
+
+                    // 破損したWALファイルをバックアップ
+                    if let Err(recovery_err) = recover_from_corrupted_wal(&db_path) {
+                        eprintln!("[DB Recovery] Failed to backup WAL file: {}", recovery_err);
+                    }
+
+                    // WALファイル削除後、再度データベースを開く
+                    eprintln!("[DB Recovery] Retrying database open after WAL cleanup...");
+                    Connection::open(&db_path)
+                        .db_context("open database after WAL recovery")
+                        .map_err(|e| e.to_string())?
+                } else {
+                    // その他のエラーは通常通り返す
+                    return Err(format!("Database error: {}", error_msg).into());
+                }
+            }
+        };
 
         // DuckDBの設定
         conn.execute("PRAGMA memory_limit='1GB'", []).ok();
@@ -85,11 +133,10 @@ impl DatabaseManager {
     }
 
     /// データベース接続を取得
-    pub fn get_connection(&self) -> Result<Connection, Box<dyn std::error::Error + Send + Sync>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| format!("Database connection lock failed: {}", e))?;
+    pub async fn get_connection(
+        &self,
+    ) -> Result<Connection, Box<dyn std::error::Error + Send + Sync>> {
+        let conn = self.conn.lock().await;
         conn.try_clone()
             .db_context("clone connection")
             .map_err(|e| e.to_string().into())
@@ -102,13 +149,10 @@ impl DatabaseManager {
     }
 
     /// グレースフルシャットダウン - WALをフラッシュ
-    pub fn shutdown(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn shutdown(&self) -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("[DB Shutdown] Starting graceful shutdown...");
 
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = self.conn.lock().await;
 
         // WALチェックポイントを強制実行（全データをメインDBにフラッシュ）
         match conn.execute("CHECKPOINT", []) {
@@ -122,19 +166,19 @@ impl DatabaseManager {
 
     /// 定期的なチェックポイント（データ安全性向上）
     #[allow(dead_code)]
-    pub fn checkpoint(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let conn = self.get_connection()?;
+    pub async fn checkpoint(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let conn = self.get_connection().await?;
         conn.execute("CHECKPOINT", [])?;
         Ok(())
     }
 }
 
 // 後方互換性のための関数
-pub fn get_connection(
+pub async fn get_connection(
     app_handle: &AppHandle,
 ) -> Result<Connection, Box<dyn std::error::Error + Send + Sync>> {
     let db_manager: tauri::State<'_, DatabaseManager> = app_handle.state();
-    db_manager.get_connection()
+    db_manager.get_connection().await
 }
 
 #[cfg(test)]

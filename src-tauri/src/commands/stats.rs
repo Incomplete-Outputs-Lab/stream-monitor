@@ -1,4 +1,7 @@
-use crate::database::{models::StreamStats, utils, DatabaseManager};
+use crate::database::{
+    models::StreamStats, repositories::chat_message_repository::ChatMessageRepository, utils,
+    DatabaseManager,
+};
 use crate::error::ResultExt;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
@@ -19,11 +22,20 @@ pub async fn get_stream_stats(
 ) -> Result<Vec<StreamStats>, String> {
     let conn = db_manager
         .get_connection()
+        .await
         .db_context("get database connection")
         .map_err(|e| e.to_string())?;
 
     let mut sql = String::from(
-        "SELECT ss.id, ss.stream_id, ss.collected_at, ss.viewer_count, ss.chat_rate_1min, ss.category, ss.title, ss.follower_count, ss.twitch_user_id, ss.channel_name 
+        "SELECT ss.id, ss.stream_id, ss.collected_at, ss.viewer_count, 
+         COALESCE((
+             SELECT COUNT(*)
+             FROM chat_messages cm
+             WHERE cm.stream_id = ss.stream_id
+               AND cm.timestamp >= ss.collected_at - INTERVAL '1 minute'
+               AND cm.timestamp < ss.collected_at
+         ), 0) AS chat_rate_1min,
+         ss.category, ss.title, ss.follower_count, ss.twitch_user_id, ss.channel_name 
          FROM stream_stats ss
          INNER JOIN streams s ON ss.stream_id = s.id
          WHERE 1=1",
@@ -67,6 +79,7 @@ pub async fn get_stream_stats(
                 viewer_count: row.get(3)?,
                 chat_rate_1min: row.get(4)?,
                 category: row.get(5)?,
+                game_id: None,
                 title: row.get(6)?,
                 follower_count: row.get(7)?,
                 twitch_user_id: row.get(8)?,
@@ -78,4 +91,18 @@ pub async fn get_stream_stats(
         .collect();
 
     stats.db_context("collect stats").map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_realtime_chat_rate(
+    _app_handle: AppHandle,
+    db_manager: State<'_, DatabaseManager>,
+) -> Result<i64, String> {
+    let conn = db_manager
+        .get_connection()
+        .await
+        .db_context("get database connection")
+        .map_err(|e| e.to_string())?;
+
+    ChatMessageRepository::get_realtime_chat_rate(&conn).map_err(|e| e.to_string())
 }

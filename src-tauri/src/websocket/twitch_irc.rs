@@ -98,6 +98,7 @@ impl TwitchIrcManager {
                                 platform: crate::constants::database::PLATFORM_TWITCH.to_string(),
                                 user_id: Some(msg.sender.id.clone()),
                                 user_name: msg.sender.login.clone(),
+                                display_name: Some(msg.sender.name.clone()), // Twitch表示名を保存
                                 message: msg.message_text.clone(),
                                 message_type: "normal".to_string(),
                                 badges,

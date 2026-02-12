@@ -13,14 +13,23 @@ import { ConfirmDialog } from "./components/common/ConfirmDialog";
 import { DonationModal, useDonationModal } from "./components/common/DonationModal";
 import { DatabaseErrorDialog } from "./components/common/DatabaseErrorDialog";
 import { useThemeStore } from "./stores/themeStore";
+import * as systemApi from "./api/system";
 import { useToastStore } from "./stores/toastStore";
+import { useAppStateStore } from "./stores/appStateStore";
 import "./App.css";
 import { SQLViewer } from "./components/SQL";
 import Timeline from "./components/Timeline";
 import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
+import { NavigationProvider } from "./contexts/NavigationContext";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // 5 minutes
+      retry: 1,
+    },
+  },
+});
 
 type Tab = "dashboard" | "channels" | "statistics" | "timeline" | "export" | "logs" | "settings" | "multiview" | "sqlviewer";
 
@@ -31,6 +40,7 @@ function App() {
   const { theme } = useThemeStore();
   const { show: showDonation, close: closeDonation } = useDonationModal();
   const addToast = useToastStore((state) => state.addToast);
+  const setBackendReady = useAppStateStore((state) => state.setBackendReady);
 
   useEffect(() => {
     // テーマを適用
@@ -51,7 +61,7 @@ function App() {
     const showMainWindow = async () => {
       console.log("Main window rendered, closing splash and showing main window");
       try {
-        await invoke("show_main_window");
+        await systemApi.showMainWindow();
       } catch (error) {
         console.error("Failed to show main window:", error);
       }
@@ -60,7 +70,7 @@ function App() {
     showMainWindow();
   }, []);
 
-  // DB初期化イベントのリスナーを設定
+  // グローバルイベントリスナーを設定
   useEffect(() => {
     let cleanup: (() => void) | undefined;
 
@@ -87,10 +97,79 @@ function App() {
         );
       });
 
+      // 起動時にバックエンドの準備状態を確認
+      try {
+        const isReady = await systemApi.isBackendReady();
+        console.log("[App] Backend ready status on mount:", isReady);
+        if (isReady) {
+          setBackendReady(true);
+          queryClient.invalidateQueries();
+          console.log("[App] Backend was already ready, queries enabled");
+        }
+      } catch (error) {
+        console.error("[App] Failed to check backend ready status:", error);
+      }
+
+      // バックエンド完全初期化イベント（コレクター、ポーリング、自動発見がすべて準備完了）
+      const backendReadyUnlisten = await listen("backend-ready", () => {
+        console.log("[App] ✅ Backend fully initialized via event, enabling queries");
+        setBackendReady(true);
+        // すべてのクエリを無効化して最新データを取得
+        queryClient.invalidateQueries();
+        console.log("[App] All queries invalidated");
+      });
+
+      // チャンネル統計更新イベント（ライブ状態変更時）
+      const channelStatsUnlisten = await listen("channel-stats-updated", () => {
+        console.log("Channel stats updated, refreshing channels");
+        queryClient.invalidateQueries({ queryKey: ["channels"] });
+      });
+
+      // チャンネル追加イベント（自動発見で新チャンネル追加時）
+      const channelsUpdatedUnlisten = await listen("channels-updated", () => {
+        console.log("Channels list updated, refreshing channels");
+        queryClient.invalidateQueries({ queryKey: ["channels"] });
+      });
+
+      // チャンネル削除イベント（自動発見チャンネル削除時）
+      const channelRemovedUnlisten = await listen("channel-removed", () => {
+        console.log("Channel removed, refreshing channels");
+        queryClient.invalidateQueries({ queryKey: ["channels"] });
+      });
+
+      // 自動発見ストリーム更新イベント
+      const discoveredStreamsUnlisten = await listen("discovered-streams-updated", () => {
+        console.log("Discovered streams updated, refreshing discovered streams");
+        queryClient.invalidateQueries({ queryKey: ["discovered-streams"] });
+      });
+
+      // 認証エラーイベント
+      const authErrorUnlisten = await listen("auth-error", () => {
+        console.log("Authentication error detected");
+        addToast(
+          "認証エラーが発生しました。設定を確認してください。",
+          "warning",
+          8000
+        );
+      });
+
+      // 自動発見エラーイベント
+      const autoDiscoveryErrorUnlisten = await listen<string>("auto-discovery-error", (event) => {
+        console.error("Auto-discovery error:", event.payload);
+        addToast(`自動発見エラー: ${event.payload}`, "error");
+      });
+
       return () => {
         successUnlisten();
         errorUnlisten();
         twitchAuthRequiredUnlisten();
+        backendReadyUnlisten();
+        channelStatsUnlisten();
+        channelsUpdatedUnlisten();
+        channelRemovedUnlisten();
+        discoveredStreamsUnlisten();
+        authErrorUnlisten();
+        autoDiscoveryErrorUnlisten();
       };
     };
 
@@ -101,7 +180,7 @@ function App() {
     return () => {
       if (cleanup) cleanup();
     };
-  }, [addToast]);
+  }, [addToast, setBackendReady]);
 
   // ネイティブアプリらしい動作を設定
   useEffect(() => {
@@ -194,22 +273,23 @@ function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <ToastContainer />
-        <ConfirmDialog />
-        {showDonation && <DonationModal onClose={closeDonation} />}
-        <DatabaseErrorDialog
-          isOpen={showErrorDialog}
-          errorMessage={dbErrorMessage}
-          onClose={() => {
-            // キャンセル時はアプリを終了
-            window.close();
-          }}
-          onSuccess={() => {
-            // 成功時はダイアログを閉じる（メインウィンドウは既に表示済み）
-            setShowErrorDialog(false);
-          }}
-        />
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
+        <NavigationProvider activeTab={activeTab} setActiveTab={setActiveTab}>
+          <ToastContainer />
+          <ConfirmDialog />
+          {showDonation && <DonationModal onClose={closeDonation} />}
+          <DatabaseErrorDialog
+            isOpen={showErrorDialog}
+            errorMessage={dbErrorMessage}
+            onClose={() => {
+              // キャンセル時はアプリを終了
+              window.close();
+            }}
+            onSuccess={() => {
+              // 成功時はダイアログを閉じる（メインウィンドウは既に表示済み）
+              setShowErrorDialog(false);
+            }}
+          />
+          <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
           {/* ナビゲーションバー */}
           <nav className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl shadow-sm border-b border-gray-200/50 dark:border-slate-700/50 sticky top-0 z-40">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -272,6 +352,7 @@ function App() {
             </div>
           </main>
         </div>
+        </NavigationProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   );

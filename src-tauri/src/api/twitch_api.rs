@@ -4,10 +4,10 @@ use crate::oauth::twitch::TwitchOAuth;
 use chrono::{DateTime, Local};
 use serde::Serialize;
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::Emitter;
-use tokio::sync::Mutex as TokioMutex;
+use tokio::sync::Mutex;
 use twitch_api::{
     helix::{
         search::{Category, SearchCategoriesRequest},
@@ -27,7 +27,7 @@ pub struct TwitchApiClient {
     app_handle: Option<tauri::AppHandle>,
     rate_limiter: Arc<Mutex<TwitchRateLimitTracker>>,
     /// Mutex to prevent concurrent token refresh operations
-    refresh_lock: Arc<TokioMutex<()>>,
+    refresh_lock: Arc<Mutex<()>>,
 }
 
 impl TwitchApiClient {
@@ -36,7 +36,14 @@ impl TwitchApiClient {
     /// For Device Code Flow (user authentication), client_secret can be None.
     /// For App Access Token (client credentials flow), client_secret is required.
     pub fn new(client_id: String, client_secret: Option<String>) -> Self {
-        let client = Arc::new(HelixClient::default());
+        // カスタムreqwestクライアントを作成（タイムアウト設定付き）
+        let reqwest_client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30)) // 30秒のタイムアウト
+            .connect_timeout(std::time::Duration::from_secs(10)) // 接続タイムアウト10秒
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+
+        let client = Arc::new(HelixClient::with_client(reqwest_client));
 
         Self {
             client,
@@ -44,7 +51,7 @@ impl TwitchApiClient {
             client_secret,
             app_handle: None,
             rate_limiter: Arc::new(Mutex::new(TwitchRateLimitTracker::new())),
-            refresh_lock: Arc::new(TokioMutex::new(())),
+            refresh_lock: Arc::new(Mutex::new(())),
         }
     }
 
@@ -124,7 +131,8 @@ impl TwitchApiClient {
         if let Some(current_token) = maybe_current_token {
             let access_token_typed = AccessToken::from(current_token.clone());
             // トークンが有効かどうか軽量チェック
-            if let Ok(mut limiter) = self.rate_limiter.lock() {
+            {
+                let mut limiter = self.rate_limiter.lock().await;
                 limiter.track_request();
             }
             if TwitchApiUserToken::from_token(&*self.client, access_token_typed)
@@ -201,7 +209,8 @@ impl TwitchApiClient {
         let access_token = self.get_access_token().await?;
 
         // トークン検証を試行（これもAPIコールなのでトラッキング）
-        if let Ok(mut limiter) = self.rate_limiter.lock() {
+        {
+            let mut limiter = self.rate_limiter.lock().await;
             limiter.track_request();
         }
 
@@ -231,7 +240,8 @@ impl TwitchApiClient {
                 let new_token = self.refresh_token().await?;
 
                 // 再度検証（これもAPIコールなのでトラッキング）
-                if let Ok(mut limiter) = self.rate_limiter.lock() {
+                {
+                    let mut limiter = self.rate_limiter.lock().await;
                     limiter.track_request();
                 }
 
@@ -327,7 +337,8 @@ impl TwitchApiClient {
         let request = GetUsersRequest::logins(login_refs);
 
         // リクエストをトラッキング
-        if let Ok(mut limiter) = self.rate_limiter.lock() {
+        {
+            let mut limiter = self.rate_limiter.lock().await;
             limiter.track_request();
         }
 
@@ -347,7 +358,8 @@ impl TwitchApiClient {
                     let refreshed_token = self.get_user_token().await?;
 
                     // 再試行もトラッキング
-                    if let Ok(mut limiter) = self.rate_limiter.lock() {
+                    {
+                        let mut limiter = self.rate_limiter.lock().await;
                         limiter.track_request();
                     }
 
@@ -377,7 +389,8 @@ impl TwitchApiClient {
         let request = GetStreamsRequest::user_ids(user_id_refs);
 
         // リクエストをトラッキング
-        if let Ok(mut limiter) = self.rate_limiter.lock() {
+        {
+            let mut limiter = self.rate_limiter.lock().await;
             limiter.track_request();
         }
 
@@ -393,7 +406,8 @@ impl TwitchApiClient {
                     let refreshed_token = self.get_user_token().await?;
 
                     // 再試行もトラッキング
-                    if let Ok(mut limiter) = self.rate_limiter.lock() {
+                    {
+                        let mut limiter = self.rate_limiter.lock().await;
                         limiter.track_request();
                     }
 
@@ -424,7 +438,8 @@ impl TwitchApiClient {
         let request = GetStreamsRequest::user_ids(user_id_refs.as_slice());
 
         // リクエストをトラッキング
-        if let Ok(mut limiter) = self.rate_limiter.lock() {
+        {
+            let mut limiter = self.rate_limiter.lock().await;
             limiter.track_request();
         }
 
@@ -440,7 +455,8 @@ impl TwitchApiClient {
                     let refreshed_token = self.get_user_token().await?;
 
                     // 再試行もトラッキング
-                    if let Ok(mut limiter) = self.rate_limiter.lock() {
+                    {
+                        let mut limiter = self.rate_limiter.lock().await;
                         limiter.track_request();
                     }
 
@@ -470,7 +486,8 @@ impl TwitchApiClient {
         let request = GetUsersRequest::ids(user_id_refs.as_slice());
 
         // リクエストをトラッキング
-        if let Ok(mut limiter) = self.rate_limiter.lock() {
+        {
+            let mut limiter = self.rate_limiter.lock().await;
             limiter.track_request();
         }
 
@@ -486,7 +503,8 @@ impl TwitchApiClient {
                     let refreshed_token = self.get_user_token().await?;
 
                     // 再試行もトラッキング
-                    if let Ok(mut limiter) = self.rate_limiter.lock() {
+                    {
+                        let mut limiter = self.rate_limiter.lock().await;
                         limiter.track_request();
                     }
 
@@ -517,7 +535,8 @@ impl TwitchApiClient {
         let request = GetUsersRequest::logins(login_refs.as_slice());
 
         // リクエストをトラッキング
-        if let Ok(mut limiter) = self.rate_limiter.lock() {
+        {
+            let mut limiter = self.rate_limiter.lock().await;
             limiter.track_request();
         }
 
@@ -533,7 +552,8 @@ impl TwitchApiClient {
                     let refreshed_token = self.get_user_token().await?;
 
                     // 再試行もトラッキング
-                    if let Ok(mut limiter) = self.rate_limiter.lock() {
+                    {
+                        let mut limiter = self.rate_limiter.lock().await;
                         limiter.track_request();
                     }
 
@@ -575,7 +595,8 @@ impl TwitchApiClient {
             let request = GetChannelFollowersRequest::broadcaster_id(broadcaster_id_ref);
 
             // リクエストをトラッキング
-            if let Ok(mut limiter) = self.rate_limiter.lock() {
+            {
+                let mut limiter = self.rate_limiter.lock().await;
                 limiter.track_request();
             }
 
@@ -632,7 +653,8 @@ impl TwitchApiClient {
         request.first = Some(100);
 
         // リクエストをトラッキング
-        if let Ok(mut limiter) = self.rate_limiter.lock() {
+        {
+            let mut limiter = self.rate_limiter.lock().await;
             limiter.track_request();
         }
 
@@ -648,7 +670,8 @@ impl TwitchApiClient {
                     let refreshed_token = self.get_user_token().await?;
 
                     // 再試行もトラッキング
-                    if let Ok(mut limiter) = self.rate_limiter.lock() {
+                    {
+                        let mut limiter = self.rate_limiter.lock().await;
                         limiter.track_request();
                     }
 
@@ -686,7 +709,8 @@ impl TwitchApiClient {
         request.first = first.map(|n| n.min(100));
 
         // リクエストをトラッキング
-        if let Ok(mut limiter) = self.rate_limiter.lock() {
+        {
+            let mut limiter = self.rate_limiter.lock().await;
             limiter.track_request();
         }
 
@@ -702,7 +726,8 @@ impl TwitchApiClient {
                     let refreshed_token = self.get_user_token().await?;
 
                     // 再試行もトラッキング
-                    if let Ok(mut limiter) = self.rate_limiter.lock() {
+                    {
+                        let mut limiter = self.rate_limiter.lock().await;
                         limiter.track_request();
                     }
 
@@ -736,7 +761,8 @@ impl TwitchApiClient {
         let request = GetGamesRequest::ids(game_id_refs.as_slice());
 
         // リクエストをトラッキング
-        if let Ok(mut limiter) = self.rate_limiter.lock() {
+        {
+            let mut limiter = self.rate_limiter.lock().await;
             limiter.track_request();
         }
 
@@ -752,7 +778,8 @@ impl TwitchApiClient {
                     let refreshed_token = self.get_user_token().await?;
 
                     // 再試行もトラッキング
-                    if let Ok(mut limiter) = self.rate_limiter.lock() {
+                    {
+                        let mut limiter = self.rate_limiter.lock().await;
                         limiter.track_request();
                     }
 

@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { BroadcasterAnalytics as BroadcasterAnalyticsType, Channel } from '../../types';
 import { BarChart } from '../common/charts/BarChart';
 import { Tooltip } from '../common/Tooltip';
 import { useSortableData } from '../../hooks/useSortableData';
 import { SortableTableHeader } from '../common/SortableTableHeader';
+import { getBroadcasterAnalytics } from '../../api/statistics';
+import { useChannelStore } from '../../stores/channelStore';
 
 interface BroadcasterAnalyticsProps {
   startTime?: string;
@@ -18,27 +18,19 @@ export default function BroadcasterAnalytics({
   endTime,
 }: BroadcasterAnalyticsProps) {
   const [selectedChannelId, setSelectedChannelId] = useState<number | null>(null);
+  const { channels, fetchChannels } = useChannelStore();
 
   // チャンネル一覧取得
-  const { data: channels } = useQuery({
-    queryKey: ["channels"],
-    queryFn: async () => {
-      return await invoke<Channel[]>("list_channels");
-    },
-  });
+  useEffect(() => {
+    fetchChannels();
+  }, [fetchChannels]);
   const { data: analytics, isLoading, error } = useQuery({
     queryKey: ['broadcaster-analytics', selectedChannelId, startTime, endTime],
-    queryFn: async () => {
-      const result = await invoke<BroadcasterAnalyticsType[]>(
-        'get_broadcaster_analytics',
-        {
-          channelId: selectedChannelId || undefined,
-          startTime,
-          endTime,
-        }
-      );
-      return result;
-    },
+    queryFn: () => getBroadcasterAnalytics({
+      channelId: selectedChannelId || undefined,
+      startTime,
+      endTime,
+    }),
   });
 
   // ソート機能
@@ -48,9 +40,9 @@ export default function BroadcasterAnalytics({
   );
 
   // チャンネルページを開く
-  const handleOpenChannel = async (channelName: string) => {
+  const handleOpenChannel = async (loginName: string) => {
     try {
-      await openUrl(`https://www.twitch.tv/${channelName}`);
+      await openUrl(`https://www.twitch.tv/${loginName}`);
     } catch (err) {
       console.error('Failed to open channel:', err);
     }
@@ -146,16 +138,16 @@ export default function BroadcasterAnalytics({
   };
 
   const formatHours = (hours: number): string => {
-    return hours.toFixed(1);
+    return (hours || 0).toFixed(1);
   };
 
   const formatPercent = (percent: number | null): string => {
     if (percent === null) return 'N/A';
-    return `${percent.toFixed(1)}%`;
+    return `${(percent || 0).toFixed(1)}%`;
   };
 
   const formatDecimal = (num: number): string => {
-    return num.toFixed(2);
+    return (num || 0).toFixed(2);
   };
 
   // MinutesWatched チャート用データ
@@ -173,7 +165,7 @@ export default function BroadcasterAnalytics({
   // Hours Broadcasted チャート用データ
   const hoursChartData = sortedItems.map((item) => ({
     name: item.channel_name,
-    value: parseFloat(item.hours_broadcasted.toFixed(1)),
+    value: parseFloat((item.hours_broadcasted || 0).toFixed(1)),
   }));
 
   // Peak CCU チャート用データ
@@ -191,7 +183,13 @@ export default function BroadcasterAnalytics({
   // Engagement Rate チャート用データ
   const engagementChartData = sortedItems.map((item) => ({
     name: item.channel_name,
-    value: parseFloat(item.engagement_rate.toFixed(2)),
+    value: parseFloat((item.engagement_rate || 0).toFixed(2)),
+  }));
+
+  // Average Chat Rate チャート用データ
+  const chatRateChartData = sortedItems.map((item) => ({
+    name: item.channel_name,
+    value: parseFloat((item.avg_chat_rate || 0).toFixed(2)),
   }));
 
   return (
@@ -291,6 +289,19 @@ export default function BroadcasterAnalytics({
             )}
           </div>
         </div>
+        <div className="bg-gray-800 p-4 rounded-lg border border-gray-700">
+          <Tooltip content="1分あたりの平均チャット数">
+            <div className="text-gray-400 text-sm mb-1 flex items-center gap-1">
+              Avg Chat Rate
+              <span className="text-xs opacity-60">ℹ️</span>
+            </div>
+          </Tooltip>
+          <div className="text-2xl font-bold text-white">
+            {formatDecimal(
+              analytics.reduce((sum, item) => sum + item.avg_chat_rate, 0) / analytics.length
+            )}
+          </div>
+        </div>
       </div>
 
       {/* チャート */}
@@ -354,6 +365,16 @@ export default function BroadcasterAnalytics({
           color="#14b8a6"
           height={300}
           yAxisLabel="Messages/1000MW"
+        />
+        <BarChart
+          data={chatRateChartData}
+          dataKey="value"
+          xAxisKey="name"
+          title="Average Chat Rate by Broadcaster"
+          tooltipDescription="1分あたりの平均チャット数。配信の活発度を示します。"
+          color="#06b6d4"
+          height={300}
+          yAxisLabel="Messages/min"
         />
       </div>
 
@@ -439,6 +460,15 @@ export default function BroadcasterAnalytics({
                   Chat Msgs
                 </SortableTableHeader>
                 <SortableTableHeader
+                  sortKey="avg_chat_rate"
+                  currentSortKey={sortConfig.key as string}
+                  currentDirection={sortConfig.direction}
+                  onSort={requestSort}
+                  align="right"
+                >
+                  Avg Chat Rate
+                </SortableTableHeader>
+                <SortableTableHeader
                   sortKey="engagement_rate"
                   currentSortKey={sortConfig.key as string}
                   currentDirection={sortConfig.direction}
@@ -472,7 +502,7 @@ export default function BroadcasterAnalytics({
                 <tr key={item.channel_id} className="hover:bg-gray-700/30">
                   <td className="px-4 py-3 text-sm text-white font-medium">
                     <button
-                      onClick={() => handleOpenChannel(item.channel_name)}
+                      onClick={() => handleOpenChannel(item.login_name)}
                       className="text-blue-400 hover:text-blue-300 hover:underline transition-colors text-left"
                     >
                       {item.channel_name}
@@ -498,6 +528,9 @@ export default function BroadcasterAnalytics({
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-300 text-right">
                     {formatNumber(item.total_chat_messages)}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-300 text-right">
+                    {formatDecimal(item.avg_chat_rate)}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-300 text-right">
                     {formatDecimal(item.engagement_rate)}

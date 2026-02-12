@@ -1,12 +1,11 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { GameAnalytics as GameAnalyticsType } from '../../types';
 import { BarChart } from '../common/charts/BarChart';
 import { Tooltip } from '../common/Tooltip';
 import { useSortableData } from '../../hooks/useSortableData';
 import { SortableTableHeader } from '../common/SortableTableHeader';
+import { getGameAnalytics, listGameCategories } from '../../api/statistics';
 
 interface GameAnalyticsProps {
   startTime?: string;
@@ -23,25 +22,19 @@ export default function GameAnalytics({
   // カテゴリ一覧を取得
   const { data: categories } = useQuery({
     queryKey: ['game-categories', startTime, endTime],
-    queryFn: async () => {
-      const result = await invoke<string[]>('list_game_categories', {
-        startTime,
-        endTime,
-      });
-      return result;
-    },
+    queryFn: () => listGameCategories({
+      startTime,
+      endTime,
+    }),
   });
   // ゲーム分析データを取得
   const { data: analytics, isLoading, error } = useQuery({
     queryKey: ['game-analytics', selectedCategory, startTime, endTime],
-    queryFn: async () => {
-      const result = await invoke<GameAnalyticsType[]>('get_game_analytics', {
-        category: selectedCategory || undefined,
-        startTime,
-        endTime,
-      });
-      return result;
-    },
+    queryFn: () => getGameAnalytics({
+      category: selectedCategory || undefined,
+      startTime,
+      endTime,
+    }),
   });
 
   // ソート機能
@@ -51,9 +44,9 @@ export default function GameAnalytics({
   );
 
   // チャンネルページを開く
-  const handleOpenChannel = async (channelName: string) => {
+  const handleOpenChannel = async (loginName: string) => {
     try {
-      await openUrl(`https://www.twitch.tv/${channelName}`);
+      await openUrl(`https://www.twitch.tv/${loginName}`);
     } catch (err) {
       console.error('Failed to open channel:', err);
     }
@@ -94,7 +87,11 @@ export default function GameAnalytics({
   };
 
   const formatHours = (hours: number): string => {
-    return hours.toFixed(1);
+    return (hours || 0).toFixed(1);
+  };
+
+  const formatDecimal = (num: number): string => {
+    return (num || 0).toFixed(2);
   };
 
   // MinutesWatched チャート用データ（上位10件）
@@ -118,7 +115,7 @@ export default function GameAnalytics({
     .slice(0, 10)
     .map((item) => ({
       name: item.category,
-      value: parseFloat(item.hours_broadcasted.toFixed(1)),
+      value: parseFloat((item.hours_broadcasted || 0).toFixed(1)),
     }));
 
   // Unique Broadcasters チャート用データ（上位10件）
@@ -127,6 +124,22 @@ export default function GameAnalytics({
     .map((item) => ({
       name: item.category,
       value: item.unique_broadcasters,
+    }));
+
+  // Average Chat Rate チャート用データ（上位10件）
+  const chatRateChartData = sortedItems
+    .slice(0, 10)
+    .map((item) => ({
+      name: item.category,
+      value: parseFloat((item.avg_chat_rate || 0).toFixed(2)),
+    }));
+
+  // Engagement Rate チャート用データ（上位10件）
+  const engagementChartData = sortedItems
+    .slice(0, 10)
+    .map((item) => ({
+      name: item.category,
+      value: parseFloat((item.engagement_rate || 0).toFixed(2)),
     }));
 
   return (
@@ -222,6 +235,32 @@ export default function GameAnalytics({
             )}
           </div>
         </div>
+        <div className="bg-gray-800 p-4 rounded-lg border border-gray-700">
+          <Tooltip content="このゲーム/カテゴリでのチャットメッセージ総数（概算値）">
+            <div className="text-gray-400 text-sm mb-1 flex items-center gap-1">
+              Total Chat Messages
+              <span className="text-xs opacity-60">ℹ️</span>
+            </div>
+          </Tooltip>
+          <div className="text-2xl font-bold text-white">
+            {formatNumber(
+              analytics.reduce((sum, item) => sum + item.total_chat_messages, 0)
+            )}
+          </div>
+        </div>
+        <div className="bg-gray-800 p-4 rounded-lg border border-gray-700">
+          <Tooltip content="1分あたりの平均チャット数">
+            <div className="text-gray-400 text-sm mb-1 flex items-center gap-1">
+              Avg Chat Rate
+              <span className="text-xs opacity-60">ℹ️</span>
+            </div>
+          </Tooltip>
+          <div className="text-2xl font-bold text-white">
+            {formatDecimal(
+              analytics.reduce((sum, item) => sum + item.avg_chat_rate, 0) / analytics.length
+            )}
+          </div>
+        </div>
       </div>
 
       {/* チャート */}
@@ -268,6 +307,29 @@ export default function GameAnalytics({
           color="#8b5cf6"
           height={300}
           yAxisLabel="Broadcasters"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <BarChart
+          data={chatRateChartData}
+          dataKey="value"
+          xAxisKey="name"
+          title="Top 10 Games by Average Chat Rate"
+          tooltipDescription="1分あたりの平均チャット数が最も多いゲームTop 10。チャットの活発度を示します。"
+          color="#06b6d4"
+          height={300}
+          yAxisLabel="Messages/min"
+        />
+        <BarChart
+          data={engagementChartData}
+          dataKey="value"
+          xAxisKey="name"
+          title="Top 10 Games by Engagement Rate"
+          tooltipDescription="エンゲージメント率（チャット数 / Minutes Watched × 1000）が最も高いゲームTop 10。視聴者の参加度を示します。"
+          color="#14b8a6"
+          height={300}
+          yAxisLabel="Messages/1000MW"
         />
       </div>
 
@@ -326,6 +388,33 @@ export default function GameAnalytics({
                   Unique Broadcasters
                 </SortableTableHeader>
                 <SortableTableHeader
+                  sortKey="total_chat_messages"
+                  currentSortKey={sortConfig.key as string}
+                  currentDirection={sortConfig.direction}
+                  onSort={requestSort}
+                  align="right"
+                >
+                  Chat Messages
+                </SortableTableHeader>
+                <SortableTableHeader
+                  sortKey="avg_chat_rate"
+                  currentSortKey={sortConfig.key as string}
+                  currentDirection={sortConfig.direction}
+                  onSort={requestSort}
+                  align="right"
+                >
+                  Avg Chat Rate
+                </SortableTableHeader>
+                <SortableTableHeader
+                  sortKey="engagement_rate"
+                  currentSortKey={sortConfig.key as string}
+                  currentDirection={sortConfig.direction}
+                  onSort={requestSort}
+                  align="right"
+                >
+                  Engagement
+                </SortableTableHeader>
+                <SortableTableHeader
                   sortKey="top_channel"
                   currentSortKey={sortConfig.key as string}
                   currentDirection={sortConfig.direction}
@@ -354,10 +443,19 @@ export default function GameAnalytics({
                   <td className="px-4 py-3 text-sm text-gray-300 text-right">
                     {item.unique_broadcasters}
                   </td>
+                  <td className="px-4 py-3 text-sm text-gray-300 text-right">
+                    {formatNumber(item.total_chat_messages)}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-300 text-right">
+                    {formatDecimal(item.avg_chat_rate)}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-300 text-right">
+                    {formatDecimal(item.engagement_rate)}
+                  </td>
                   <td className="px-4 py-3 text-sm text-gray-300">
-                    {item.top_channel ? (
+                    {item.top_channel && item.top_channel_login ? (
                       <button
-                        onClick={() => handleOpenChannel(item.top_channel!)}
+                        onClick={() => handleOpenChannel(item.top_channel_login!)}
                         className="text-blue-400 hover:text-blue-300 hover:underline transition-colors text-left"
                       >
                         {item.top_channel}

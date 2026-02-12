@@ -15,10 +15,25 @@ export function Export() {
   const [previewData, setPreviewData] = useState<string>('');
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
 
+  // ローカル日付を正しく取得（toISOString は UTC のため、統計ページと同様に getFullYear/getMonth/getDate を使用）
+  const getInitialDateRange = () => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 7);
+    const formatLocalDate = (date: Date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+    return { start: formatLocalDate(start), end: formatLocalDate(end) };
+  };
+  const initialRange = getInitialDateRange();
+
   const [config, setConfig] = useState({
     channelId: null as number | null,
-    startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0],
+    startDate: initialRange.start,
+    endDate: initialRange.end,
     format: 'tsv' as 'csv' | 'tsv' | 'custom',
     aggregation: 'raw' as 'raw' | '1min' | '5min' | '1hour',
     customDelimiter: '|',

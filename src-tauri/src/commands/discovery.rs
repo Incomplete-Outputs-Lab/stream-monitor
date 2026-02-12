@@ -264,19 +264,16 @@ pub async fn get_discovered_streams(
     }
 
     // 1. 既に登録されているチャンネルのtwitch_user_idを取得
-    let registered_user_ids: HashSet<i64> = {
-        let conn = db_manager
-            .get_connection()
-            .await
-            .db_context("get connection")
-            .map_err(|e| e.to_string())?;
-
-        ChannelRepository::get_all_twitch_user_ids(&conn)
-            .db_context("get twitch user ids")
-            .map_err(|e| e.to_string())?
-            .into_iter()
-            .collect()
-    };
+    let registered_user_ids: HashSet<i64> = db_manager
+        .with_connection(|conn| {
+            ChannelRepository::get_all_twitch_user_ids(conn)
+                .db_context("get twitch user ids")
+                .map_err(|e| e.to_string())
+                .map(|ids| ids.into_iter().collect())
+        })
+        .await
+        .db_context("get connection")
+        .map_err(|e| e.to_string())?;
 
     // 2. メモリキャッシュから配信を取得（既に取得済みのcache変数を再利用）
     let streams = {
@@ -424,35 +421,33 @@ pub async fn promote_discovered_channel(
     let login_name = stream_info.channel_id.clone();
 
     // 重複チェック: 既に登録されているか確認
-    let already_exists = {
-        let conn = db_manager
-            .get_connection()
-            .await
-            .db_context("get connection")
-            .map_err(|e| e.to_string())?;
-
-        ChannelRepository::exists(&conn, "twitch", &login_name)
-            .db_context("check channel exists")
-            .map_err(|e| e.to_string())?
-    }; // conn と stmt はここでスコープを抜けてdropされる
+    let already_exists = db_manager
+        .with_connection(|conn| {
+            ChannelRepository::exists(conn, "twitch", &login_name)
+                .db_context("check channel exists")
+                .map_err(|e| e.to_string())
+        })
+        .await
+        .db_context("get connection")
+        .map_err(|e| e.to_string())?;
 
     if already_exists {
         // 既に登録されている場合はis_auto_discoveredフラグを更新
-        let conn = db_manager
-            .get_connection()
+        db_manager
+            .with_connection(|conn| {
+                ChannelRepository::update_auto_discovered(
+                    conn,
+                    "twitch",
+                    &login_name,
+                    false,
+                    Some(stream_info.twitch_user_id),
+                )
+                .db_context("update channel")
+                .map_err(|e| e.to_string())
+            })
             .await
             .db_context("get connection")
             .map_err(|e| e.to_string())?;
-
-        ChannelRepository::update_auto_discovered(
-            &conn,
-            "twitch",
-            &login_name,
-            false,
-            Some(stream_info.twitch_user_id),
-        )
-        .db_context("update channel")
-        .map_err(|e| e.to_string())?;
 
         eprintln!(
             "[Discovery] Updated existing channel {} (user_id: {}) to manual registration",

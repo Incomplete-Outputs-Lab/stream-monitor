@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
-import type { ChatMessage } from '../../types';
+import * as statisticsApi from '../../api/statistics';
 import { ChatMessagesSkeleton } from '../common/Skeleton';
 
 interface ChatTimelinePanelProps {
@@ -26,13 +25,11 @@ const ChatTimelinePanel: React.FC<ChatTimelinePanelProps> = ({
         limit: messagesPerPage,
         offset: (currentPage - 1) * messagesPerPage,
       });
-      const result = await invoke<ChatMessage[]>('get_chat_messages', {
-        query: {
-          streamId,
-          channelId,
-          limit: messagesPerPage,
-          offset: (currentPage - 1) * messagesPerPage,
-        }
+      const result = await statisticsApi.getChatMessages({
+        streamId,
+        channelId,
+        limit: messagesPerPage,
+        offset: (currentPage - 1) * messagesPerPage,
       });
       console.log('[ChatTimelinePanel] Received messages:', result.length);
       return result;

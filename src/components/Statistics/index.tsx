@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
+import * as channelsApi from "../../api/channels";
 import BroadcasterAnalytics from "./BroadcasterAnalytics";
 import GameAnalytics from "./GameAnalytics";
 import TopGamesAnalytics from "./TopGamesAnalytics";
@@ -11,7 +11,6 @@ import ChatAnalytics from "./ChatAnalytics";
 import DataScience from "./DataScience";
 import { DateRangePicker } from "./DateRangePicker";
 import { Skeleton } from "../common/Skeleton";
-import { Channel } from "../../types";
 import { OAuthWarningBanner } from "../common/OAuthWarningBanner";
 
 type TabType = "overview" | "broadcaster" | "game" | "topGames" | "gameDetail" | "topChannels" | "channelDetail" | "chatAnalytics" | "dataScience";
@@ -50,7 +49,7 @@ export function Statistics() {
   const { data: channels, isLoading: isLoadingChannels } = useQuery({
     queryKey: ["channels"],
     queryFn: async () => {
-      return await invoke<Channel[]>("list_channels");
+      return await channelsApi.listChannels();
     },
   });
 

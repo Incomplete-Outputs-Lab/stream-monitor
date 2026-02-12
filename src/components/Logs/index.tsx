@@ -1,18 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
 import { useState } from "react";
-
-interface LogEntry {
-  timestamp: string;
-  level: string;
-  message: string;
-}
-
-interface GetLogsQuery {
-  level?: string;
-  search?: string;
-  limit?: number;
-}
+import * as systemApi from "../../api/system";
 
 export function Logs() {
   const [selectedLevel, setSelectedLevel] = useState<string>("");
@@ -21,13 +9,13 @@ export function Logs() {
   const { data: logs, isLoading, refetch } = useQuery({
     queryKey: ["logs", selectedLevel, searchText],
     queryFn: async () => {
-      const query: GetLogsQuery = {
+      const query: systemApi.GetLogsQuery = {
         limit: 500,
       };
       if (selectedLevel) query.level = selectedLevel;
       if (searchText) query.search = searchText;
-      
-      return await invoke<LogEntry[]>("get_logs", { query });
+
+      return await systemApi.getLogs(query);
     },
     refetchInterval: 10000, // 10秒ごとに自動更新
   });

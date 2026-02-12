@@ -64,13 +64,12 @@ pub async fn get_channel_streams(
     offset: Option<i32>,
     db_manager: State<'_, DatabaseManager>,
 ) -> Result<Vec<StreamInfo>, String> {
-    let conn = db_manager
-        .get_connection()
+    db_manager
+        .with_connection(|conn| {
+            get_channel_streams_internal(conn, channel_id, limit, offset)
+                .map_err(|e| format!("Failed to get channel streams: {}", e))
+        })
         .await
-        .map_err(|e| format!("Database connection error: {}", e))?;
-
-    get_channel_streams_internal(&conn, channel_id, limit, offset)
-        .map_err(|e| format!("Failed to get channel streams: {}", e))
 }
 
 /// 日付範囲で配信一覧を取得（全チャンネル・カレンダー用）
@@ -82,13 +81,12 @@ pub async fn get_streams_by_date_range(
     offset: Option<i32>,
     db_manager: State<'_, DatabaseManager>,
 ) -> Result<Vec<StreamInfo>, String> {
-    let conn = db_manager
-        .get_connection()
+    db_manager
+        .with_connection(|conn| {
+            get_streams_by_date_range_internal(conn, &date_from, &date_to, limit, offset)
+                .map_err(|e| format!("Failed to get streams by date range: {}", e))
+        })
         .await
-        .map_err(|e| format!("Database connection error: {}", e))?;
-
-    get_streams_by_date_range_internal(&conn, &date_from, &date_to, limit, offset)
-        .map_err(|e| format!("Failed to get streams by date range: {}", e))
 }
 
 /// 比較用：基準配信と時間帯が重なる配信をサジェスト（全チャンネル・カテゴリ・時間帯）
@@ -98,13 +96,12 @@ pub async fn get_suggested_streams_for_comparison(
     limit: Option<i32>,
     db_manager: State<'_, DatabaseManager>,
 ) -> Result<Vec<StreamInfo>, String> {
-    let conn = db_manager
-        .get_connection()
+    db_manager
+        .with_connection(|conn| {
+            get_suggested_streams_for_comparison_internal(conn, base_stream_id, limit)
+                .map_err(|e| format!("Failed to get suggested streams: {}", e))
+        })
         .await
-        .map_err(|e| format!("Database connection error: {}", e))?;
-
-    get_suggested_streams_for_comparison_internal(&conn, base_stream_id, limit)
-        .map_err(|e| format!("Failed to get suggested streams: {}", e))
 }
 
 fn get_channel_streams_internal(
@@ -542,13 +539,12 @@ pub async fn get_stream_timeline(
     stream_id: i64,
     db_manager: State<'_, DatabaseManager>,
 ) -> Result<StreamTimelineData, String> {
-    let conn = db_manager
-        .get_connection()
+    db_manager
+        .with_connection(|conn| {
+            get_stream_timeline_internal(conn, stream_id)
+                .map_err(|e| format!("Failed to get stream timeline: {}", e))
+        })
         .await
-        .map_err(|e| format!("Database connection error: {}", e))?;
-
-    get_stream_timeline_internal(&conn, stream_id)
-        .map_err(|e| format!("Failed to get stream timeline: {}", e))
 }
 
 fn get_stream_timeline_internal(

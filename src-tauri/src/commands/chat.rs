@@ -31,12 +31,6 @@ pub async fn get_chat_messages(
 ) -> Result<Vec<ChatMessage>, String> {
     eprintln!("[get_chat_messages] Received query: {:?}", query);
 
-    let conn = db_manager
-        .get_connection()
-        .await
-        .db_context("get database connection")
-        .map_err(|e| e.to_string())?;
-
     let mut sql = String::from(
         r#"
         SELECT
@@ -88,9 +82,13 @@ pub async fn get_chat_messages(
     eprintln!("[get_chat_messages] SQL: {}", sql);
     eprintln!("[get_chat_messages] Params: {:?}", params);
 
-    let messages = utils::query_chat_messages(&conn, &sql, &params)
-        .db_context("query chat messages")
-        .map_err(|e| e.to_string())?;
+    let messages = db_manager
+        .with_connection(|conn| {
+            utils::query_chat_messages(conn, &sql, &params)
+                .db_context("query chat messages")
+                .map_err(|e| e.to_string())
+        })
+        .await?;
 
     eprintln!("[get_chat_messages] Found {} messages", messages.len());
 
@@ -103,12 +101,6 @@ pub async fn get_chat_messages_around_timestamp(
     db_manager: State<'_, DatabaseManager>,
     query: AnomalyChatQuery,
 ) -> Result<Vec<ChatMessage>, String> {
-    let conn = db_manager
-        .get_connection()
-        .await
-        .db_context("get database connection")
-        .map_err(|e| e.to_string())?;
-
     // Parse the timestamp as local time (no timezone info)
     let naive_time = NaiveDateTime::parse_from_str(&query.timestamp, "%Y-%m-%dT%H:%M:%S")
         .map_err(|e| format!("Invalid timestamp format: {}", e))?;
@@ -149,9 +141,13 @@ pub async fn get_chat_messages_around_timestamp(
 
     let params = vec![query.stream_id.to_string(), start_time, end_time];
 
-    let messages = utils::query_chat_messages(&conn, &sql, &params)
-        .db_context("query chat messages around timestamp")
-        .map_err(|e| e.to_string())?;
+    let messages = db_manager
+        .with_connection(|conn| {
+            utils::query_chat_messages(conn, &sql, &params)
+                .db_context("query chat messages around timestamp")
+                .map_err(|e| e.to_string())
+        })
+        .await?;
 
     eprintln!(
         "[Chat Anomaly] Found {} messages in time window",

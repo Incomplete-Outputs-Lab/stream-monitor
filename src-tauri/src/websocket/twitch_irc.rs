@@ -1,4 +1,5 @@
 use crate::database::models::ChatMessage;
+use crate::database::DatabaseManager;
 use crate::logger::AppLogger;
 use chrono::Local;
 use std::collections::HashMap;
@@ -29,7 +30,7 @@ pub struct TwitchIrcManager {
 }
 
 impl TwitchIrcManager {
-    pub fn new(db_conn: Arc<Mutex<duckdb::Connection>>, logger: Arc<AppLogger>) -> Self {
+    pub fn new(db_manager: Arc<DatabaseManager>, logger: Arc<AppLogger>) -> Self {
         // 匿名ログインの設定
         let config = ClientConfig::default();
         let (mut incoming_messages, client) =
@@ -38,7 +39,7 @@ impl TwitchIrcManager {
         let client = Arc::new(client);
         let channels: Arc<Mutex<HashMap<i64, ChannelConnection>>> =
             Arc::new(Mutex::new(HashMap::new()));
-        let db_conn_clone = Arc::clone(&db_conn);
+        let db_manager_clone = Arc::clone(&db_manager);
         let logger_clone = Arc::clone(&logger);
         let channels_clone = Arc::clone(&channels);
 
@@ -119,19 +120,19 @@ impl TwitchIrcManager {
                 // バッチフラッシュ（100件または5秒ごと）
                 if (batch.len() >= 100 || last_flush.elapsed().as_secs() >= 5) && !batch.is_empty()
                 {
-                    Self::flush_batch(&db_conn_clone, &mut batch, &logger_clone).await;
+                    Self::flush_batch(&db_manager_clone, &mut batch, &logger_clone).await;
                     last_flush = std::time::Instant::now();
                 }
             }
 
             // 残りのメッセージをフラッシュ
             if !batch.is_empty() {
-                Self::flush_batch(&db_conn_clone, &mut batch, &logger_clone).await;
+                Self::flush_batch(&db_manager_clone, &mut batch, &logger_clone).await;
             }
         });
 
         // incoming_taskを保持しないため、バックグラウンドで継続実行される
-        // db_connは直接保持せず、flush_batch内で使用する
+        // db_managerは直接保持せず、flush_batch内で使用する
 
         Self {
             channels,
@@ -148,7 +149,7 @@ impl TwitchIrcManager {
 
     /// バッチメッセージをデータベースに書き込み
     async fn flush_batch(
-        db_conn: &Arc<Mutex<duckdb::Connection>>,
+        db_manager: &Arc<DatabaseManager>,
         batch: &mut Vec<ChatMessage>,
         logger: &Arc<AppLogger>,
     ) {
@@ -156,8 +157,13 @@ impl TwitchIrcManager {
             return;
         }
 
-        let conn = db_conn.lock().await;
-        match crate::database::writer::DatabaseWriter::insert_chat_messages_batch(&conn, batch) {
+        let result = db_manager
+            .with_connection(|conn| {
+                crate::database::writer::DatabaseWriter::insert_chat_messages_batch(conn, batch)
+            })
+            .await;
+
+        match result {
             Ok(_) => {
                 logger.info(&format!(
                     "[IRC] Saved {} chat messages to database",

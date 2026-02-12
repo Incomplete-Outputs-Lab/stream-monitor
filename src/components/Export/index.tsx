@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
+import * as channelsApi from '../../api/channels';
+import * as exportApi from '../../api/export';
 import { ExportForm } from './ExportForm';
 import { Skeleton } from '../common/Skeleton';
 import type { Channel, ExportQuery } from '../../types';
@@ -28,7 +29,7 @@ export function Export() {
     const fetchChannels = async () => {
       try {
         setIsLoadingChannels(true);
-        const result = await invoke<Channel[]>('list_channels');
+        const result = await channelsApi.listChannels();
         setChannels(result);
       } catch (error) {
         console.error('Failed to fetch channels:', error);
@@ -89,10 +90,7 @@ export function Export() {
           delimiter,
         };
 
-        const preview = await invoke<string>('preview_export_data', {
-          query,
-          maxRows: 10,
-        });
+        const preview = await exportApi.previewExportData(query, 10);
 
         setPreviewData(preview);
       } catch (error) {
@@ -173,11 +171,11 @@ export function Export() {
           delimiter,
         };
 
-        const result = await invoke<string>('export_to_delimited', {
+        const result = await exportApi.exportToDelimited(
           query,
-          filePath: config.channelIds.length === 1 ? filePath : `${filePath.replace(/\.[^.]+$/, '')}_ch${channelId}.${fileExtension}`,
-          includeBom: true, // Add BOM for Excel compatibility
-        });
+          config.channelIds.length === 1 ? filePath : `${filePath.replace(/\.[^.]+$/, '')}_ch${channelId}.${fileExtension}`,
+          true
+        );
         results.push(result);
       }
 

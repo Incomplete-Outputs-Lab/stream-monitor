@@ -123,15 +123,13 @@ pub async fn export_to_delimited(
     file_path: String,
     include_bom: Option<bool>,
 ) -> Result<String, String> {
-    let conn = db_manager
-        .get_connection()
-        .await
-        .db_context("get database connection")
-        .map_err(|e| e.to_string())?;
-
-    let stats = get_stream_stats_internal(&conn, &query)
-        .db_context("query stats")
-        .map_err(|e| e.to_string())?;
+    let stats = db_manager
+        .with_connection(|conn| {
+            get_stream_stats_internal(conn, &query)
+                .db_context("query stats")
+                .map_err(|e| e.to_string())
+        })
+        .await?;
 
     let stats_len = stats.len();
 
@@ -198,15 +196,13 @@ pub async fn preview_export_data(
     query: ExportQuery,
     max_rows: Option<usize>,
 ) -> Result<String, String> {
-    let conn = db_manager
-        .get_connection()
-        .await
-        .db_context("get database connection")
-        .map_err(|e| e.to_string())?;
-
-    let stats = get_stream_stats_internal(&conn, &query)
-        .db_context("query stats")
-        .map_err(|e| e.to_string())?;
+    let stats = db_manager
+        .with_connection(|conn| {
+            get_stream_stats_internal(conn, &query)
+                .db_context("query stats")
+                .map_err(|e| e.to_string())
+        })
+        .await?;
 
     // Limit to max_rows (default 10)
     let max_rows = max_rows.unwrap_or(10);

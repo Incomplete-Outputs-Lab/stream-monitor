@@ -1,12 +1,13 @@
 import { useEffect } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ChannelWithStats, TwitchRateLimitStatus, DiscoveredStreamInfo } from "../../types";
+import { ChannelWithStats, DiscoveredStreamInfo } from "../../types";
 import { Tooltip as CustomTooltip } from "../common/Tooltip";
 import { toast } from "../../utils/toast";
 import { confirm } from "../../utils/confirm";
+import * as channelsApi from "../../api/channels";
+import * as configApi from "../../api/config";
 import * as discoveryApi from "../../api/discovery";
 import * as statisticsApi from "../../api/statistics";
 import { DesktopAppNotice } from "../common/DesktopAppNotice";
@@ -218,7 +219,7 @@ export function Dashboard() {
     queryKey: ["channels"],
     queryFn: async () => {
       console.log('[Dashboard] Fetching channels...');
-      const result = await invoke<ChannelWithStats[]>("list_channels");
+      const result = await channelsApi.listChannels();
       console.log('[Dashboard] Fetched channels:', result?.length, 'channels');
       return result;
     },
@@ -257,7 +258,7 @@ export function Dashboard() {
   // Twitch APIレート制限状態を取得
   const { data: rateLimitStatus } = useQuery({
     queryKey: ["twitch-rate-limit"],
-    queryFn: () => invoke<TwitchRateLimitStatus>("get_twitch_rate_limit_status"),
+    queryFn: configApi.getTwitchRateLimitStatus,
     refetchInterval: 5000, // 5秒ごとに更新
   });
 

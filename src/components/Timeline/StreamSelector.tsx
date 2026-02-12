@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { Channel, StreamInfo, StreamTimelineData } from '../../types';
+import * as channelsApi from '../../api/channels';
+import * as streamsApi from '../../api/streams';
+import type { Channel, StreamInfo, StreamTimelineData } from '../../types';
 import { Skeleton } from '../common/Skeleton';
 
 interface StreamSelectorProps {
@@ -31,7 +32,7 @@ const StreamSelector: React.FC<StreamSelectorProps> = ({ onTimelineSelect }) => 
     const fetchChannels = async () => {
       try {
         setLoadingChannels(true);
-        const result = await invoke<Channel[]>('list_channels');
+        const result = await channelsApi.listChannels();
         setChannels(result);
       } catch (err) {
         setError(`チャンネル一覧の取得に失敗しました: ${err}`);
@@ -55,8 +56,8 @@ const StreamSelector: React.FC<StreamSelectorProps> = ({ onTimelineSelect }) => 
       try {
         setLoadingStreams(true);
         setError(null);
-        const result = await invoke<StreamInfo[]>('get_channel_streams', {
-          channelId: selectedChannelId,
+        const result = await streamsApi.getChannelStreams({
+          channel_id: selectedChannelId,
           limit: 50,
           offset: 0,
         });
@@ -77,9 +78,7 @@ const StreamSelector: React.FC<StreamSelectorProps> = ({ onTimelineSelect }) => 
     try {
       setLoadingTimeline(true);
       setError(null);
-      const timeline = await invoke<StreamTimelineData>('get_stream_timeline', {
-        streamId,
-      });
+      const timeline = await streamsApi.getStreamTimeline(streamId);
       onTimelineSelect(timeline);
     } catch (err) {
       setError(`タイムラインデータの取得に失敗しました: ${err}`);

@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
 import { useState } from "react";
 import { ChannelWithStats } from "../../types";
 import { ChannelForm } from "./ChannelForm";
@@ -22,10 +21,7 @@ export function ChannelList() {
   // チャンネル取得
   const { data: channels = [], isLoading, error } = useQuery({
     queryKey: ["channels"],
-    queryFn: async () => {
-      const result = await invoke<ChannelWithStats[]>("list_channels");
-      return result;
-    },
+    queryFn: channelsApi.listChannels,
     enabled: backendReady, // バックエンド初期化完了まで実行しない
     refetchInterval: 30000, // 30秒ごとに更新
     staleTime: 25000, // 25秒間はキャッシュを使用

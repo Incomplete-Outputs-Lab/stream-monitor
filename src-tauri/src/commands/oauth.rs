@@ -64,7 +64,6 @@ pub async fn reinitialize_twitch_collector(
     use crate::collectors::twitch::TwitchCollector;
     use crate::logger::AppLogger;
     use std::sync::Arc;
-    use tokio::sync::Mutex;
 
     eprintln!("[Reinit] Reinitializing Twitch collector after authentication");
 
@@ -81,19 +80,12 @@ pub async fn reinitialize_twitch_collector(
     eprintln!("[Reinit] Client ID loaded: {}", client_id);
 
     // 新しいTwitchCollectorを作成
-    let db_conn = db_manager
-        .get_connection()
-        .await
-        .db_context("get database connection")
-        .map_err(|e| e.to_string())?;
-    let db_conn = Arc::new(Mutex::new(db_conn));
-
     let logger = app_handle.state::<AppLogger>();
     let collector = Arc::new(TwitchCollector::new_with_app(
         client_id.clone(),
         None,
         app_handle.clone(),
-        db_conn,
+        Arc::new(db_manager.inner().clone()),
         Arc::new(logger.inner().clone()),
     ));
 

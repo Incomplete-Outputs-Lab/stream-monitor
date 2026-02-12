@@ -44,6 +44,7 @@ export const AddChannelRequestSchema = z.object({
   channel_id: z.string(),
   channel_name: z.string(),
   poll_interval: z.number(),
+  twitch_user_id: z.number().optional(),
 });
 
 /**

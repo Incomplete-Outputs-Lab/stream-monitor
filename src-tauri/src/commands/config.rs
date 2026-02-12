@@ -2,7 +2,7 @@ use crate::config::keyring_store::KeyringStore;
 use crate::config::settings::SettingsManager;
 use crate::constants::database as db_constants;
 use crate::constants::youtube;
-use crate::database::{get_connection, DatabaseManager};
+use crate::database::DatabaseManager;
 use crate::error::ResultExt;
 use serde::{Deserialize, Serialize};
 use tauri::{command, AppHandle, Manager, State};
@@ -268,40 +268,34 @@ pub async fn recreate_database(app_handle: AppHandle) -> Result<DatabaseInitResu
     };
 
     // 新しいデータベース接続を取得（これで新しいDBが作成される）
-    match get_connection(&app_handle).await {
-        Ok(conn) => {
+    let db_manager: tauri::State<'_, DatabaseManager> = app_handle.state();
+    let result = db_manager
+        .with_connection(|conn| {
             // 明示的にスキーマ初期化を実行
-            match crate::database::schema::init_database(&conn) {
-                Ok(_) => {
-                    eprintln!("[Database Recreate] Database recreated successfully");
-                    Ok(DatabaseInitResult {
-                        success: true,
-                        message: "Database recreated successfully".to_string(),
-                        backup_created: backup_path,
-                        error_type: None,
-                    })
-                }
-                Err(schema_err) => {
-                    eprintln!(
-                        "[Database Recreate] Schema initialization failed: {}",
-                        schema_err
-                    );
-                    Ok(DatabaseInitResult {
-                        success: false,
-                        message: format!("Schema initialization failed: {}", schema_err),
-                        backup_created: backup_path,
-                        error_type: Some("schema_error".to_string()),
-                    })
-                }
-            }
+            crate::database::schema::init_database(conn).map_err(|e| e.to_string())
+        })
+        .await;
+
+    match result {
+        Ok(()) => {
+            eprintln!("[Database Recreate] Database recreated successfully");
+            Ok(DatabaseInitResult {
+                success: true,
+                message: "Database recreated successfully".to_string(),
+                backup_created: backup_path,
+                error_type: None,
+            })
         }
-        Err(e) => {
-            eprintln!("[Database Recreate] Database recreation failed: {}", e);
+        Err(schema_err) => {
+            eprintln!(
+                "[Database Recreate] Schema initialization failed: {}",
+                schema_err
+            );
             Ok(DatabaseInitResult {
                 success: false,
-                message: format!("Database recreation failed: {}", e),
-                backup_created: backup_path, // バックアップは作成できたかもしれない
-                error_type: Some("recreation_error".to_string()),
+                message: format!("Schema initialization failed: {}", schema_err),
+                backup_created: backup_path,
+                error_type: Some("schema_error".to_string()),
             })
         }
     }
@@ -313,7 +307,11 @@ pub async fn get_database_init_status(
     db_manager: State<'_, DatabaseManager>,
 ) -> Result<DbInitStatus, String> {
     // データベース接続を試行して初期化状態を確認
-    match db_manager.get_connection().await {
+    let result = db_manager
+        .with_connection(|_conn| Ok::<(), String>(()))
+        .await;
+
+    match result {
         Ok(_) => {
             // 接続成功 = 初期化済み
             Ok(DbInitStatus {

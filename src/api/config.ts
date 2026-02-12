@@ -2,7 +2,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { z } from 'zod';
 import {
   OAuthConfigSchema,
+  TwitchRateLimitStatusSchema,
   type OAuthConfig,
+  type TwitchRateLimitStatus,
 } from '../schemas';
 
 /**
@@ -85,4 +87,36 @@ export const deleteOAuthConfig = async (platform: string): Promise<void> => {
 export const hasOAuthConfig = async (platform: string): Promise<boolean> => {
   const result = await invoke<unknown>('has_oauth_config', { platform });
   return z.boolean().parse(result);
+};
+
+/**
+ * Twitch APIレート制限状態を取得
+ */
+export const getTwitchRateLimitStatus = async (): Promise<TwitchRateLimitStatus> => {
+  const result = await invoke<unknown>('get_twitch_rate_limit_status');
+  return TwitchRateLimitStatusSchema.parse(result);
+};
+
+export interface TwitchChannelInfo {
+  channel_id: string;
+  twitch_user_id: number;
+  display_name: string;
+  profile_image_url: string;
+  description: string;
+  follower_count?: number;
+  broadcaster_type?: string;
+}
+
+/**
+ * Twitchチャンネルを検証（APIで存在確認）
+ */
+export const validateTwitchChannel = async (
+  channelId: string,
+  accessToken: string | null
+): Promise<TwitchChannelInfo> => {
+  const result = await invoke<unknown>('validate_twitch_channel', {
+    channel_id: channelId,
+    access_token: accessToken,
+  });
+  return result as TwitchChannelInfo;
 };

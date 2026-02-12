@@ -30,3 +30,37 @@ export async function showMainWindow(): Promise<void> {
 export async function isBackendReady(): Promise<boolean> {
   return await invoke("is_backend_ready");
 }
+
+export interface BuildInfo {
+  version: string;
+  commit_hash?: string;
+  build_date?: string;
+  developer: string;
+  repository_url: string;
+}
+
+/**
+ * ビルド情報を取得
+ */
+export async function getBuildInfo(): Promise<BuildInfo> {
+  return await invoke<BuildInfo>("get_build_info");
+}
+
+export interface LogEntry {
+  timestamp: string;
+  level: string;
+  message: string;
+}
+
+export interface GetLogsQuery {
+  level?: string;
+  search?: string;
+  limit?: number;
+}
+
+/**
+ * ログ一覧を取得
+ */
+export async function getLogs(query: GetLogsQuery): Promise<LogEntry[]> {
+  return await invoke<LogEntry[]>("get_logs", { query });
+}

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
+import * as systemApi from '../../api/system';
 import { OAuthConfigForm } from './OAuthConfigForm';
 import { TokenForm } from './TokenForm';
 import { TwitchAuthPanel } from './TwitchAuthPanel';
@@ -9,14 +9,6 @@ import { AutoDiscoveryForm } from './AutoDiscoveryForm';
 import { GameCategoryManager } from './GameCategoryManager';
 import { useConfigStore } from '../../stores/configStore';
 import { useThemeStore } from '../../stores/themeStore';
-
-interface BuildInfo {
-  version: string;
-  commit_hash?: string;
-  build_date?: string;
-  developer: string;
-  repository_url: string;
-}
 
 export function Settings() {
   const [twitchAuthMethod, setTwitchAuthMethod] = useState<'auth' | 'config' | null>(null);
@@ -58,9 +50,7 @@ export function Settings() {
   // ビルド情報取得
   const { data: buildInfo } = useQuery({
     queryKey: ["build-info"],
-    queryFn: async () => {
-      return await invoke<BuildInfo>("get_build_info");
-    },
+    queryFn: systemApi.getBuildInfo,
   });
 
   useEffect(() => {

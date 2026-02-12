@@ -2,6 +2,7 @@ use crate::api::youtube_api::YouTubeApiClient;
 use crate::api::youtube_live_chat::YouTubeLiveChatCollector;
 use crate::collectors::collector_trait::Collector;
 use crate::database::models::{Channel, StreamData};
+use crate::database::DatabaseManager;
 use async_trait::async_trait;
 use chrono::Local;
 use std::collections::HashMap;
@@ -12,7 +13,7 @@ use tokio::sync::Mutex;
 pub struct YouTubeCollector {
     api_client: Arc<Mutex<YouTubeApiClient>>,
     chat_collectors: Arc<Mutex<HashMap<String, YouTubeLiveChatCollector>>>,
-    db_conn: Arc<Mutex<duckdb::Connection>>,
+    db_manager: Arc<DatabaseManager>,
 }
 
 #[allow(dead_code)]
@@ -21,13 +22,13 @@ impl YouTubeCollector {
         client_id: String,
         client_secret: String,
         redirect_uri: String,
-        db_conn: Arc<Mutex<duckdb::Connection>>,
+        db_manager: Arc<DatabaseManager>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let api_client = YouTubeApiClient::new(client_id, client_secret, redirect_uri).await?;
         Ok(Self {
             api_client: Arc::new(Mutex::new(api_client)),
             chat_collectors: Arc::new(Mutex::new(HashMap::new())),
-            db_conn,
+            db_manager,
         })
     }
 }

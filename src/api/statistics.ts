@@ -201,7 +201,7 @@ export const getChatMessages = async (params: {
   limit?: number;
   offset?: number;
 }): Promise<ChatMessage[]> => {
-  const result = await invoke<unknown>('get_chat_messages', params);
+  const result = await invoke<unknown>('get_chat_messages', { query: params });
   return z.array(ChatMessageSchema).parse(result);
 };
 

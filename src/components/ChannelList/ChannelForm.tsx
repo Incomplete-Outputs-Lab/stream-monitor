@@ -1,10 +1,10 @@
 import { useForm } from "react-hook-form";
 import { useMutation } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
-import { Channel } from "../../types";
 import { useState } from "react";
 import { getToken } from "../../utils/keyring";
 import { toast } from "../../utils/toast";
+import * as channelsApi from "../../api/channels";
+import * as configApi from "../../api/config";
 
 interface ChannelFormData {
   platform: 'twitch' | 'youtube';
@@ -18,19 +18,9 @@ interface ChannelFormProps {
   onCancel: () => void;
 }
 
-interface TwitchChannelInfo {
-  channel_id: string;
-  twitch_user_id: number;
-  display_name: string;
-  profile_image_url: string;
-  description: string;
-  follower_count?: number;
-  broadcaster_type?: string;
-}
-
 export function ChannelForm({ onSuccess, onCancel }: ChannelFormProps) {
   const [isValidating, setIsValidating] = useState(false);
-  const [validatedInfo, setValidatedInfo] = useState<TwitchChannelInfo | null>(null);
+  const [validatedInfo, setValidatedInfo] = useState<configApi.TwitchChannelInfo | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const { register, handleSubmit, formState: { errors }, reset, watch, setValue } = useForm<ChannelFormData>({
@@ -44,18 +34,12 @@ export function ChannelForm({ onSuccess, onCancel }: ChannelFormProps) {
 
   const addMutation = useMutation({
     mutationFn: async (data: ChannelFormData & { display_name?: string; profile_image_url?: string; follower_count?: number; broadcaster_type?: string; twitch_user_id?: number }) => {
-      return await invoke<Channel>("add_channel", {
-        request: {
-          platform: data.platform,
-          channel_id: data.channel_id,
-          channel_name: data.channel_name,
-          display_name: data.display_name,
-          profile_image_url: data.profile_image_url,
-          poll_interval: data.poll_interval,
-          follower_count: data.follower_count,
-          broadcaster_type: data.broadcaster_type,
-          twitch_user_id: data.twitch_user_id,
-        },
+      return await channelsApi.addChannel({
+        platform: data.platform,
+        channel_id: data.channel_id,
+        channel_name: data.channel_name,
+        poll_interval: data.poll_interval,
+        twitch_user_id: data.twitch_user_id,
       });
     },
     onSuccess: () => {
@@ -87,10 +71,10 @@ export function ChannelForm({ onSuccess, onCancel }: ChannelFormProps) {
         console.error('Failed to get token from Stronghold:', e);
       }
 
-      const info = await invoke<TwitchChannelInfo>('validate_twitch_channel', {
-        channelId: channelId.trim(),
-        accessToken: accessToken,
-      });
+      const info = await configApi.validateTwitchChannel(
+        channelId.trim(),
+        accessToken
+      );
       
       setValidatedInfo(info);
       // 検証成功時、display_nameを自動設定

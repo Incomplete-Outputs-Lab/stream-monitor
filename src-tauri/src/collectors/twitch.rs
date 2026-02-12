@@ -1,12 +1,11 @@
 use crate::api::twitch_api::TwitchApiClient;
 use crate::collectors::collector_trait::Collector;
 use crate::database::models::{Channel, StreamData};
+use crate::database::DatabaseManager;
 use crate::logger::AppLogger;
 use crate::websocket::twitch_irc::TwitchIrcManager;
 use async_trait::async_trait;
-use duckdb::Connection;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 pub struct TwitchCollector {
     api_client: Arc<TwitchApiClient>,
@@ -19,10 +18,10 @@ impl TwitchCollector {
         client_id: String,
         client_secret: Option<String>,
         app_handle: tauri::AppHandle,
-        db_conn: Arc<Mutex<Connection>>,
+        db_manager: Arc<DatabaseManager>,
         logger: Arc<AppLogger>,
     ) -> Self {
-        let irc_manager = Arc::new(TwitchIrcManager::new(db_conn, Arc::clone(&logger)));
+        let irc_manager = Arc::new(TwitchIrcManager::new(db_manager, Arc::clone(&logger)));
 
         Self {
             api_client: Arc::new(

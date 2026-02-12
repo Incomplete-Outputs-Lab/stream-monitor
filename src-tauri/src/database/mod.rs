@@ -132,17 +132,18 @@ impl DatabaseManager {
         })
     }
 
-    /// データベース接続を取得
-    pub async fn get_connection(
-        &self,
-    ) -> Result<Connection, Box<dyn std::error::Error + Send + Sync>> {
-        let conn = self.conn.lock().await;
-        conn.try_clone()
-            .db_context("clone connection")
-            .map_err(|e| e.to_string().into())
+    /// Exclusive access to database connection via closure.
+    /// The lock is held only for the duration of the closure execution.
+    /// Connection reference cannot escape the closure scope.
+    pub async fn with_connection<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&Connection) -> R + Send,
+        R: Send,
+    {
+        let guard = self.conn.lock().await;
+        f(&guard)
     }
 
-    /// 手動バックアップを作成
     /// データベースファイルのパスを取得
     pub fn get_db_path(&self) -> &PathBuf {
         &self.db_path
@@ -167,18 +168,12 @@ impl DatabaseManager {
     /// 定期的なチェックポイント（データ安全性向上）
     #[allow(dead_code)]
     pub async fn checkpoint(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let conn = self.get_connection().await?;
-        conn.execute("CHECKPOINT", [])?;
-        Ok(())
+        self.with_connection(|conn| {
+            conn.execute("CHECKPOINT", [])?;
+            Ok(())
+        })
+        .await
     }
-}
-
-// 後方互換性のための関数
-pub async fn get_connection(
-    app_handle: &AppHandle,
-) -> Result<Connection, Box<dyn std::error::Error + Send + Sync>> {
-    let db_manager: tauri::State<'_, DatabaseManager> = app_handle.state();
-    db_manager.get_connection().await
 }
 
 #[cfg(test)]

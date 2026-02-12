@@ -2,7 +2,7 @@ use crate::collectors::poller::ChannelPoller;
 use crate::database::{
     models::{Channel, ChannelWithStats},
     repositories::{channel_repository::CreateChannelParams, ChannelRepository},
-    utils, DatabaseManager,
+    DatabaseManager,
 };
 use crate::error::{OptionExt, ResultExt};
 use serde::{Deserialize, Serialize};
@@ -27,33 +27,31 @@ pub async fn add_channel(
     db_manager: State<'_, DatabaseManager>,
     request: AddChannelRequest,
 ) -> Result<Channel, String> {
-    let conn = db_manager
-        .get_connection()
-        .await
-        .db_context("get database connection")
-        .map_err(|e| e.to_string())?;
-
     let poll_interval = request.poll_interval.unwrap_or(60);
 
-    // チャンネルを作成
-    let channel_id = ChannelRepository::create(
-        &conn,
-        CreateChannelParams {
-            platform: request.platform,
-            channel_id: request.channel_id,
-            channel_name: request.channel_name,
-            poll_interval,
-            twitch_user_id: request.twitch_user_id,
-        },
-    )
-    .db_context("create channel")
-    .map_err(|e| e.to_string())?;
+    let channel = db_manager
+        .with_connection(|conn| {
+            // チャンネルを作成
+            let channel_id = ChannelRepository::create(
+                conn,
+                CreateChannelParams {
+                    platform: request.platform,
+                    channel_id: request.channel_id,
+                    channel_name: request.channel_name,
+                    poll_interval,
+                    twitch_user_id: request.twitch_user_id,
+                },
+            )
+            .db_context("create channel")
+            .map_err(|e| e.to_string())?;
 
-    let channel = ChannelRepository::get_by_id(&conn, channel_id)
-        .db_context("get created channel")
-        .map_err(|e| e.to_string())?
-        .ok_or_not_found("Failed to retrieve created channel")
-        .map_err(|e| e.to_string())?;
+            ChannelRepository::get_by_id(conn, channel_id)
+                .db_context("get created channel")
+                .map_err(|e| e.to_string())?
+                .ok_or_not_found("Failed to retrieve created channel")
+                .map_err(|e| e.to_string())
+        })
+        .await?;
 
     // 有効なチャンネルであればポーリングを開始
     if channel.enabled {
@@ -62,7 +60,8 @@ pub async fn add_channel(
             if let Err(e) = poller.start_polling(channel.clone(), &db_manager, app_handle.clone()) {
                 eprintln!(
                     "Failed to start polling for new channel {}: {}",
-                    channel_id, e
+                    channel.id.unwrap_or(0),
+                    e
                 );
                 // エラーが発生してもチャンネル作成は成功とする
             }
@@ -84,71 +83,18 @@ pub async fn remove_channel(
         poller.stop_polling(id).await;
     }
 
-    let conn = db_manager
-        .get_connection()
-        .await
-        .db_context("get database connection")
-        .map_err(|e| e.to_string())?;
-
-    let id_str = id.to_string();
-
-    // トランザクション開始
-    conn.execute("BEGIN TRANSACTION", [])
-        .db_context("begin transaction")
-        .map_err(|e| e.to_string())?;
-
-    let result: Result<(), String> = (|| {
-        // 1. chat_messagesを削除（stream_idを経由して削除）
-        conn.execute(
-            "DELETE FROM chat_messages WHERE stream_id IN (SELECT id FROM streams WHERE channel_id = ?)",
-            [id_str.as_str()],
-        )
-        .db_context("delete chat messages")
-        .map_err(|e| e.to_string())?;
-
-        // 2. stream_statsを削除
-        conn.execute(
-            "DELETE FROM stream_stats WHERE stream_id IN (SELECT id FROM streams WHERE channel_id = ?)",
-            [id_str.as_str()],
-        )
-        .db_context("delete stream stats")
-        .map_err(|e| e.to_string())?;
-
-        // 3. streamsを削除
-        conn.execute(
-            "DELETE FROM streams WHERE channel_id = ?",
-            [id_str.as_str()],
-        )
-        .db_context("delete streams")
-        .map_err(|e| e.to_string())?;
-
-        // 4. 最後にchannelを削除
-        ChannelRepository::delete(&conn, id)
-            .db_context("delete channel")
-            .map_err(|e| e.to_string())?;
-
-        Ok(())
-    })();
-
-    match result {
-        Ok(_) => {
-            // コミット
-            conn.execute("COMMIT", [])
-                .db_context("commit transaction")
-                .map_err(|e| e.to_string())?;
-            eprintln!(
-                "[remove_channel] Successfully deleted channel {} and related data",
-                id
-            );
-            Ok(())
-        }
-        Err(e) => {
-            // ロールバック
-            let _ = conn.execute("ROLLBACK", []);
-            eprintln!("[remove_channel] Failed to delete channel {}: {}", id, e);
-            Err(e)
-        }
-    }
+    db_manager
+        .with_connection(|conn| {
+            ChannelRepository::delete_channel_and_related(conn, id)
+                .db_context("delete channel and related data")
+                .map_err(|e| e.to_string())
+        })
+        .await?;
+    eprintln!(
+        "[remove_channel] Successfully deleted channel {} and related data",
+        id
+    );
+    Ok(())
 }
 
 #[tauri::command]
@@ -160,59 +106,30 @@ pub async fn update_channel(
     poll_interval: Option<i32>,
     enabled: Option<bool>,
 ) -> Result<Channel, String> {
-    let conn = db_manager
-        .get_connection()
-        .await
-        .db_context("get database connection")
-        .map_err(|e| e.to_string())?;
+    let (old_channel, updated_channel) = db_manager
+        .with_connection(|conn| {
+            // 更新前の状態を取得（有効状態の変更を検知するため）
+            let old_channel = ChannelRepository::get_by_id(conn, id)
+                .db_context("get channel")
+                .map_err(|e| e.to_string())?
+                .ok_or_not_found("Channel not found")
+                .map_err(|e| e.to_string())?;
 
-    // 更新前の状態を取得（有効状態の変更を検知するため）
-    let old_channel = ChannelRepository::get_by_id(&conn, id)
-        .db_context("get channel")
-        .map_err(|e| e.to_string())?
-        .ok_or_not_found("Channel not found")
-        .map_err(|e| e.to_string())?;
+            if channel_name.is_some() || poll_interval.is_some() || enabled.is_some() {
+                ChannelRepository::update(conn, id, channel_name, poll_interval, enabled)
+                    .db_context("update channel")
+                    .map_err(|e| e.to_string())?;
+            }
 
-    let mut updates = Vec::new();
-    let mut params: Vec<String> = Vec::new();
+            let updated_channel = ChannelRepository::get_by_id(conn, id)
+                .db_context("get updated channel")
+                .map_err(|e| e.to_string())?
+                .ok_or_not_found("Channel not found")
+                .map_err(|e| e.to_string())?;
 
-    if let Some(name) = channel_name {
-        updates.push("channel_name = ?");
-        params.push(name);
-    }
-
-    if let Some(interval) = poll_interval {
-        updates.push("poll_interval = ?");
-        params.push(interval.to_string());
-    }
-
-    if let Some(en) = enabled {
-        updates.push("enabled = ?");
-        params.push(en.to_string());
-    }
-
-    if updates.is_empty() {
-        return ChannelRepository::get_by_id(&conn, id)
-            .db_context("get channel")
-            .map_err(|e| e.to_string())?
-            .ok_or_not_found("Channel not found")
-            .map_err(|e| e.to_string());
-    }
-
-    updates.push("updated_at = CURRENT_TIMESTAMP");
-    params.push(id.to_string());
-
-    let query = format!("UPDATE channels SET {} WHERE id = ?", updates.join(", "));
-
-    utils::execute_with_params(&conn, &query, &params)
-        .db_context("update channel")
-        .map_err(|e| e.to_string())?;
-
-    let updated_channel = ChannelRepository::get_by_id(&conn, id)
-        .db_context("get updated channel")
-        .map_err(|e| e.to_string())?
-        .ok_or_not_found("Channel not found")
-        .map_err(|e| e.to_string())?;
+            Ok::<(Channel, Channel), String>((old_channel, updated_channel))
+        })
+        .await?;
 
     // 有効状態が変更された場合、ポーリングを開始/停止
     if let Some(enabled) = enabled {
@@ -241,17 +158,13 @@ pub async fn list_channels(
     db_manager: State<'_, DatabaseManager>,
 ) -> Result<Vec<ChannelWithStats>, String> {
     // DB接続とクエリをスコープ内で完了させる
-    let channels: Vec<Channel> = {
-        let conn = db_manager
-            .get_connection()
-            .await
-            .db_context("get database connection")
-            .map_err(|e| e.to_string())?;
-
-        ChannelRepository::list_all(&conn)
-            .db_context("list all channels")
-            .map_err(|e| e.to_string())?
-    };
+    let channels: Vec<Channel> = db_manager
+        .with_connection(|conn| {
+            ChannelRepository::list_all(conn)
+                .db_context("list all channels")
+                .map_err(|e| e.to_string())
+        })
+        .await?;
 
     // Twitch API情報を取得して統合
     let channels_with_stats = enrich_channels_with_twitch_info(channels, &app_handle).await;
@@ -458,30 +371,30 @@ pub async fn toggle_channel(
     db_manager: State<'_, DatabaseManager>,
     id: i64,
 ) -> Result<Channel, String> {
-    let conn = db_manager
-        .get_connection()
-        .await
-        .db_context("get database connection")
-        .map_err(|e| e.to_string())?;
+    let (new_enabled, updated_channel) = db_manager
+        .with_connection(|conn| {
+            // 現在の状態を取得
+            let current = ChannelRepository::get_by_id(conn, id)
+                .db_context("get channel")
+                .map_err(|e| e.to_string())?
+                .ok_or_not_found("Channel not found")
+                .map_err(|e| e.to_string())?;
 
-    // 現在の状態を取得
-    let current = ChannelRepository::get_by_id(&conn, id)
-        .db_context("get channel")
-        .map_err(|e| e.to_string())?
-        .ok_or_not_found("Channel not found")
-        .map_err(|e| e.to_string())?;
+            let new_enabled = !current.enabled;
 
-    let new_enabled = !current.enabled;
+            ChannelRepository::update_enabled(conn, id, new_enabled)
+                .db_context("update channel")
+                .map_err(|e| e.to_string())?;
 
-    ChannelRepository::update_enabled(&conn, id, new_enabled)
-        .db_context("update channel")
-        .map_err(|e| e.to_string())?;
+            let updated_channel = ChannelRepository::get_by_id(conn, id)
+                .db_context("get updated channel")
+                .map_err(|e| e.to_string())?
+                .ok_or_not_found("Channel not found")
+                .map_err(|e| e.to_string())?;
 
-    let updated_channel = ChannelRepository::get_by_id(&conn, id)
-        .db_context("get updated channel")
-        .map_err(|e| e.to_string())?
-        .ok_or_not_found("Channel not found")
-        .map_err(|e| e.to_string())?;
+            Ok::<(bool, Channel), String>((new_enabled, updated_channel))
+        })
+        .await?;
 
     // ポーリングの開始/停止
     if let Some(poller) = app_handle.try_state::<Arc<Mutex<ChannelPoller>>>() {

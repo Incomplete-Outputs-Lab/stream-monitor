@@ -197,15 +197,11 @@ impl ChannelPoller {
                 }
 
                 // チャンネル情報を再取得（更新されている可能性があるため）
-                let conn = match db_manager.get_connection().await {
-                    Ok(conn) => conn,
-                    Err(e) => {
-                        logger.error(&format!("Failed to get database connection: {}", e));
-                        continue;
-                    }
-                };
-
-                let updated_channel = match Self::get_channel(&conn, channel_id) {
+                // DB read (lock held briefly)
+                let updated_channel = match db_manager
+                    .with_connection(|conn| Self::get_channel(conn, channel_id))
+                    .await
+                {
                     Ok(Some(ch)) => ch,
                     Ok(None) => {
                         // チャンネルが削除された場合はタスクを終了
@@ -234,17 +230,20 @@ impl ChannelPoller {
                 // 注: 実際のダウンキャストは複雑なため、ここではスキップ
                 // 代わりに、start_polling時に一度だけ取得する方式を採用する必要がある
 
-                // ポーリング実行
+                // ポーリング実行（Network I/O - no lock held）
                 let poll_result = collector
                     .poll_channel(&updated_channel)
                     .await
                     .map_err(|e| e.to_string());
                 match poll_result {
                     Ok(Some(stream_data)) => {
-                        // ストリーム情報をデータベースに保存
-                        let save_result =
-                            Self::save_stream_data(&conn, &updated_channel, &stream_data)
-                                .map_err(|e| e.to_string());
+                        // ストリーム情報をデータベースに保存（DB write - lock held briefly）
+                        let save_result = db_manager
+                            .with_connection(|conn| {
+                                Self::save_stream_data(conn, &updated_channel, &stream_data)
+                            })
+                            .await
+                            .map_err(|e| e.to_string());
                         match save_result {
                             Ok(stream_db_id) => {
                                 // Update status with success

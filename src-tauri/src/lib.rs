@@ -138,40 +138,11 @@ async fn start_existing_channels_polling(
     poller: &mut ChannelPoller,
     app_handle: &tauri::AppHandle,
 ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
-    // get_connection is now async
-    let conn = db_manager.get_connection().await?;
+    use crate::database::repositories::ChannelRepository;
 
-    // Get all enabled channels
-    let mut stmt = conn.prepare(
-        "SELECT id, platform, channel_id, channel_name, enabled, poll_interval, \
-         is_auto_discovered, discovered_at, twitch_user_id, CAST(created_at AS VARCHAR) as created_at, CAST(updated_at AS VARCHAR) as updated_at \
-         FROM channels WHERE enabled = true"
-    )?;
-
-    let channels: Result<Vec<_>, _> = stmt
-        .query_map([], |row| {
-            Ok(database::models::Channel {
-                id: Some(row.get(0)?),
-                platform: row.get(1)?,
-                channel_id: row.get(2)?,
-                channel_name: row.get(3)?,
-                display_name: row.get::<_, String>(3)?, // channel_nameと同じ値
-                profile_image_url: "".to_string(),
-                enabled: row.get(4)?,
-                poll_interval: row.get(5)?,
-                follower_count: 0,
-                broadcaster_type: "".to_string(),
-                view_count: 0,
-                is_auto_discovered: row.get::<_, Option<bool>>(6)?.unwrap_or(false),
-                discovered_at: row.get::<_, Option<String>>(7)?.unwrap_or_default(),
-                twitch_user_id: row.get(8).ok(),
-                created_at: Some(row.get(9)?),
-                updated_at: Some(row.get(10)?),
-            })
-        })?
-        .collect();
-
-    let channels = channels?;
+    let channels = db_manager
+        .with_connection(ChannelRepository::list_enabled)
+        .await?;
     let count = channels.len();
 
     // Start polling for each enabled channel
@@ -278,23 +249,16 @@ pub fn run() {
                     // DatabaseManagerを取得
                     let db_manager: tauri::State<'_, DatabaseManager> = app_handle_for_init.state();
 
-                    // まずデータベース接続を取得
-                    // get_connection is now async, so we need to block_on it using Tauri's async runtime
-                    let conn = match tauri::async_runtime::block_on(async {
-                        db_manager.get_connection().await
-                    }) {
-                        Ok(conn) => conn,
-                        Err(e) => {
-                            logger_for_init.error(&format!("Database connection failed: {}", e));
-                            // フロントエンドにDB初期化失敗を通知
-                            let _ = app_handle_for_init.emit("database-init-error", e.to_string());
-                            return; // DB接続失敗時は以降の処理を中止
-                        }
-                    };
+                    // データベース接続を取得してスキーマを初期化
+                    let schema_result = tauri::async_runtime::block_on(async {
+                        db_manager.with_connection(|conn| {
+                            crate::database::schema::init_database(conn)
+                                .map_err(|e| e.to_string())
+                        }).await
+                    });
 
-                    // 次にスキーマを初期化（初回起動時のみ）
-                    match crate::database::schema::init_database(&conn) {
-                        Ok(_) => {
+                    match schema_result {
+                        Ok(()) => {
                             logger_for_init.info("Database schema initialization successful, notifying frontend...");
                             // フロントエンドにDB初期化成功を通知
                             let _ = app_handle_for_init.emit("database-init-success", ());
@@ -324,61 +288,56 @@ pub fn run() {
                         // Initialize Twitch collector if credentials are available
                         // Device Code Flow uses only client_id (no client_secret required)
                         if let Some(client_id) = &settings.twitch.client_id {
-                            // Twitch Collector 用の DB 接続を取得
-                            match db_manager.get_connection().await {
-                                Ok(twitch_conn) => {
-                                    let db_conn = Arc::new(Mutex::new(twitch_conn));
-                                    let collector = Arc::new(TwitchCollector::new_with_app(
-                                        client_id.clone(),
-                                        None,
-                                        app_handle_for_init.clone(),
-                                        db_conn,
-                                        Arc::new(logger_for_init.clone()),
-                                    ));
-                                    // IRC DB ハンドラーを初期化
-                                    collector.initialize_irc().await;
+                            let collector = Arc::new(TwitchCollector::new_with_app(
+                                client_id.clone(),
+                                None,
+                                app_handle_for_init.clone(),
+                                Arc::new(db_manager.inner().clone()),
+                                Arc::new(logger_for_init.clone()),
+                            ));
+                            // IRC DB ハンドラーを初期化
+                            collector.initialize_irc().await;
 
-                                    // Register collector - lock only for registration
-                                    {
-                                        let mut poller = poller_for_init.lock().await;
-                                        poller.register_twitch_collector(collector);
-                                    }
-                                    logger_for_init.info("Twitch collector initialized successfully with IRC support");
-                                }
-                                Err(e) => {
-                                    logger_for_init.error(&format!("Failed to get database connection for Twitch collector: {}", e));
-                                }
+                            // Register collector - lock only for registration
+                            {
+                                let mut poller = poller_for_init.lock().await;
+                                poller.register_twitch_collector(collector);
                             }
+                            logger_for_init.info("Twitch collector initialized successfully with IRC support");
                         } else {
                             logger_for_init.info("Twitch credentials not configured, skipping collector initialization");
                         }
 
                         // Initialize YouTube collector if credentials are available
                         if let (Some(client_id), Some(client_secret)) = (&settings.youtube.client_id, &settings.youtube.client_secret) {
-                            // YouTubeCollector用に新しい接続を作成
-                            match db_manager.get_connection().await {
-                                Ok(yt_conn) => {
-                                    let db_conn = Arc::new(Mutex::new(yt_conn));
-                                    match YouTubeCollector::new(client_id.clone(), client_secret.clone(), "http://localhost:8081/callback".to_string(), Arc::clone(&db_conn)).await {
-                                        Ok(collector) => {
-                                            // Register collector - lock only for registration
-                                            {
-                                                let mut poller = poller_for_init.lock().await;
-                                                poller.register_collector(crate::constants::database::PLATFORM_YOUTUBE.to_string(), Arc::new(collector));
-                                            }
-                                            logger_for_init.info("YouTube collector initialized successfully");
-                                        }
-                                        Err(e) => {
-                                            logger_for_init.error(&format!("Failed to initialize YouTube collector: {}", e));
-                                        }
+                            match YouTubeCollector::new(
+                                client_id.clone(),
+                                client_secret.clone(),
+                                "http://localhost:8081/callback".to_string(),
+                                Arc::new(db_manager.inner().clone()),
+                            )
+                            .await
+                            {
+                                Ok(collector) => {
+                                    // Register collector - lock only for registration
+                                    {
+                                        let mut poller = poller_for_init.lock().await;
+                                        poller.register_collector(
+                                            crate::constants::database::PLATFORM_YOUTUBE.to_string(),
+                                            Arc::new(collector),
+                                        );
                                     }
+                                    logger_for_init
+                                        .info("YouTube collector initialized successfully");
                                 }
                                 Err(e) => {
-                                    logger_for_init.error(&format!("Failed to get database connection for YouTube collector: {}", e));
+                                    logger_for_init
+                                        .error(&format!("Failed to initialize YouTube collector: {}", e));
                                 }
                             }
                         } else {
-                            logger_for_init.info("YouTube credentials not configured, skipping collector initialization");
+                            logger_for_init
+                                .info("YouTube credentials not configured, skipping collector initialization");
                         }
 
                         // Start polling for existing enabled channels

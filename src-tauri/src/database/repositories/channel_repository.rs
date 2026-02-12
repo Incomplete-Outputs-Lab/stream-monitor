@@ -247,6 +247,38 @@ impl ChannelRepository {
         Ok(())
     }
 
+    /// チャンネルと関連データをトランザクションで削除（chat_messages → stream_stats → streams → channels）
+    pub fn delete_channel_and_related(conn: &Connection, id: i64) -> Result<(), duckdb::Error> {
+        let id_str = id.to_string();
+        conn.execute("BEGIN TRANSACTION", [])?;
+        let result = (|| {
+            conn.execute(
+                "DELETE FROM chat_messages WHERE stream_id IN (SELECT id FROM streams WHERE channel_id = ?)",
+                [id_str.as_str()],
+            )?;
+            conn.execute(
+                "DELETE FROM stream_stats WHERE stream_id IN (SELECT id FROM streams WHERE channel_id = ?)",
+                [id_str.as_str()],
+            )?;
+            conn.execute(
+                "DELETE FROM streams WHERE channel_id = ?",
+                [id_str.as_str()],
+            )?;
+            Self::delete(conn, id)?;
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                conn.execute("COMMIT", [])?;
+                Ok(())
+            }
+            Err(e) => {
+                let _ = conn.execute("ROLLBACK", []);
+                Err(e)
+            }
+        }
+    }
+
     /// チャンネルの有効状態を更新
     pub fn update_enabled(conn: &Connection, id: i64, enabled: bool) -> Result<(), duckdb::Error> {
         let enabled_str = enabled.to_string();
@@ -255,6 +287,42 @@ impl ChannelRepository {
             "UPDATE channels SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             [enabled_str.as_str(), id_str.as_str()],
         )?;
+        Ok(())
+    }
+
+    /// チャンネル情報を更新（指定したフィールドのみ）
+    pub fn update(
+        conn: &Connection,
+        id: i64,
+        channel_name: Option<String>,
+        poll_interval: Option<i32>,
+        enabled: Option<bool>,
+    ) -> Result<(), duckdb::Error> {
+        use crate::database::utils;
+        let mut updates = Vec::new();
+        let mut params: Vec<String> = Vec::new();
+
+        if let Some(name) = channel_name {
+            updates.push("channel_name = ?");
+            params.push(name);
+        }
+        if let Some(interval) = poll_interval {
+            updates.push("poll_interval = ?");
+            params.push(interval.to_string());
+        }
+        if let Some(en) = enabled {
+            updates.push("enabled = ?");
+            params.push(en.to_string());
+        }
+        if updates.is_empty() {
+            return Ok(());
+        }
+
+        updates.push("updated_at = CURRENT_TIMESTAMP");
+        params.push(id.to_string());
+
+        let query = format!("UPDATE channels SET {} WHERE id = ?", updates.join(", "));
+        utils::execute_with_params(conn, &query, &params)?;
         Ok(())
     }
 

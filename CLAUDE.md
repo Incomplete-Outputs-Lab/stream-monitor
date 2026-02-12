@@ -1,88 +1,5 @@
 # CLAUDE.md - Stream Stats Collector 開発ガイド
 
-## プロジェクト概要
-
-TwitchとYouTubeの配信統計を収集・分析するTauriベースのデスクトップアプリケーション。
-
-### 主な機能
-- マルチプラットフォーム対応（Twitch/YouTube）
-- 自動データ収集と自動発見機能
-- 詳細な統計分析（MW, CCU, エンゲージメント率等）
-- データエクスポート（JSON/CSV）
-- SQLビューア、マルチビュー
-
-### 統計用語（重要）
-| 用語 | 意味 | 計算式 |
-| :--- | :--- | :--- |
-| **MW** | 総視聴時間（分） | `視聴者数 × 経過時間` |
-| **Avg CCU** | 平均同時視聴者数 | 期間内の平均 |
-| **Peak CCU** | 最大同時視聴者数 | 期間内の最大値 |
-| **Engagement** | エンゲージメント率 | `(総チャット数 / MW) × 1000` |
-
-## 技術スタック
-
-### フロントエンド
-- **フレームワーク**: React 19 + TypeScript
-- **ビルドツール**: Vite 7
-- **スタイリング**: Tailwind CSS 4
-- **状態管理**: 
-  - Zustand (グローバル状態)
-  - TanStack Query (サーバー状態)
-- **フォーム**: React Hook Form
-- **グラフ**: Recharts
-- **Tauri API**: @tauri-apps/api v2
-
-### バックエンド
-- **フレームワーク**: Tauri 2.x
-- **言語**: Rust (Edition 2021)
-- **非同期ランタイム**: Tokio
-- **HTTP クライアント**: reqwest
-- **データベース**: DuckDB (bundled)
-- **認証情報管理**: keyring
-- **シリアライゼーション**: serde + serde_json
-- **日時処理**: chrono
-- **Twitch API**: twitch_api クレート
-- **YouTube API**: google-youtube3
-- **WebSocket**: tungstenite (Twitch IRC用)
-- **スクレイピング**: scraper
-
-## ディレクトリ構造
-
-```
-src/                    # フロントエンド (React + TypeScript)
-├── api/               # 🔹 Tauri API呼び出し統合レイヤー（全てのinvokeをここに集約）
-│   ├── channels.ts    # チャンネル管理API
-│   ├── config.ts      # 設定管理API
-│   ├── discovery.ts   # 自動発見API
-│   ├── sql.ts         # SQLクエリAPI
-│   └── statistics.ts  # 統計・分析API
-├── components/
-│   ├── ChannelList/, Dashboard/, Statistics/, Settings/
-│   ├── Export/, Logs/, MultiView/, SQL/
-│   └── common/        # ErrorBoundary, LoadingSpinner, charts等
-├── stores/            # Zustand (channelStore, configStore, themeStore)
-├── types/             # TypeScript型定義
-└── utils/
-
-src-tauri/src/         # バックエンド (Rust)
-├── api/               # twitch_api.rs, youtube_api.rs
-├── collectors/        # poller.rs, twitch.rs, youtube.rs, auto_discovery.rs
-├── database/
-│   ├── repositories/  # 🔹 DB操作統合レイヤー（全てのSQLをここに集約）
-│   │   ├── aggregation_repository.rs      # 集計クエリ
-│   │   ├── base.rs                        # 共通型・ユーティリティ
-│   │   ├── chat_message_repository.rs     # チャットメッセージクエリ
-│   │   ├── stream_stats_repository.rs     # 配信統計クエリ
-│   │   └── mod.rs
-│   ├── models.rs, schema.rs, writer.rs, analytics.rs
-│   └── query_helpers/  # DuckDB特殊型の安全な取り扱い（CAST等）
-├── commands/          # channels.rs, stats.rs, analytics.rs, export.rs等
-├── config/            # keyring_store.rs, settings.rs
-├── oauth/             # twitch.rs (Device Code Flow)
-├── websocket/         # twitch_irc.rs
-├── main.rs, lib.rs, logger.rs
-```
-
 ## 開発ガイドライン
 
 ### アーキテクチャ原則（重要）
@@ -149,25 +66,6 @@ const data = await statisticsApi.getRealtimeChatRate();
 - `sql.ts` - SQLクエリ（実行、テンプレート管理）
 - `statistics.ts` - 統計・分析（分析結果、チャット統計、リアルタイム統計）
 - `system.ts` - システム操作（Twitchコレクター再初期化、DB再作成、バックエンド状態確認、ウィンドウ表示）
-
-#### 3. ドキュメント作成ルール
-
-❌ **禁止**: 実装完了レポート等の一時的なMarkdownファイルを作成
-```
-IMPLEMENTATION_SUMMARY.md  // NG
-BUGFIX_REPORT.md          // NG
-CHANGES.md                // NG
-```
-
-✅ **推奨**: 必要な情報はCLAUDE.mdに集約
-- 新機能追加 → 該当セクションに追記
-- バグ修正 → 「よくある問題」に追記
-- 仕様変更 → 関連セクションを更新
-
-**理由**:
-- プロジェクトドキュメントの一元管理
-- 不要なファイルの乱立防止
-- 情報の検索性向上
 
 ### コーディング規約
 
@@ -417,25 +315,6 @@ cargo check
 すべてのコマンドが警告なしで成功することを確認してください。
 また、各コマンドは2回掛けして確実に修正されていることを確認してください。
 
-#### フロントエンド（TypeScript/React）
-```bash
-# ビルドチェック（警告なしでコンパイルが通ることを確認）
-bun run build
-```
-
-警告やエラーが表示されないことを確認してください。
-
-**注意**: これらのチェックをスキップしてコミットすると、CI/CD環境でビルドが失敗する可能性があります。
-
-### ビルド
-- **開発**: `bun install` → `bun run tauri dev`
-- **本番**: `bun run tauri build`
-- **注意**: DuckDB初回ビルド5-10分、CMake必須、スタックサイズ512MB
-
-### 依存関係追加
-- Rust: `Cargo.toml`の`[dependencies]`
-- フロントエンド: `npm install <package>`
-
 ## よくある問題
 
 | 問題 | 原因 | 解決 |
@@ -500,11 +379,3 @@ bun run build
 - [DuckDB Documentation](https://duckdb.org/docs/)
 - [Twitch API Documentation](https://dev.twitch.tv/docs/api/)
 - [YouTube Data API Documentation](https://developers.google.com/youtube/v3)
-
-## ライセンス
-
-MIT License
-
----
-
-**注意**: このプロジェクトは個人利用目的です。各プラットフォーム（Twitch/YouTube）の利用規約を遵守してください。

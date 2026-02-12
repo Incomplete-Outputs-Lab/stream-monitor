@@ -24,6 +24,16 @@ export function Export() {
     customDelimiter: '|',
   });
 
+  const buildExportQuery = (channelId: number, delimiter: string): ExportQuery => {
+    return {
+      channel_id: channelId,
+      start_time: `${config.startDate}T00:00:00Z`,
+      end_time: `${config.endDate}T23:59:59Z`,
+      aggregation: config.aggregation === 'raw' ? undefined : config.aggregation,
+      delimiter,
+    };
+  };
+
   // Fetch channels on mount
   useEffect(() => {
     const fetchChannels = async () => {
@@ -81,14 +91,8 @@ export function Export() {
             delimiter = ',';
         }
 
-        // Use first selected channel for preview
-        const query: ExportQuery = {
-          channel_id: config.channelIds[0],
-          start_time: `${config.startDate}T00:00:00Z`,
-          end_time: `${config.endDate}T23:59:59Z`,
-          aggregation: config.aggregation === 'raw' ? undefined : config.aggregation,
-          delimiter,
-        };
+        // Use first selected channel for preview, with exactly same query shape as export
+        const query: ExportQuery = buildExportQuery(config.channelIds[0], delimiter);
 
         const preview = await exportApi.previewExportData(query, 10);
 
@@ -163,13 +167,7 @@ export function Export() {
       // Export for each selected channel
       const results: string[] = [];
       for (const channelId of config.channelIds) {
-        const query: ExportQuery = {
-          channel_id: channelId,
-          start_time: `${config.startDate}T00:00:00Z`,
-          end_time: `${config.endDate}T23:59:59Z`,
-          aggregation: config.aggregation === 'raw' ? undefined : config.aggregation,
-          delimiter,
-        };
+        const query: ExportQuery = buildExportQuery(channelId, delimiter);
 
         const result = await exportApi.exportToDelimited(
           query,

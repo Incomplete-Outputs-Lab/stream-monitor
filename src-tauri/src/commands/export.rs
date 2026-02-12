@@ -35,25 +35,47 @@ pub async fn export_to_delimited(
     file_path: String,
     include_bom: Option<bool>,
 ) -> Result<String, String> {
+    let ExportQuery {
+        channel_id,
+        start_time,
+        end_time,
+        aggregation,
+        delimiter,
+    } = query;
+
     let stats = db_manager
         .with_connection(|conn| {
-            StreamStatsRepository::get_stream_stats_filtered(
-                conn,
-                None,
-                query.channel_id,
-                query.start_time.as_deref(),
-                query.end_time.as_deref(),
-                true, // ORDER BY collected_at ASC for export
-            )
-            .db_context("query stats")
-            .map_err(|e| e.to_string())
+            let start_opt = start_time.as_deref();
+            let end_opt = end_time.as_deref();
+
+            let interval_minutes = match aggregation.as_deref() {
+                Some("1min") => Some(1),
+                Some("5min") => Some(5),
+                Some("1hour") => Some(60),
+                _ => None,
+            };
+
+            if let (Some(st), Some(et), Some(interval)) = (start_opt, end_opt, interval_minutes) {
+                StreamStatsRepository::get_interpolated_stream_stats_for_export(
+                    conn, None, channel_id, st, et, interval,
+                )
+                .db_context("query interpolated stats for export")
+                .map_err(|e| e.to_string())
+            } else {
+                StreamStatsRepository::get_stream_stats_filtered(
+                    conn, None, channel_id, start_opt, end_opt,
+                    true, // ORDER BY collected_at ASC for export
+                )
+                .db_context("query stats")
+                .map_err(|e| e.to_string())
+            }
         })
         .await?;
 
     let stats_len = stats.len();
 
     // Determine delimiter (default to comma)
-    let delimiter = query.delimiter.as_deref().unwrap_or(",");
+    let delimiter = delimiter.as_deref().unwrap_or(",");
 
     // Build delimited file content
     let mut output = String::new();
@@ -115,18 +137,40 @@ pub async fn preview_export_data(
     query: ExportQuery,
     max_rows: Option<usize>,
 ) -> Result<String, String> {
+    let ExportQuery {
+        channel_id,
+        start_time,
+        end_time,
+        aggregation,
+        delimiter,
+    } = query;
+
     let stats = db_manager
         .with_connection(|conn| {
-            StreamStatsRepository::get_stream_stats_filtered(
-                conn,
-                None,
-                query.channel_id,
-                query.start_time.as_deref(),
-                query.end_time.as_deref(),
-                true, // ORDER BY collected_at ASC
-            )
-            .db_context("query stats")
-            .map_err(|e| e.to_string())
+            let start_opt = start_time.as_deref();
+            let end_opt = end_time.as_deref();
+
+            let interval_minutes = match aggregation.as_deref() {
+                Some("1min") => Some(1),
+                Some("5min") => Some(5),
+                Some("1hour") => Some(60),
+                _ => None,
+            };
+
+            if let (Some(st), Some(et), Some(interval)) = (start_opt, end_opt, interval_minutes) {
+                StreamStatsRepository::get_interpolated_stream_stats_for_export(
+                    conn, None, channel_id, st, et, interval,
+                )
+                .db_context("query interpolated stats for preview")
+                .map_err(|e| e.to_string())
+            } else {
+                StreamStatsRepository::get_stream_stats_filtered(
+                    conn, None, channel_id, start_opt, end_opt,
+                    true, // ORDER BY collected_at ASC
+                )
+                .db_context("query stats")
+                .map_err(|e| e.to_string())
+            }
         })
         .await?;
 
@@ -135,7 +179,7 @@ pub async fn preview_export_data(
     let preview_stats = stats.iter().take(max_rows);
 
     // Determine delimiter (default to comma)
-    let delimiter = query.delimiter.as_deref().unwrap_or(",");
+    let delimiter = delimiter.as_deref().unwrap_or(",");
 
     // Build preview content
     let mut output = String::new();

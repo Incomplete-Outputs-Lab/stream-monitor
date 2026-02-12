@@ -20,6 +20,17 @@ export const listChannels = async (): Promise<ChannelWithStats[]> => {
 };
 
 /**
+ * 軽量なチャンネル一覧を取得（Twitch API なし）
+ *
+ * - DBの `channels` テーブルのみを参照
+ * - タイムラインなど、配信者リストだけ必要な画面で利用
+ */
+export const listChannelsBasic = async (): Promise<Channel[]> => {
+  const result = await invoke<unknown>('list_channels_basic');
+  return z.array(ChannelSchema).parse(result);
+};
+
+/**
  * チャンネルを追加
  */
 export const addChannel = async (request: AddChannelRequest): Promise<Channel> => {

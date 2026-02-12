@@ -99,7 +99,8 @@ const ComparisonSelector: React.FC<ComparisonSelectorProps> = ({
   const [suggestedStreams, setSuggestedStreams] = useState<SimilarityScore[]>([]);
 
   // 1本目の選択方法（日付 or チャンネル）
-  const [firstStreamMode, setFirstStreamMode] = useState<FirstStreamSelectMode>('channel');
+  // 初期表示はカレンダー（日付から選ぶ）を優先して、不要なタイムライン読み込みを防ぐ
+  const [firstStreamMode, setFirstStreamMode] = useState<FirstStreamSelectMode>('date');
   // 日付から選ぶ用
   const [dateFrom, setDateFrom] = useState<string>(() => {
     const d = new Date();
@@ -117,7 +118,8 @@ const ComparisonSelector: React.FC<ComparisonSelectorProps> = ({
     const fetchChannels = async () => {
       try {
         setLoadingChannels(true);
-        const result = await channelsApi.listChannels();
+        // 比較表示では軽量版のチャンネル一覧を使用（Twitch API にはアクセスしない）
+        const result = await channelsApi.listChannelsBasic();
         setChannels(result);
       } catch (err) {
         setError(`チャンネル一覧の取得に失敗しました: ${err}`);

@@ -172,6 +172,25 @@ pub async fn list_channels(
     Ok(channels_with_stats)
 }
 
+/// 軽量版チャンネル一覧取得
+///
+/// - DBの `channels` テーブルのみを参照し、Twitch API にはアクセスしない
+/// - タイムラインなど「配信者リストだけ欲しい」画面で使用する
+#[tauri::command]
+pub async fn list_channels_basic(
+    db_manager: State<'_, DatabaseManager>,
+) -> Result<Vec<Channel>, String> {
+    let channels: Vec<Channel> = db_manager
+        .with_connection(|conn| {
+            ChannelRepository::list_all(conn)
+                .db_context("list all channels (basic)")
+                .map_err(|e| e.to_string())
+        })
+        .await?;
+
+    Ok(channels)
+}
+
 /// チャンネル情報にTwitch API情報を統合
 async fn enrich_channels_with_twitch_info(
     channels: Vec<Channel>,

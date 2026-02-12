@@ -4,7 +4,7 @@ type ExportFormat = 'csv' | 'tsv' | 'custom';
 type AggregationType = 'raw' | '1min' | '5min' | '1hour';
 
 interface ExportConfig {
-  channelIds: number[];
+  channelId: number | null;
   startDate: string;
   endDate: string;
   format: ExportFormat;
@@ -24,20 +24,8 @@ export function ExportForm({ config, onConfigChange, channels, isLoadingChannels
     onConfigChange({ ...config, ...updates });
   };
 
-  const handleChannelToggle = (channelId: number, checked: boolean) => {
-    if (checked) {
-      updateConfig({ channelIds: [...config.channelIds, channelId] });
-    } else {
-      updateConfig({ channelIds: config.channelIds.filter(id => id !== channelId) });
-    }
-  };
-
-  const handleSelectAllChannels = () => {
-    updateConfig({ channelIds: channels.map(c => c.id!).filter(Boolean) });
-  };
-
-  const handleDeselectAllChannels = () => {
-    updateConfig({ channelIds: [] });
+  const handleChannelSelect = (channelId: number) => {
+    updateConfig({ channelId });
   };
 
   const formatOptions = [
@@ -63,23 +51,6 @@ export function ExportForm({ config, onConfigChange, channels, isLoadingChannels
           エクスポート対象チャンネル
         </label>
 
-        <div className="flex space-x-4 mb-3">
-          <button
-            onClick={handleSelectAllChannels}
-            disabled={isLoadingChannels}
-            className="px-3 py-1 text-sm bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-800 dark:text-blue-200 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            全て選択
-          </button>
-          <button
-            onClick={handleDeselectAllChannels}
-            disabled={isLoadingChannels}
-            className="px-3 py-1 text-sm bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-800 dark:text-gray-200 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            全て解除
-          </button>
-        </div>
-
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-48 overflow-y-auto border border-gray-300 dark:border-slate-600 rounded-md p-3 bg-white dark:bg-slate-800">
           {isLoadingChannels ? (
             // Skeleton loading state
@@ -100,9 +71,10 @@ export function ExportForm({ config, onConfigChange, channels, isLoadingChannels
             channels.map((channel) => (
               <label key={channel.id} className="flex items-center space-x-2">
                 <input
-                  type="checkbox"
-                  checked={config.channelIds.includes(channel.id!)}
-                  onChange={(e) => handleChannelToggle(channel.id!, e.target.checked)}
+                  type="radio"
+                  name="exportChannel"
+                  checked={config.channelId === channel.id}
+                  onChange={() => handleChannelSelect(channel.id!)}
                   className="rounded border-gray-300 dark:border-slate-600 text-blue-600 dark:text-blue-400 focus:ring-blue-500 bg-white dark:bg-slate-700"
                 />
                 <span className="text-sm text-gray-700 dark:text-gray-300">
@@ -116,7 +88,15 @@ export function ExportForm({ config, onConfigChange, channels, isLoadingChannels
           )}
         </div>
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-          選択されたチャンネル: {config.channelIds.length}個
+          選択中のチャンネル:{' '}
+          {config.channelId != null
+            ? (() => {
+                const selected = channels.find((c) => c.id === config.channelId);
+                return selected
+                  ? `${selected.display_name || selected.channel_name} (${selected.platform})`
+                  : '未選択';
+              })()
+            : '未選択'}
         </p>
       </div>
 

@@ -4,7 +4,7 @@ import { z } from 'zod';
  * Export query schema
  */
 export const ExportQuerySchema = z.object({
-  channel_id: z.number().optional(),
+  channel_id: z.number(),
   start_time: z.string().optional(),
   end_time: z.string().optional(),
   aggregation: z.string().optional(),

@@ -29,7 +29,10 @@ use commands::{
         get_game_analytics, get_game_daily_stats, get_time_pattern_stats, get_top_chatters,
         get_user_segment_stats, list_game_categories,
     },
-    channels::{add_channel, list_channels, remove_channel, toggle_channel, update_channel},
+    channels::{
+        add_channel, list_channels, list_channels_basic, remove_channel, toggle_channel,
+        update_channel,
+    },
     chat::{get_chat_messages, get_chat_messages_around_timestamp},
     config::{
         delete_oauth_config, delete_token, get_build_info, get_database_init_status,
@@ -521,6 +524,7 @@ pub fn run() {
             remove_channel,
             update_channel,
             list_channels,
+            list_channels_basic,
             toggle_channel,
             // System commands
             is_backend_ready,

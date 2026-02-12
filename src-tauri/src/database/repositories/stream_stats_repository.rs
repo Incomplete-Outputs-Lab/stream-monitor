@@ -6,6 +6,7 @@ use crate::database::analytics::DailyStats;
 use crate::database::models::StreamStats;
 use crate::database::query_helpers::stream_stats_query;
 use crate::database::utils;
+use chrono::{DateTime, Duration, FixedOffset, NaiveDateTime};
 use duckdb::Connection;
 use serde::{Deserialize, Serialize};
 
@@ -99,6 +100,173 @@ impl StreamStatsRepository {
             })
         })?;
         results.collect::<Result<Vec<_>, _>>()
+    }
+
+    /// 指定した時間範囲と間隔で線形補完した統計データを取得（エクスポート用）
+    ///
+    /// - 元データは get_stream_stats_filtered で取得
+    /// - viewer_count / chat_rate_1min を線形補完
+    /// - それ以外の文字列系は直前の値を採用
+    pub fn get_interpolated_stream_stats_for_export(
+        conn: &Connection,
+        stream_id: Option<i64>,
+        channel_id: Option<i64>,
+        start_time: &str,
+        end_time: &str,
+        interval_minutes: i64,
+    ) -> Result<Vec<StreamStats>, duckdb::Error> {
+        // ベースとなる生データを取得（昇順）
+        let base_stats = Self::get_stream_stats_filtered(
+            conn,
+            stream_id,
+            channel_id,
+            Some(start_time),
+            Some(end_time),
+            true,
+        )?;
+
+        if base_stats.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // 補完の対象範囲は「実際にデータが存在する最初と最後の時刻」に限定する
+        let effective_start = &base_stats
+            .first()
+            .map(|s| s.collected_at.as_str())
+            .unwrap_or(start_time);
+        let effective_end = &base_stats
+            .last()
+            .map(|s| s.collected_at.as_str())
+            .unwrap_or(end_time);
+
+        Ok(Self::interpolate_stats(
+            &base_stats,
+            effective_start,
+            effective_end,
+            interval_minutes,
+        ))
+    }
+
+    /// 内部ヘルパー: 線形補完を行う
+    fn interpolate_stats(
+        stats: &[StreamStats],
+        start_time: &str,
+        end_time: &str,
+        interval_minutes: i64,
+    ) -> Vec<StreamStats> {
+        fn parse_ts(s: &str) -> Option<DateTime<FixedOffset>> {
+            // 1) RFC3339 (元の文字列形式を想定)
+            if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+                return Some(dt);
+            }
+            // 2) DuckDB の TIMESTAMP 表示形式を想定（秒以下あり/なし両対応）
+            if let Ok(naive) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f")
+                .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S"))
+            {
+                let offset = FixedOffset::east_opt(0)?;
+                return Some(DateTime::from_naive_utc_and_offset(naive, offset));
+            }
+            None
+        }
+
+        fn lerp_i32(a: Option<i32>, b: Option<i32>, frac: f64) -> Option<i32> {
+            match (a, b) {
+                (Some(av), Some(bv)) => {
+                    let v = av as f64 + (bv as f64 - av as f64) * frac;
+                    Some(v.round() as i32)
+                }
+                (Some(av), None) => Some(av),
+                (None, Some(bv)) => Some(bv),
+                (None, None) => None,
+            }
+        }
+        fn lerp_i64(a: Option<i64>, b: Option<i64>, frac: f64) -> Option<i64> {
+            match (a, b) {
+                (Some(av), Some(bv)) => {
+                    let v = av as f64 + (bv as f64 - av as f64) * frac;
+                    Some(v.round() as i64)
+                }
+                (Some(av), None) => Some(av),
+                (None, Some(bv)) => Some(bv),
+                (None, None) => None,
+            }
+        }
+
+        // 元データのタイムスタンプをパース
+        let mut times: Vec<DateTime<FixedOffset>> = Vec::with_capacity(stats.len());
+        for s in stats {
+            if let Some(dt) = parse_ts(&s.collected_at) {
+                times.push(dt);
+            } else {
+                // パースできない場合は補完せずそのまま返す
+                return stats.to_vec();
+            }
+        }
+
+        let n = stats.len();
+        if n == 0 {
+            return Vec::new();
+        }
+
+        // 線形補完の範囲は start_time〜end_time（呼び出し元で first/last にクリップ済み）
+        let start_dt = parse_ts(start_time).unwrap_or(times[0]);
+        let end_dt = parse_ts(end_time).unwrap_or(*times.last().unwrap());
+
+        let step = Duration::minutes(interval_minutes.max(1));
+        let mut grid: Vec<DateTime<FixedOffset>> = Vec::new();
+        let mut t = start_dt;
+        while t <= end_dt {
+            grid.push(t);
+            t += step;
+        }
+
+        let mut result: Vec<StreamStats> = Vec::with_capacity(grid.len());
+
+        for t in grid {
+            // 前後のサンプルを探す
+            let mut j = 0usize;
+            while j < n && times[j] < t {
+                j += 1;
+            }
+
+            let prev_idx = if j == 0 { 0 } else { j - 1 };
+            let next_idx = if j >= n { n - 1 } else { j };
+
+            let prev_t = times[prev_idx];
+            let next_t = times[next_idx];
+
+            let prev = &stats[prev_idx];
+            let next = &stats[next_idx];
+
+            let frac = if next_t <= prev_t {
+                0.0
+            } else {
+                let total = (next_t - prev_t).num_seconds() as f64;
+                let elapsed = (t - prev_t).num_seconds() as f64;
+                (elapsed / total).clamp(0.0, 1.0)
+            };
+
+            let viewer = lerp_i32(prev.viewer_count, next.viewer_count, frac);
+            let chat = lerp_i64(prev.chat_rate_1min, next.chat_rate_1min, frac);
+
+            let base = prev; // カテゴリ等は直前の値を使用
+
+            result.push(StreamStats {
+                id: None,
+                stream_id: base.stream_id,
+                collected_at: t.to_rfc3339(),
+                viewer_count: viewer,
+                chat_rate_1min: chat,
+                category: base.category.clone(),
+                game_id: base.game_id.clone(),
+                title: base.title.clone(),
+                follower_count: base.follower_count,
+                twitch_user_id: base.twitch_user_id.clone(),
+                channel_name: base.channel_name.clone(),
+            });
+        }
+
+        result
     }
 
     /// 自動発見された配信の統計データを挿入

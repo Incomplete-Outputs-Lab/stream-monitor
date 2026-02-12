@@ -32,7 +32,8 @@ const StreamSelector: React.FC<StreamSelectorProps> = ({ onTimelineSelect }) => 
     const fetchChannels = async () => {
       try {
         setLoadingChannels(true);
-        const result = await channelsApi.listChannels();
+        // タイムラインでは軽量版のチャンネル一覧を使用（Twitch API にはアクセスしない）
+        const result = await channelsApi.listChannelsBasic();
         setChannels(result);
       } catch (err) {
         setError(`チャンネル一覧の取得に失敗しました: ${err}`);

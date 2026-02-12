@@ -1577,16 +1577,18 @@ pub fn detect_anomalies(
                 let start_ts = parse_timestamp(started_at);
 
                 if current_ts > 0 && start_ts > 0 {
-                    if let Some((stream_start, stream_end)) = stream_info.get(stream_id) {
-                        let minutes_from_start = (current_ts - start_ts) / 60;
-                        let total_duration = (stream_end - stream_start) / 60;
-
-                        if total_duration > 0 {
-                            let position_ratio = (current_ts - stream_start) as f64
-                                / (stream_end - stream_start) as f64;
-                            return Some((minutes_from_start, position_ratio));
+                    let minutes_from_start = (current_ts - start_ts) / 60;
+                    let position_ratio = stream_info.get(stream_id).and_then(|(stream_start, stream_end)| {
+                        let total = stream_end - stream_start;
+                        if total > 0 {
+                            Some((current_ts - stream_start) as f64 / total as f64)
+                        } else {
+                            None
                         }
-                    }
+                    });
+                    // When we have valid timestamps, we always have at least minutes_from_start.
+                    // If duration is 0 (single point) or stream not in stream_info, treat as early (ratio 0).
+                    return Some((minutes_from_start, position_ratio.unwrap_or(0.0)));
                 }
             }
             None
@@ -1611,20 +1613,10 @@ pub fn detect_anomalies(
             let is_early = minutes_from_start < 10 || position_ratio < 0.10;
 
             if is_early {
-                eprintln!(
-                    "[Anomaly Debug] Skipping early stream point: {} ({}min, {:.1}%)",
-                    viewer_data[i].0,
-                    minutes_from_start,
-                    position_ratio * 100.0
-                );
                 continue; // Skip stream start period only
             }
         } else {
-            // If we can't determine stream position, skip this point to be safe
-            eprintln!(
-                "[Anomaly Debug] Skipping point with unknown stream position: {}",
-                viewer_data[i].0
-            );
+            // If we can't determine stream position (no stream_id or started_at), skip to be safe
             continue;
         }
 

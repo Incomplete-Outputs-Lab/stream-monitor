@@ -65,8 +65,8 @@ pub struct ChannelWithStats {
     #[serde(flatten)]
     pub channel: Channel,
     pub is_live: bool,
-    pub current_viewers: Option<i32>,
-    pub current_title: Option<String>,
+    pub current_viewers: i32,
+    pub current_title: String,
 }
 
 /// Event payload for channel stats updates

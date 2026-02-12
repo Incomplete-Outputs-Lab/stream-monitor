@@ -32,8 +32,8 @@ export const ChannelSchema = z.object({
  */
 export const ChannelWithStatsSchema = ChannelSchema.extend({
   is_live: z.boolean(),
-  current_viewers: z.number().optional(),
-  current_title: z.string().optional(),
+  current_viewers: z.number(),
+  current_title: z.string(),
 });
 
 /**

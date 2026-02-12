@@ -1,5 +1,6 @@
 use crate::database::{data_science_analytics, DatabaseManager};
 use crate::error::ResultExt;
+use serde::{Deserialize, Serialize};
 use tauri::State;
 
 // ============================================================================
@@ -158,24 +159,30 @@ pub async fn get_chatter_activity_scores(
 // Phase 4: Anomaly Detection Commands
 // ============================================================================
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnomalyDetectionQuery {
+    pub channel_id: i64,
+    pub stream_id: Option<i64>,
+    pub start_time: Option<String>,
+    pub end_time: Option<String>,
+    pub z_threshold: Option<f64>,
+}
+
 #[tauri::command]
 pub async fn detect_anomalies(
     db_manager: State<'_, DatabaseManager>,
-    channel_id: Option<i64>,
-    stream_id: Option<i64>,
-    start_time: Option<String>,
-    end_time: Option<String>,
-    z_threshold: Option<f64>,
+    query: AnomalyDetectionQuery,
 ) -> Result<data_science_analytics::AnomalyResult, String> {
     db_manager
         .with_connection(|conn| {
             data_science_analytics::detect_anomalies(
                 conn,
-                channel_id,
-                stream_id,
-                start_time.as_deref(),
-                end_time.as_deref(),
-                z_threshold.unwrap_or(2.5),
+                Some(query.channel_id),
+                query.stream_id,
+                query.start_time.as_deref(),
+                query.end_time.as_deref(),
+                query.z_threshold.unwrap_or(2.5),
             )
             .db_context("detect anomalies")
             .map_err(|e| e.to_string())

@@ -327,7 +327,7 @@ export function Dashboard() {
           twitch_user_id: promotingStream.twitch_user_id,
           is_live: true,
           current_viewers: promotingStream.viewer_count ?? 0,
-          current_title: promotingStream.title || undefined,
+          current_title: promotingStream.title ?? '',
         };
         queryClient.setQueryData<ChannelWithStats[]>(
           ["channels"],

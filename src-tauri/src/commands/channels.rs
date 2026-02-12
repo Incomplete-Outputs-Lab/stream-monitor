@@ -302,8 +302,8 @@ async fn enrich_channels_with_twitch_info(
         .into_iter()
         .map(|mut channel| {
             let mut is_live = false;
-            let mut current_viewers = None;
-            let mut current_title = None;
+            let mut current_viewers = 0i32;
+            let mut current_title = String::new();
 
             if channel.platform == crate::constants::database::PLATFORM_TWITCH {
                 // ユーザー情報を統合（twitch_user_idがあればそれで検索、なければloginで検索）
@@ -349,8 +349,8 @@ async fn enrich_channels_with_twitch_info(
                 if let Some(key) = stream_key.as_ref() {
                     if let Some(stream) = stream_info_map.get(key) {
                         is_live = true;
-                        current_viewers = Some(stream.viewer_count as i32);
-                        current_title = Some(stream.title.to_string());
+                        current_viewers = stream.viewer_count as i32;
+                        current_title = stream.title.to_string();
                     }
                 }
             }

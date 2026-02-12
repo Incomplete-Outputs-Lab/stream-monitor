@@ -24,7 +24,7 @@ export async function exportToDelimited(
 ): Promise<string> {
   return await invoke<string>('export_to_delimited', {
     query,
-    file_path: filePath,
-    include_bom: includeBom,
+    filePath,
+    includeBom,
   });
 }

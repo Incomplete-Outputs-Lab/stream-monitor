@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { listen } from '@tauri-apps/api/event';
 import * as gameCategoriesApi from '../../api/gameCategories';
+import { useAppStateStore } from '../../stores/appStateStore';
 
 export function GameCategoryManager() {
   const [searchQuery, setSearchQuery] = useState('');
   const queryClient = useQueryClient();
+  const backendReady = useAppStateStore((state) => state.backendReady);
 
   // 自動発見イベントでカテゴリリストを更新
   useEffect(() => {
@@ -17,10 +19,12 @@ export function GameCategoryManager() {
     };
   }, [queryClient]);
 
-  // 全カテゴリ取得
+  // 全カテゴリ取得（バックエンド準備完了後に実行し、表示時に最新を反映）
   const { data: categories, isLoading } = useQuery({
     queryKey: ['game-categories'],
     queryFn: gameCategoriesApi.getGameCategories,
+    enabled: backendReady,
+    refetchOnMount: 'always',
   });
 
   // 削除ミューテーション

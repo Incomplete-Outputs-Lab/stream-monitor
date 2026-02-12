@@ -2,8 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import type { AutoDiscoverySettings, TwitchGame, SelectedGame } from '../../types';
 import * as discoveryApi from '../../api/discovery';
 import * as configApi from '../../api/config';
+import { useAppStateStore } from '../../stores/appStateStore';
 
 export function AutoDiscoveryForm() {
+  const backendReady = useAppStateStore((state) => state.backendReady);
   const [settings, setSettings] = useState<AutoDiscoverySettings>({
     enabled: false,
     poll_interval: 300,
@@ -30,8 +32,10 @@ export function AutoDiscoveryForm() {
   const searchTimeoutRef = useRef<number | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // 設定を読み込み
+  // 設定を読み込み（バックエンド準備完了後に実行し、最新の game_ids 等を反映）
   useEffect(() => {
+    if (!backendReady) return;
+
     const loadSettings = async () => {
       try {
         // Client IDが設定されているかチェック
@@ -53,6 +57,8 @@ export function AutoDiscoveryForm() {
               // エラー時はIDのみ表示
               setSelectedGames(result.filters.game_ids.map(id => ({ id, name: id })));
             }
+          } else {
+            setSelectedGames([]);
           }
         }
       } catch (err) {
@@ -61,7 +67,7 @@ export function AutoDiscoveryForm() {
     };
 
     loadSettings();
-  }, []);
+  }, [backendReady]);
 
   // ドロップダウン外クリック時に閉じる
   useEffect(() => {

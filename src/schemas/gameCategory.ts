@@ -6,8 +6,9 @@ import { z } from 'zod';
 export const GameCategorySchema = z.object({
   gameId: z.string(),
   gameName: z.string(),
-  boxArtUrl: z.string().optional(),
-  lastUpdated: z.string().optional(),
+  // Rust側は Option<String> なので null が来る場合も許容する
+  boxArtUrl: z.string().nullable().optional(),
+  lastUpdated: z.string().nullable().optional(),
 });
 
 /**

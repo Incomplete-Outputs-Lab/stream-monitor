@@ -4,18 +4,21 @@ import { z } from 'zod';
  * Chat message schema
  */
 export const ChatMessageSchema = z.object({
-  id: z.number().optional(),
-  channel_id: z.number().optional(),
-  stream_id: z.number(),
+  // Rust側では Option<> フィールドが null になる場合があるため、
+  // Zod では undefined / null の両方を許容する nullish() を使用する
+  id: z.number().nullish(),
+  channel_id: z.number().nullish(),
+  // stream_id は一部のメッセージで NULL になる場合があるため nullish にする
+  stream_id: z.number().nullish(),
   timestamp: z.string(),
   platform: z.string(),
-  user_id: z.string().optional(),
+  user_id: z.string().nullish(),
   user_name: z.string(),
-  display_name: z.string().optional(),
+  display_name: z.string().nullish(),
   message: z.string(),
   message_type: z.string(),
-  badges: z.array(z.string()).optional(),
-  badge_info: z.string().optional(),
+  badges: z.array(z.string()).nullish(),
+  badge_info: z.string().nullish(),
 });
 
 /**

@@ -18,10 +18,23 @@ export const getDiscoveredStreams = async (): Promise<DiscoveredStreamInfo[]> =>
 };
 
 /**
- * 自動発見チャンネルを手動登録に昇格
+ * 自動発見チャンネルを手動登録に昇格（単一）
  */
 export const promoteDiscoveredChannel = async (channelId: string): Promise<void> => {
   await invoke('promote_discovered_channel', { channelId });
+};
+
+/**
+ * 自動発見チャンネルを手動登録に昇格（複数一括）
+ * @returns 昇格に成功したチャンネルIDのリスト
+ */
+export const promoteDiscoveredChannels = async (
+  channelIds: string[]
+): Promise<string[]> => {
+  const result = await invoke<unknown>('promote_discovered_channels', {
+    channelIds,
+  });
+  return z.array(z.string()).parse(result);
 };
 
 /**

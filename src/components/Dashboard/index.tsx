@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -16,9 +16,10 @@ import { useAppStateStore } from "../../stores/appStateStore";
 
 interface LiveChannelCardProps {
   channel: ChannelWithStats;
+  onPromote?: (channelId: string) => void;
 }
 
-function LiveChannelCard({ channel }: LiveChannelCardProps) {
+function LiveChannelCard({ channel, onPromote }: LiveChannelCardProps) {
   const isAutoDiscovered = channel.is_auto_discovered;
 
   return (
@@ -60,31 +61,14 @@ function LiveChannelCard({ channel }: LiveChannelCardProps) {
           <span className="w-2 h-2 bg-white rounded-full mr-2 animate-pulse"></span>
           ライブ中
         </span>
-        {isAutoDiscovered && (
+        {isAutoDiscovered && onPromote && (
           <button
-            onClick={async () => {
-              const confirmed = await confirm({
-                title: 'チャンネルの昇格',
-                message: 'このチャンネルを手動登録に昇格しますか？',
-                confirmText: '昇格',
-                type: 'info',
-              });
-              
-              if (confirmed) {
-                try {
-                  // twitch_user_idが必須
-                  if (!channel.twitch_user_id) {
-                    toast.error('このチャンネルにはTwitch User IDが設定されていません。');
-                    return;
-                  }
-                  await discoveryApi.promoteDiscoveredChannel(
-                    channel.twitch_user_id.toString()
-                  );
-                  window.location.reload();
-                } catch (err) {
-                  toast.error(`エラー: ${err}`);
-                }
+            onClick={() => {
+              if (!channel.twitch_user_id) {
+                toast.error('このチャンネルにはTwitch User IDが設定されていません。');
+                return;
               }
+              onPromote(channel.twitch_user_id.toString());
             }}
             className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
           >
@@ -100,9 +84,17 @@ interface DiscoveredStreamCardProps {
   stream: DiscoveredStreamInfo;
   onPromote: (channelId: string) => void;
   isAlreadyRegistered?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: (channelId: string) => void;
 }
 
-function DiscoveredStreamCard({ stream, onPromote, isAlreadyRegistered = false }: DiscoveredStreamCardProps) {
+function DiscoveredStreamCard({
+  stream,
+  onPromote,
+  isAlreadyRegistered = false,
+  isSelected = false,
+  onToggleSelect,
+}: DiscoveredStreamCardProps) {
   const handleOpenStream = async () => {
     try {
       await openUrl(`https://www.twitch.tv/${stream.channel_name}`);
@@ -114,6 +106,17 @@ function DiscoveredStreamCard({ stream, onPromote, isAlreadyRegistered = false }
   return (
     <div className="card p-4 hover:shadow-md transition-all duration-200">
       <div className="flex items-start gap-3">
+        {/* 選択チェックボックス */}
+        {onToggleSelect && !isAlreadyRegistered && (
+          <label className="flex items-center pt-2 cursor-pointer flex-shrink-0">
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={() => onToggleSelect(stream.twitch_user_id.toString())}
+              className="w-4 h-4 rounded border-gray-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500"
+            />
+          </label>
+        )}
         {/* プロフィールアイコン */}
         {stream.profile_image_url ? (
           <img 
@@ -278,77 +281,107 @@ export function Dashboard() {
   });
 
 
-  // 楽観的更新を使用したチャンネル昇格mutation
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [categoryFilter, setCategoryFilter] = useState<string>("");
+  const [promotedIds, setPromotedIds] = useState<Set<string>>(new Set());
+
+  // 楽観的更新を使用したチャンネル昇格mutation（単一・複数対応）
   const promoteMutation = useMutation({
-    mutationFn: async (channelId: string) => {
-      await discoveryApi.promoteDiscoveredChannel(channelId);
+    mutationFn: async (channelIds: string[]) => {
+      return discoveryApi.promoteDiscoveredChannels(channelIds);
     },
-    onMutate: async (channelId: string) => {
-      // 既存のクエリをキャンセル
+    onMutate: async (channelIds: string[]) => {
       await queryClient.cancelQueries({ queryKey: ["discovered-streams"] });
       await queryClient.cancelQueries({ queryKey: ["channels"] });
 
-      // 現在のキャッシュを保存（ロールバック用）
       const previousDiscovered = queryClient.getQueryData<DiscoveredStreamInfo[]>(["discovered-streams"]);
       const previousChannels = queryClient.getQueryData<ChannelWithStats[]>(["channels"]);
+      const idSet = new Set(channelIds);
 
-      // 昇格するストリーム情報を取得
-      const promotingStream = previousDiscovered?.find(
-        s => s.twitch_user_id.toString() === channelId
-      );
+      // 楽観的更新: 昇格中のIDを記録（一瞬残る問題の対策）
+      setPromotedIds((prev) => new Set([...prev, ...channelIds]));
 
       // 楽観的更新: 自動発見リストから削除
       if (previousDiscovered) {
         queryClient.setQueryData<DiscoveredStreamInfo[]>(
           ["discovered-streams"],
-          previousDiscovered.filter(s => s.twitch_user_id.toString() !== channelId)
+          previousDiscovered.filter((s) => !idSet.has(s.twitch_user_id.toString()))
         );
       }
 
-      // 楽観的更新: ライブチャンネルリストに追加
-      if (previousChannels && promotingStream) {
-        const now = new Date().toISOString();
-        const newChannel: ChannelWithStats = {
-          id: -1, // 仮のID（サーバーからの応答で更新される）
-          platform: "twitch",
-          channel_id: promotingStream.channel_name,
-          channel_name: promotingStream.display_name || promotingStream.channel_name,
-          display_name: promotingStream.display_name || promotingStream.channel_name,
-          profile_image_url: promotingStream.profile_image_url || "",
-          enabled: true,
-          created_at: now,
-          updated_at: now,
-          poll_interval: 60,
-          follower_count: promotingStream.follower_count,
-          broadcaster_type: promotingStream.broadcaster_type || "",
-          view_count: 0,
-          is_auto_discovered: false,
-          discovered_at: "",
-          twitch_user_id: promotingStream.twitch_user_id,
-          is_live: true,
-          current_viewers: promotingStream.viewer_count ?? 0,
-          current_title: promotingStream.title ?? '',
-        };
-        queryClient.setQueryData<ChannelWithStats[]>(
-          ["channels"],
-          [...previousChannels, newChannel]
+      // 楽観的更新: channelsの更新
+      if (previousChannels) {
+        const promotingStreams = previousDiscovered?.filter((s) =>
+          idSet.has(s.twitch_user_id.toString())
+        ) ?? [];
+        const existingByTwitchId = new Map(
+          previousChannels
+            .filter((c) => c.twitch_user_id && c.platform === "twitch")
+            .map((c) => [c.twitch_user_id!.toString(), c])
         );
+
+        let newChannels = previousChannels.map((c) => {
+          const sid = c.twitch_user_id?.toString();
+          if (sid && idSet.has(sid)) {
+            return { ...c, is_auto_discovered: false };
+          }
+          return c;
+        });
+
+        for (const stream of promotingStreams) {
+          const sid = stream.twitch_user_id.toString();
+          if (!existingByTwitchId.has(sid)) {
+            const now = new Date().toISOString();
+            newChannels.push({
+              id: -1,
+              platform: "twitch" as const,
+              channel_id: stream.channel_id,
+              channel_name: stream.display_name || stream.channel_name,
+              display_name: stream.display_name || stream.channel_name,
+              profile_image_url: stream.profile_image_url || "",
+              enabled: true,
+              created_at: now,
+              updated_at: now,
+              poll_interval: 60,
+              follower_count: stream.follower_count,
+              broadcaster_type: stream.broadcaster_type || "",
+              view_count: 0,
+              is_auto_discovered: false,
+              discovered_at: "",
+              twitch_user_id: stream.twitch_user_id,
+              is_live: true,
+              current_viewers: stream.viewer_count ?? 0,
+              current_title: stream.title ?? "",
+            });
+          }
+        }
+        queryClient.setQueryData<ChannelWithStats[]>(["channels"], newChannels);
       }
 
       return { previousDiscovered, previousChannels };
     },
-    onError: (_err, _channelId, context) => {
-      // エラー時はロールバック
+    onError: (_err, _channelIds, context) => {
       if (context?.previousDiscovered) {
         queryClient.setQueryData(["discovered-streams"], context.previousDiscovered);
       }
       if (context?.previousChannels) {
         queryClient.setQueryData(["channels"], context.previousChannels);
       }
+      setPromotedIds(new Set());
       toast.error(`エラー: ${_err}`);
     },
+    onSuccess: (promotedIdsResult, channelIds) => {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        channelIds.forEach((id) => next.delete(id));
+        return next;
+      });
+      if (promotedIdsResult.length > 1) {
+        toast.success(`${promotedIdsResult.length}件のチャンネルを昇格しました`);
+      }
+    },
     onSettled: () => {
-      // 完了後にクエリを再検証して最新データを取得
+      setPromotedIds(new Set());
       queryClient.invalidateQueries({ queryKey: ["discovered-streams"] });
       queryClient.invalidateQueries({ queryKey: ["channels"] });
     },
@@ -356,16 +389,57 @@ export function Dashboard() {
 
   const handlePromote = async (channelId: string) => {
     const confirmed = await confirm({
-      title: 'チャンネルの昇格',
-      message: 'このチャンネルを手動登録に昇格しますか？\n\n配信終了後も監視を継続します。',
-      confirmText: '昇格',
-      type: 'info',
+      title: "チャンネルの昇格",
+      message:
+        "このチャンネルを手動登録に昇格しますか？\n\n配信終了後も監視を継続します。",
+      confirmText: "昇格",
+      type: "info",
     });
-    
     if (confirmed) {
-      promoteMutation.mutate(channelId);
+      promoteMutation.mutate([channelId]);
     }
   };
+
+  const handleBulkPromote = async () => {
+    if (selectedIds.size === 0) return;
+    const count = selectedIds.size;
+    const confirmed = await confirm({
+      title: "複数チャンネルの昇格",
+      message: `${count}件のチャンネルを手動登録に昇格しますか？\n\n配信終了後も監視を継続します。`,
+      confirmText: "昇格",
+      type: "info",
+    });
+    if (confirmed) {
+      promoteMutation.mutate([...selectedIds]);
+    }
+  };
+
+  const handleToggleSelect = (channelId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(channelId)) next.delete(channelId);
+      else next.add(channelId);
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (!discoveredStreams) return;
+    const registeredSet = new Set(
+      (allChannels || [])
+        .filter((c) => c.twitch_user_id && c.platform === "twitch")
+        .map((c) => c.twitch_user_id!.toString())
+    );
+    const promotable = discoveredStreams.filter(
+      (s) => !registeredSet.has(s.twitch_user_id.toString()) && !promotedIds.has(s.twitch_user_id.toString())
+    );
+    const filtered = categoryFilter
+      ? promotable.filter((s) => (s.category ?? "") === categoryFilter)
+      : promotable;
+    setSelectedIds(new Set(filtered.map((s) => s.twitch_user_id.toString())));
+  };
+
+  const handleClearSelection = () => setSelectedIds(new Set());
 
   // チャンネルごとの統計データを整形
   // 重複を削除: channel_id + platform の組み合わせで一意にする
@@ -519,7 +593,11 @@ export function Dashboard() {
           ) : uniqueLiveChannels.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {uniqueLiveChannels.map((channel) => (
-                <LiveChannelCard key={channel.id ?? `${channel.platform}-${channel.channel_id}`} channel={channel} />
+                <LiveChannelCard
+                  key={channel.id ?? `${channel.platform}-${channel.channel_id}`}
+                  channel={channel}
+                  onPromote={handlePromote}
+                />
               ))}
             </div>
           ) : (
@@ -541,22 +619,73 @@ export function Dashboard() {
 
       {/* 自動発見された配信 */}
       <div className="card p-6 animate-fade-in mt-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              自動発見された配信
-            </h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              条件に合致する上位配信を自動的に監視しています
-            </p>
+        <div className="flex flex-col gap-4 mb-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                自動発見された配信
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                条件に合致する上位配信を自動的に監視しています
+              </p>
+            </div>
+            {discoveredStreams && discoveredStreams.length > 0 && (
+              <span className="text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-3 py-1 rounded-full">
+                {discoveredStreams.length}件
+              </span>
+            )}
           </div>
           {discoveredStreams && discoveredStreams.length > 0 && (
-            <span className="text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-3 py-1 rounded-full">
-              {discoveredStreams.length}件
-            </span>
+            <div className="flex flex-wrap items-center gap-3">
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="text-sm rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">全てのカテゴリ</option>
+                {(() => {
+                  const categories = Array.from(
+                    new Set(
+                      discoveredStreams
+                        .map((s) => s.category || "カテゴリ不明")
+                        .filter(Boolean)
+                    )
+                  ).sort();
+                  return categories.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ));
+                })()}
+              </select>
+              <button
+                type="button"
+                onClick={handleSelectAll}
+                className="text-xs px-2 py-1 text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                全選択
+              </button>
+              <button
+                type="button"
+                onClick={handleClearSelection}
+                className="text-xs px-2 py-1 text-gray-500 dark:text-gray-400 hover:underline"
+              >
+                選択解除
+              </button>
+              {selectedIds.size > 0 && (
+                <button
+                  type="button"
+                  onClick={handleBulkPromote}
+                  disabled={promoteMutation.isPending}
+                  className="text-xs px-3 py-1.5 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white rounded transition-colors"
+                >
+                  {promoteMutation.isPending ? "昇格中..." : `選択した${selectedIds.size}件を昇格`}
+                </button>
+              )}
+            </div>
           )}
         </div>
-        
+
         {isLoadingDiscovered ? (
           <div className="text-center py-12">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-amber-500 mx-auto"></div>
@@ -565,24 +694,31 @@ export function Dashboard() {
         ) : discoveredStreams && discoveredStreams.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {(() => {
-              // 登録済みチャンネルのchannel_nameセットを作成
-              const registeredChannelNames = new Set(
-                (allChannels || []).map(ch => ch.channel_name.toLowerCase())
+              const registeredTwitchIds = new Set(
+                (allChannels || [])
+                  .filter((c) => c.twitch_user_id && c.platform === "twitch")
+                  .map((c) => c.twitch_user_id!.toString())
               );
+              const filteredByCategory = categoryFilter
+                ? discoveredStreams.filter((s) => (s.category ?? "カテゴリ不明") === categoryFilter)
+                : discoveredStreams;
 
-              return discoveredStreams.map((stream) => {
-                // channel_nameが登録済みかチェック
-                const isAlreadyRegistered = registeredChannelNames.has(stream.channel_name.toLowerCase());
+              return filteredByCategory
+                .filter((s) => !promotedIds.has(s.twitch_user_id.toString()))
+                .map((stream) => {
+                  const isAlreadyRegistered = registeredTwitchIds.has(stream.twitch_user_id.toString());
 
-                return (
-                  <DiscoveredStreamCard
-                    key={`discovered-${stream.twitch_user_id}-${stream.channel_id}`}
-                    stream={stream}
-                    onPromote={handlePromote}
-                    isAlreadyRegistered={isAlreadyRegistered}
-                  />
-                );
-              });
+                  return (
+                    <DiscoveredStreamCard
+                      key={`discovered-${stream.twitch_user_id}-${stream.channel_id}`}
+                      stream={stream}
+                      onPromote={handlePromote}
+                      isAlreadyRegistered={isAlreadyRegistered}
+                      isSelected={selectedIds.has(stream.twitch_user_id.toString())}
+                      onToggleSelect={handleToggleSelect}
+                    />
+                  );
+                });
             })()}
           </div>
         ) : (

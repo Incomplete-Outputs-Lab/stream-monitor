@@ -120,9 +120,12 @@ function App() {
       });
 
       // チャンネル統計更新イベント（ライブ状態変更時）
+      // 注意: ここでchannelsクエリを毎回invalidateすると、list_channels経由で
+      // Twitch API（ユーザー情報・フォロワー数取得）がポーリング頻度で連打されてしまう。
+      // ダッシュボード側で30秒ごとのrefetchIntervalを設定しているため、
+      // 統計更新イベントではchannelsクエリはinvalidateしない。
       const channelStatsUnlisten = await listen("channel-stats-updated", () => {
-        console.log("Channel stats updated, refreshing channels");
-        queryClient.invalidateQueries({ queryKey: ["channels"] });
+        console.log("Channel stats updated (no automatic channels refetch to avoid Twitch API overuse)");
       });
 
       // チャンネル追加イベント（自動発見で新チャンネル追加時）

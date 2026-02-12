@@ -1922,7 +1922,7 @@ fn calculate_median_and_mad(values: &[f64]) -> (f64, f64) {
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
     let n = sorted.len();
-    let median = if n % 2 == 0 {
+    let median = if n.is_multiple_of(2) {
         (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
     } else {
         sorted[n / 2]
@@ -1932,7 +1932,7 @@ fn calculate_median_and_mad(values: &[f64]) -> (f64, f64) {
     let mut abs_deviations: Vec<f64> = values.iter().map(|&v| (v - median).abs()).collect();
     abs_deviations.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-    let mad = if n % 2 == 0 {
+    let mad = if n.is_multiple_of(2) {
         (abs_deviations[n / 2 - 1] + abs_deviations[n / 2]) / 2.0
     } else {
         abs_deviations[n / 2]

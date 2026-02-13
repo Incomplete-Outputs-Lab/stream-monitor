@@ -21,6 +21,9 @@ export * from './config';
 // Discovery schemas
 export * from './discovery';
 
+// Multiview schemas
+export * from './multiview';
+
 // SQL schemas
 export * from './sql';
 

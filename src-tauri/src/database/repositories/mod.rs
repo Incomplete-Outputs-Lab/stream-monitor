@@ -6,6 +6,7 @@ pub mod base;
 pub mod channel_repository;
 pub mod chat_message_repository;
 pub mod game_category_repository;
+pub mod multiview_repository;
 pub mod sql_template_repository;
 pub mod stream_repository;
 pub mod stream_stats_repository;

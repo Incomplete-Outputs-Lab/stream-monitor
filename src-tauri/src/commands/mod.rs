@@ -8,6 +8,7 @@ pub mod discovery;
 pub mod export;
 pub mod game_categories;
 pub mod logs;
+pub mod multiview;
 pub mod oauth;
 pub mod sql;
 pub mod stats;

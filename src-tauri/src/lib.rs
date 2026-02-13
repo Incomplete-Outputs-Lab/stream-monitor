@@ -56,6 +56,7 @@ use commands::{
         upsert_game_category,
     },
     logs::get_logs,
+    multiview::get_multiview_realtime_stats,
     oauth::{poll_twitch_device_token, reinitialize_twitch_collector, start_twitch_device_auth},
     sql::{
         delete_sql_template, execute_sql, list_database_tables, list_sql_templates,
@@ -572,6 +573,7 @@ pub fn run() {
             // Stats commands
             get_stream_stats,
             get_realtime_chat_rate,
+            get_multiview_realtime_stats,
             // Timeline commands
             get_channel_streams,
             get_stream_timeline,
